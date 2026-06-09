@@ -174,10 +174,12 @@ class OllamaClient:
     ) -> AsyncIterator[str]:
         """Stream chat completion chunks as Server-Sent Events.
 
-        Once a streaming HTTP response has started, FastAPI can no longer change
-        the status code. Expected and unexpected Ollama failures are therefore
-        sent as an `error` SSE event. A `done` event is emitted from `finally` so
-        clients can reliably clean up listeners even when generation fails.
+        Streaming has a small state machine:
+        - `message` events are emitted for non-empty token chunks.
+        - exactly one `done` event is emitted for every connected stream exit,
+          whether Ollama completed normally or an error was reported first.
+        - client disconnects are treated as cancellation: we log, close the
+          upstream Ollama stream, and do not attempt additional SSE writes.
         """
 
         model = request.model or self._settings.ollama_model
@@ -192,6 +194,9 @@ class OllamaClient:
         )
 
         try:
+            # Bound the initial Ollama call. Once the async iterator is returned,
+            # token generation may legitimately take longer than the startup
+            # timeout for large responses.
             async with asyncio.timeout(self._settings.ollama_timeout_seconds):
                 stream = await self._client.chat(
                     model=model,
@@ -203,7 +208,7 @@ class OllamaClient:
             async for chunk in stream:
                 message = self._read_value(chunk, "message", {})
                 content = self._read_value(message, "content", "")
-                done = bool(self._read_value(chunk, "done", False))
+                chunk_done = bool(self._read_value(chunk, "done", False))
 
                 if isinstance(content, str) and content:
                     emitted_chunks += 1
@@ -216,7 +221,7 @@ class OllamaClient:
                         },
                     )
 
-                if done:
+                if chunk_done:
                     stream_completed = True
                     logger.info(
                         "Completed Ollama streaming chat completion",
@@ -234,8 +239,8 @@ class OllamaClient:
                     return
 
             # Ollama should finish streaming with a chunk containing done=true.
-            # If iteration stops first, tell the client the stream was incomplete
-            # instead of silently pretending the generation completed normally.
+            # If iteration stops first, report the incomplete stream and still
+            # send the terminal done event so connected clients can clean up.
             logger.warning(
                 "Ollama stream ended without a done marker",
                 extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
@@ -247,7 +252,12 @@ class OllamaClient:
                     "request_id": request_id,
                 },
             )
-        except asyncio.CancelledError:
+            yield self._format_sse(
+                event="done",
+                data={"done": False, "request_id": request_id},
+            )
+            done_sent = True
+        except (asyncio.CancelledError, GeneratorExit):
             client_disconnected = True
             logger.info(
                 "Client disconnected during Ollama stream",
@@ -266,27 +276,63 @@ class OllamaClient:
                     "chunks": emitted_chunks,
                 },
             )
-            yield self._format_sse(
-                event="error",
-                data={
-                    "error": mapped_error.message,
-                    "request_id": request_id,
-                },
-            )
-        finally:
-            if client_disconnected and stream is not None:
-                close_stream = getattr(stream, "aclose", None)
-                if close_stream is not None:
-                    await close_stream()
 
-            if not done_sent and not client_disconnected:
+            # We are already inside the exception handler, so protect these final
+            # SSE writes separately. If the client disconnects while receiving
+            # the error/done frames, mark it as a disconnect and let cleanup run.
+            try:
                 yield self._format_sse(
-                    event="done",
+                    event="error",
                     data={
-                        "done": stream_completed,
+                        "error": mapped_error.message,
                         "request_id": request_id,
                     },
                 )
+                yield self._format_sse(
+                    event="done",
+                    data={"done": False, "request_id": request_id},
+                )
+                done_sent = True
+            except (asyncio.CancelledError, GeneratorExit):
+                client_disconnected = True
+                logger.info(
+                    "Client disconnected before stream error handling completed",
+                    extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
+                )
+                raise
+        finally:
+            # Never yield from cleanup: doing so can produce invalid async
+            # generator behavior during cancellation. The terminal done event is
+            # emitted in the normal/error paths above exactly once when possible.
+            if stream is not None and (client_disconnected or not stream_completed):
+                await self._close_stream(stream, request_id=request_id, model=model)
+
+            if not done_sent and not client_disconnected:
+                logger.debug(
+                    "Streaming generator exited before sending done event",
+                    extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
+                )
+
+    async def _close_stream(
+        self,
+        stream: object,
+        *,
+        request_id: str | None,
+        model: str,
+    ) -> None:
+        """Close an Ollama stream defensively during cancellation or errors."""
+
+        close_stream = getattr(stream, "aclose", None)
+        if close_stream is None:
+            return
+
+        try:
+            await close_stream()
+        except Exception as exc:  # pragma: no cover - defensive cleanup path.
+            logger.debug(
+                "Failed to close Ollama stream cleanly",
+                extra={"request_id": request_id, "model": model, "error": str(exc)},
+            )
 
     def _generation_options(self, request: ChatRequest) -> dict[str, float | int]:
         """Build Ollama generation options from request overrides and defaults."""
