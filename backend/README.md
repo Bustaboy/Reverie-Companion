@@ -29,7 +29,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` if you want to use a different Ollama host, model, or generation defaults.
+Edit `.env` if you want to use a different Ollama host, model, generation defaults, CORS origins, or log level.
 
 ## Run
 
@@ -43,7 +43,7 @@ The API will be available at `http://localhost:8000`.
 
 ### `GET /health`
 
-Checks that the API is running and verifies that Ollama is reachable.
+Checks that the API is running and returns system plus Ollama diagnostics, including whether Ollama is reachable, which model is configured, whether that model is available locally, and whether Ollama reports it as currently loaded.
 
 ### `POST /chat`
 
@@ -65,6 +65,7 @@ Streaming response events:
 
 - `message`: incremental text chunks
 - `done`: final completion marker
+- `error`: meaningful stream failure details if Ollama fails after streaming starts
 
 For a non-streaming response, set `"stream": false`.
 

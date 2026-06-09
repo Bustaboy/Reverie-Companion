@@ -1,8 +1,8 @@
 """Application configuration for the Reverie backend.
 
 The backend is designed to be local-first. Settings are read from the
-process environment and an optional `.env` file so users can tune Ollama
-and generation behavior without changing code.
+process environment and an optional `.env` file so users can tune Ollama,
+logging, and generation behavior without changing code.
 """
 
 from functools import lru_cache
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     app_name: str = "Reverie Backend"
     app_version: str = "0.1.0"
     debug: bool = False
+    log_level: str = "INFO"
 
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
