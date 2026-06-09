@@ -4,9 +4,12 @@ import logging
 import platform
 import sys
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
 from app.core.config import Settings, get_settings
@@ -28,6 +31,47 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Return clear, structured validation errors for API clients.
+
+    FastAPI's default 422 response is correct but exposes a raw list. This
+    wrapper keeps the useful field-level details while giving the frontend a
+    stable `error`, `request_id`, and `errors` shape to render.
+    """
+
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    errors = [
+        {
+            "field": ".".join(str(part) for part in error.get("loc", []) if part != "body"),
+            "message": error.get("msg", "Invalid value."),
+            "type": error.get("type", "validation_error"),
+        }
+        for error in exc.errors()
+    ]
+
+    logger.warning(
+        "Request validation failed",
+        extra={
+            "request_id": request_id,
+            "path": request.url.path,
+            "errors": errors,
+        },
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        headers={"X-Request-ID": request_id},
+        content={
+            "error": "Request validation failed.",
+            "request_id": request_id,
+            "errors": errors,
+        },
+    )
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -40,6 +84,8 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         description="Local-first backend foundation for Reverie companion experiences.",
     )
+
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
     app.add_middleware(
         CORSMiddleware,

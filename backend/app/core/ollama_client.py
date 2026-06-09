@@ -6,6 +6,7 @@ prepare context before calling this client without the API route knowing about
 Ollama SDK details.
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -127,12 +128,16 @@ class OllamaClient:
         )
 
         try:
-            response = await self._client.chat(
-                model=model,
-                messages=self._prepare_messages(request),
-                options=self._generation_options(request),
-                stream=False,
-            )
+            # Keep non-streaming calls bounded so a stalled local model does not
+            # hold the API request forever. The SDK also receives this timeout,
+            # but the explicit guard keeps our error mapping consistent.
+            async with asyncio.timeout(self._settings.ollama_timeout_seconds):
+                response = await self._client.chat(
+                    model=model,
+                    messages=self._prepare_messages(request),
+                    options=self._generation_options(request),
+                    stream=False,
+                )
         except Exception as exc:
             raise self._map_exception(exc, model=model, request_id=request_id) from exc
 
@@ -166,24 +171,32 @@ class OllamaClient:
         """Stream chat completion chunks as Server-Sent Events.
 
         Once a streaming HTTP response has started, FastAPI can no longer change
-        the status code. Expected Ollama failures are therefore sent as an `error`
-        SSE event and logged before the stream ends.
+        the status code. Expected and unexpected Ollama failures are therefore
+        sent as an `error` SSE event. A terminal `done` event is emitted from a
+        `finally` block on normal completion and handled errors so clients can
+        always release loading state defensively.
         """
 
         model = request.model or self._settings.ollama_model
         emitted_chunks = 0
+        stream_completed = False
+        client_cancelled = False
         logger.info(
             "Starting Ollama streaming chat completion",
             extra={"request_id": request_id, "model": model, "stream": True},
         )
 
         try:
-            stream = await self._client.chat(
-                model=model,
-                messages=self._prepare_messages(request),
-                options=self._generation_options(request),
-                stream=True,
-            )
+            # The SDK timeout protects socket reads; this explicit timeout keeps
+            # stream startup bounded if Ollama accepts the connection but stalls
+            # before returning an iterator.
+            async with asyncio.timeout(self._settings.ollama_timeout_seconds):
+                stream = await self._client.chat(
+                    model=model,
+                    messages=self._prepare_messages(request),
+                    options=self._generation_options(request),
+                    stream=True,
+                )
 
             async for chunk in stream:
                 message = self._read_value(chunk, "message", {})
@@ -202,6 +215,7 @@ class OllamaClient:
                     )
 
                 if done:
+                    stream_completed = True
                     logger.info(
                         "Completed Ollama streaming chat completion",
                         extra={
@@ -210,20 +224,31 @@ class OllamaClient:
                             "chunks": emitted_chunks,
                         },
                     )
-                    yield self._format_sse(
-                        event="done",
-                        data={"done": True, "request_id": request_id},
-                    )
                     return
 
+            # Reaching the end of the iterator without Ollama's `done` marker
+            # means the stream closed unexpectedly. Surface that as an SSE error
+            # before the final done event so clients can show a useful message.
             logger.warning(
                 "Ollama stream ended without a done marker",
                 extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
             )
             yield self._format_sse(
-                event="done",
-                data={"done": True, "request_id": request_id, "warning": "stream_ended_without_done"},
+                event="error",
+                data={
+                    "error": "Ollama stream ended before completion.",
+                    "request_id": request_id,
+                },
             )
+        except (asyncio.CancelledError, GeneratorExit):
+            # Client disconnects should not be converted into SSE frames because
+            # there is no active receiver. Log at debug level to avoid noisy logs.
+            client_cancelled = True
+            logger.debug(
+                "Ollama streaming chat cancelled",
+                extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
+            )
+            raise
         except Exception as exc:
             mapped_error = self._map_exception(exc, model=model, request_id=request_id)
             logger.error(
@@ -237,12 +262,18 @@ class OllamaClient:
             )
             yield self._format_sse(
                 event="error",
-                data={
-                    "error": mapped_error.message,
-                    "details": mapped_error.details,
-                    "request_id": request_id,
-                },
+                data=self._error_payload(mapped_error, request_id=request_id),
             )
+        finally:
+            if not client_cancelled:
+                yield self._format_sse(
+                    event="done",
+                    data={
+                        "done": True,
+                        "request_id": request_id,
+                        "completed": stream_completed,
+                    },
+                )
 
     def _generation_options(self, request: ChatRequest) -> dict[str, float | int]:
         """Build Ollama generation options from request overrides and defaults."""
@@ -293,6 +324,20 @@ class OllamaClient:
         if isinstance(exc, OllamaClientError):
             return exc
 
+        if isinstance(exc, TimeoutError):
+            logger.error(
+                "Ollama request timed out",
+                extra={
+                    "request_id": request_id,
+                    "model": model,
+                    "timeout_seconds": self._settings.ollama_timeout_seconds,
+                },
+            )
+            return OllamaConnectionError(
+                "Ollama took too long to respond. Try again or use a smaller model.",
+                details=f"Timed out after {self._settings.ollama_timeout_seconds} seconds.",
+            )
+
         if isinstance(exc, ResponseError):
             status_code = int(getattr(exc, "status_code", 502) or 502)
             message = str(exc)
@@ -320,6 +365,19 @@ class OllamaClient:
             "Could not connect to Ollama or the local model backend failed.",
             details=str(exc),
         )
+
+    @staticmethod
+    def _error_payload(
+        error: OllamaClientError,
+        *,
+        request_id: str | None,
+    ) -> dict[str, object]:
+        """Build a concise client-facing error payload."""
+
+        payload: dict[str, object] = {"error": error.message, "request_id": request_id}
+        if error.details:
+            payload["details"] = error.details
+        return payload
 
     @classmethod
     def _extract_model_names(cls, source: object) -> list[str]:
