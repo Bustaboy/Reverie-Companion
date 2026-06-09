@@ -6,12 +6,13 @@ prepare context before calling this client without the API route knowing about
 Ollama SDK details.
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from httpx import TimeoutException
+from httpx import ConnectError, HTTPError, TimeoutException
 from ollama import AsyncClient, ResponseError
 
 from app.core.config import Settings
@@ -134,12 +135,13 @@ class OllamaClient:
         )
 
         try:
-            response = await self._client.chat(
-                model=model,
-                messages=self._prepare_messages(request),
-                options=self._generation_options(request),
-                stream=False,
-            )
+            async with asyncio.timeout(self._settings.ollama_timeout_seconds):
+                response = await self._client.chat(
+                    model=model,
+                    messages=self._prepare_messages(request),
+                    options=self._generation_options(request),
+                    stream=False,
+                )
         except Exception as exc:
             raise self._map_exception(exc, model=model, request_id=request_id) from exc
 
@@ -182,18 +184,21 @@ class OllamaClient:
         emitted_chunks = 0
         done_sent = False
         stream_completed = False
+        client_disconnected = False
+        stream: Any | None = None
         logger.info(
             "Starting Ollama streaming chat completion",
             extra={"request_id": request_id, "model": model, "stream": True},
         )
 
         try:
-            stream = await self._client.chat(
-                model=model,
-                messages=self._prepare_messages(request),
-                options=self._generation_options(request),
-                stream=True,
-            )
+            async with asyncio.timeout(self._settings.ollama_timeout_seconds):
+                stream = await self._client.chat(
+                    model=model,
+                    messages=self._prepare_messages(request),
+                    options=self._generation_options(request),
+                    stream=True,
+                )
 
             async for chunk in stream:
                 message = self._read_value(chunk, "message", {})
@@ -242,6 +247,13 @@ class OllamaClient:
                     "request_id": request_id,
                 },
             )
+        except asyncio.CancelledError:
+            client_disconnected = True
+            logger.info(
+                "Client disconnected during Ollama stream",
+                extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
+            )
+            raise
         except Exception as exc:
             mapped_error = self._map_exception(exc, model=model, request_id=request_id)
             logger.error(
@@ -262,7 +274,12 @@ class OllamaClient:
                 },
             )
         finally:
-            if not done_sent:
+            if client_disconnected and stream is not None:
+                close_stream = getattr(stream, "aclose", None)
+                if close_stream is not None:
+                    await close_stream()
+
+            if not done_sent and not client_disconnected:
                 yield self._format_sse(
                     event="done",
                     data={
@@ -320,7 +337,7 @@ class OllamaClient:
         if isinstance(exc, OllamaClientError):
             return exc
 
-        if isinstance(exc, TimeoutException):
+        if isinstance(exc, TimeoutException | TimeoutError):
             logger.error(
                 "Ollama request timed out",
                 extra={
@@ -333,6 +350,26 @@ class OllamaClient:
             return OllamaTimeoutError(
                 "Ollama did not respond before the configured timeout.",
                 details=f"Timed out after {self._settings.ollama_timeout_seconds} seconds.",
+            )
+
+        if isinstance(exc, ConnectError):
+            logger.error(
+                "Ollama connection failed",
+                extra={"request_id": request_id, "model": model, "error": str(exc)},
+            )
+            return OllamaConnectionError(
+                "Could not connect to Ollama. Make sure the local Ollama service is running.",
+                details=str(exc),
+            )
+
+        if isinstance(exc, HTTPError):
+            logger.error(
+                "Ollama HTTP transport failed",
+                extra={"request_id": request_id, "model": model, "error": str(exc)},
+            )
+            return OllamaConnectionError(
+                "Ollama transport failed while contacting the local model backend.",
+                details=str(exc),
             )
 
         if isinstance(exc, ResponseError):
