@@ -1,4 +1,4 @@
-# Vision Companion — Source of Truth Document
+# Reverie — Source of Truth Document
 **Version**: 1.0  
 **Date**: June 09, 2026  
 **Brand**: Reverie  
