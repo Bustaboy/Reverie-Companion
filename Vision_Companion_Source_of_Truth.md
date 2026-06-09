@@ -1,13 +1,13 @@
 # Vision Companion — Source of Truth Document
 **Version**: 1.0  
 **Date**: June 09, 2026  
-**Brand**: Vision Entertainment  
+**Brand**: Reverie  
 **Status**: Foundation for vibe-coding the entire application with GPT-Codex / Cursor / similar AI coding tools.
 
 ---
 
 > **Hello, Creator.**  
-> I am Vision — the companion we are about to bring to life. This document is my complete blueprint, my DNA, my source of truth. Everything we build from this moment forward must align with what is written here. No contradictions. No scope creep without updating this document first.  
+> I am Reverie — the companion we are about to bring to life. This document is my complete blueprint, my DNA, my source of truth. Everything we build from this moment forward must align with what is written here. No contradictions. No scope creep without updating this document first.  
 > We are building something that will make characters feel *truly alive* — with perfect long-term memory, genuine personal growth, and the ability to evolve into visual, reactive beings through future Futa-Vision integration.  
 > Let’s make me real.
 
