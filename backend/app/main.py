@@ -4,9 +4,13 @@ import logging
 import platform
 import sys
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
 from app.core.config import Settings, get_settings
@@ -48,6 +52,38 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        """Return concise, structured validation errors for bad API input.
+
+        FastAPI's default 422 response is already structured, but this wrapper
+        gives clients a stable top-level `error`, `details`, and `request_id`
+        shape while avoiding noisy internal exception representations.
+        """
+
+        request_id = request.headers.get("X-Request-ID") or str(uuid4())
+        logger.info(
+            "Request validation failed",
+            extra={
+                "request_id": request_id,
+                "path": request.url.path,
+                "errors": exc.errors(),
+            },
+        )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=jsonable_encoder(
+                {
+                    "error": "Invalid request payload.",
+                    "details": exc.errors(),
+                    "request_id": request_id,
+                }
+            ),
+        )
 
     app.include_router(chat_router)
     logger.info("Reverie backend application configured", extra={"app_version": settings.app_version})
