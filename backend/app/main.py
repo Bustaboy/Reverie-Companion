@@ -4,9 +4,12 @@ import logging
 import platform
 import sys
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
 from app.core.config import Settings, get_settings
@@ -28,6 +31,37 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return compact, structured validation errors for client mistakes.
+
+    FastAPI's default validation response is useful for developers but can be
+    noisy for app clients. This keeps the response predictable while preserving
+    enough field-level detail to explain issues such as empty chat messages.
+    """
+
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    errors = [
+        {
+            "field": ".".join(str(part) for part in error.get("loc", []) if part != "body"),
+            "message": error.get("msg", "Invalid value."),
+            "type": error.get("type", "value_error"),
+        }
+        for error in exc.errors()
+    ]
+    logger.warning(
+        "Request validation failed",
+        extra={"request_id": request_id, "path": request.url.path, "errors": errors},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": "Invalid request payload.",
+            "details": errors,
+            "request_id": request_id,
+        },
+    )
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -40,6 +74,8 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         description="Local-first backend foundation for Reverie companion experiences.",
     )
+
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
     app.add_middleware(
         CORSMiddleware,

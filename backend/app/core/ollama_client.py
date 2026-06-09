@@ -11,6 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from httpx import TimeoutException
 from ollama import AsyncClient, ResponseError
 
 from app.core.config import Settings
@@ -46,6 +47,12 @@ class OllamaGenerationError(OllamaClientError):
     """Raised when Ollama rejects or fails a generation request."""
 
     status_code = 502
+
+
+class OllamaTimeoutError(OllamaClientError):
+    """Raised when Ollama does not respond within the configured timeout."""
+
+    status_code = 504
 
 
 class OllamaClient:
@@ -166,12 +173,15 @@ class OllamaClient:
         """Stream chat completion chunks as Server-Sent Events.
 
         Once a streaming HTTP response has started, FastAPI can no longer change
-        the status code. Expected Ollama failures are therefore sent as an `error`
-        SSE event and logged before the stream ends.
+        the status code. Expected and unexpected Ollama failures are therefore
+        sent as an `error` SSE event. A `done` event is emitted from `finally` so
+        clients can reliably clean up listeners even when generation fails.
         """
 
         model = request.model or self._settings.ollama_model
         emitted_chunks = 0
+        done_sent = False
+        stream_completed = False
         logger.info(
             "Starting Ollama streaming chat completion",
             extra={"request_id": request_id, "model": model, "stream": True},
@@ -202,6 +212,7 @@ class OllamaClient:
                     )
 
                 if done:
+                    stream_completed = True
                     logger.info(
                         "Completed Ollama streaming chat completion",
                         extra={
@@ -214,15 +225,22 @@ class OllamaClient:
                         event="done",
                         data={"done": True, "request_id": request_id},
                     )
+                    done_sent = True
                     return
 
+            # Ollama should finish streaming with a chunk containing done=true.
+            # If iteration stops first, tell the client the stream was incomplete
+            # instead of silently pretending the generation completed normally.
             logger.warning(
                 "Ollama stream ended without a done marker",
                 extra={"request_id": request_id, "model": model, "chunks": emitted_chunks},
             )
             yield self._format_sse(
-                event="done",
-                data={"done": True, "request_id": request_id, "warning": "stream_ended_without_done"},
+                event="error",
+                data={
+                    "error": "Ollama stream ended before completion.",
+                    "request_id": request_id,
+                },
             )
         except Exception as exc:
             mapped_error = self._map_exception(exc, model=model, request_id=request_id)
@@ -233,16 +251,25 @@ class OllamaClient:
                     "model": model,
                     "error": mapped_error.message,
                     "details": mapped_error.details,
+                    "chunks": emitted_chunks,
                 },
             )
             yield self._format_sse(
                 event="error",
                 data={
                     "error": mapped_error.message,
-                    "details": mapped_error.details,
                     "request_id": request_id,
                 },
             )
+        finally:
+            if not done_sent:
+                yield self._format_sse(
+                    event="done",
+                    data={
+                        "done": stream_completed,
+                        "request_id": request_id,
+                    },
+                )
 
     def _generation_options(self, request: ChatRequest) -> dict[str, float | int]:
         """Build Ollama generation options from request overrides and defaults."""
@@ -292,6 +319,21 @@ class OllamaClient:
 
         if isinstance(exc, OllamaClientError):
             return exc
+
+        if isinstance(exc, TimeoutException):
+            logger.error(
+                "Ollama request timed out",
+                extra={
+                    "request_id": request_id,
+                    "model": model,
+                    "timeout_seconds": self._settings.ollama_timeout_seconds,
+                    "error": str(exc),
+                },
+            )
+            return OllamaTimeoutError(
+                "Ollama did not respond before the configured timeout.",
+                details=f"Timed out after {self._settings.ollama_timeout_seconds} seconds.",
+            )
 
         if isinstance(exc, ResponseError):
             status_code = int(getattr(exc, "status_code", 502) or 502)
