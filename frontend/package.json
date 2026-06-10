@@ -1,0 +1,27 @@
+{
+  "name": "reverie-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "latest",
+    "marked": "latest"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "latest",
+    "@sveltejs/kit": "latest",
+    "@sveltejs/vite-plugin-svelte": "latest",
+    "@tauri-apps/cli": "latest",
+    "svelte": "latest",
+    "svelte-check": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
