@@ -1,38 +1,16 @@
 <script lang="ts">
   import MessageInput from './MessageInput.svelte';
   import MessageList from './MessageList.svelte';
+  import { createChatMessage, createInitialMessages, createPrototypeAssistantReply } from '$lib/chat/messages';
   import type { ChatMessage } from '$lib/types/chat';
 
-  const initialMessages: ChatMessage[] = [
-    {
-      id: 'welcome-1',
-      role: 'assistant',
-      content:
-        "Good evening. I'm here with you. Tell me what kind of scene, mood, or memory you want to explore first.\n\n*For now this is a local UI prototype — the backend will be connected later.*",
-      createdAt: new Date()
-    }
-  ];
-
-  let messages = $state<ChatMessage[]>(initialMessages);
-
-  const createMessage = (role: ChatMessage['role'], content: string): ChatMessage => ({
-    id: crypto.randomUUID(),
-    role,
-    content,
-    createdAt: new Date()
-  });
+  let messages = $state<ChatMessage[]>(createInitialMessages());
 
   const handleSend = (content: string) => {
-    messages = [...messages, createMessage('user', content)];
+    messages = [...messages, createChatMessage('user', content)];
 
     window.setTimeout(() => {
-      messages = [
-        ...messages,
-        createMessage(
-          'assistant',
-          "I heard you. Backend connection comes later, but the chat flow is ready for a real local model response.\n\n**Next foundation pieces:** character state, memory retrieval, and settings."
-        )
-      ];
+      messages = [...messages, createPrototypeAssistantReply()];
     }, 300);
   };
 </script>

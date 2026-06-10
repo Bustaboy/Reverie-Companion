@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ChatWindow from '$lib/components/Chat/ChatWindow.svelte';
+  import { ChatWindow } from '$lib/components/Chat';
   import Sidebar from './Sidebar.svelte';
 </script>
 

@@ -2,19 +2,31 @@
 
 Tauri 2 + SvelteKit frontend for Reverie, an offline AI companion desktop app.
 
-## Development
+This package is intentionally UI-only right now. It provides the desktop shell, warm dark visual language, and local chat prototype that the Python backend can connect to later.
+
+## Prerequisites
+
+- Node.js 20+
+- npm 10+
+- Rust stable toolchain
+- Tauri 2 system dependencies for your operating system
+
+## Setup
 
 ```bash
+cd frontend
 npm install
-npm run tauri dev
 ```
 
-Useful checks:
+## Available scripts
 
-```bash
-npm run check
-npm run build
-```
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the SvelteKit/Vite dev server on Tauri's fixed port (`1420`). |
+| `npm run tauri dev` | Launch the full Tauri desktop app in development mode. |
+| `npm run build` | Build the SvelteKit static frontend into `build/`. |
+| `npm run preview` | Preview the built frontend in a browser. |
+| `npm run check` | Run SvelteKit sync and TypeScript/Svelte diagnostics. |
 
 ## Project structure
 
@@ -27,10 +39,13 @@ frontend/
 │   ├── app.css                 # Premium warm dark theme and responsive layout styles
 │   ├── app.html                # SvelteKit HTML shell
 │   ├── lib/
+│   │   ├── chat/               # Local chat prototype factories and seed messages
 │   │   ├── components/
 │   │   │   ├── Chat/           # Chat window, message list, bubbles, markdown, composer
 │   │   │   └── Layout/         # App shell and future-friendly sidebar
-│   │   └── types/              # Shared TypeScript types
+│   │   ├── config/             # App navigation and future feature configuration
+│   │   ├── types/              # Shared TypeScript types
+│   │   └── utils/              # UI-safe formatting and markdown helpers
 │   └── routes/                 # SvelteKit routes
 └── src-tauri/
     ├── tauri.conf.json         # Tauri 2 desktop app configuration
@@ -49,4 +64,19 @@ frontend/
 
 ## Architecture notes
 
-The frontend is intentionally small and component-driven. `Layout` components own application chrome, while `Chat` components own conversation UI. This keeps future features such as a character panel, memory viewer, Visual Novel mode, and settings pages from requiring a rewrite of the main chat shell.
+The frontend is intentionally small and component-driven:
+
+- `src/lib/components/Layout/` owns app chrome: sidebar, shell, and future high-level panels.
+- `src/lib/components/Chat/` owns conversation UI: window, message list, bubbles, markdown, and composer.
+- `src/lib/chat/` owns local prototype message factories so backend integration can replace that layer without rewriting UI components.
+- `src/lib/config/` owns navigation metadata and future feature entry points.
+- `src/lib/utils/` keeps formatting and rendering helpers out of Svelte component markup.
+
+This keeps future additions such as a character panel, memory viewer, Visual Novel mode, and settings pages from requiring a rewrite of the main chat shell.
+
+## Future extension points
+
+- Replace `src/lib/chat/messages.ts` with a store or service that calls the local backend.
+- Convert disabled sidebar destinations into routed panels when features are ready.
+- Add character/session metadata beside `ChatMessage` instead of embedding it in presentational components.
+- Add Visual Novel mode as a sibling layout surface under `src/lib/components/VisualNovel/`.

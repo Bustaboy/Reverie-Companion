@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { afterUpdate } from 'svelte';
+  import { tick } from 'svelte';
   import MessageBubble from './MessageBubble.svelte';
   import type { ChatMessage } from '$lib/types/chat';
 
@@ -10,8 +10,14 @@
   let { messages }: Props = $props();
   let listElement: HTMLDivElement;
 
-  afterUpdate(() => {
-    listElement?.scrollTo({ top: listElement.scrollHeight, behavior: 'smooth' });
+  const latestMessageId = $derived(messages[messages.length - 1]?.id);
+
+  $effect(() => {
+    latestMessageId;
+
+    void tick().then(() => {
+      listElement?.scrollTo({ top: listElement.scrollHeight, behavior: 'smooth' });
+    });
   });
 </script>
 

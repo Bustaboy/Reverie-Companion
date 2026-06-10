@@ -1,11 +1,5 @@
 <script lang="ts">
-  const navItems = [
-    { label: 'Chat', hint: 'Current session', active: true },
-    { label: 'Characters', hint: 'Coming soon', active: false },
-    { label: 'Memory', hint: 'Long-term recall', active: false },
-    { label: 'Visual Novel', hint: 'Future mode', active: false },
-    { label: 'Settings', hint: 'Privacy & models', active: false }
-  ];
+  import { navigationItems } from '$lib/config/navigation';
 </script>
 
 <aside class="sidebar" aria-label="Reverie workspace navigation">
@@ -18,7 +12,7 @@
   </div>
 
   <nav class="nav-list" aria-label="Primary navigation">
-    {#each navItems as item}
+    {#each navigationItems as item}
       <button class:active={item.active} type="button" disabled={!item.active}>
         <span>{item.label}</span>
         <small>{item.hint}</small>

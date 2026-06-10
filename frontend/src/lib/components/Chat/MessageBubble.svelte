@@ -1,5 +1,6 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
+  import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
 
   interface Props {
@@ -7,12 +8,6 @@
   }
 
   let { message }: Props = $props();
-
-  const formatTime = (date: Date) =>
-    new Intl.DateTimeFormat(undefined, {
-      hour: 'numeric',
-      minute: '2-digit'
-    }).format(date);
 </script>
 
 <article class:from-user={message.role === 'user'} class:from-assistant={message.role === 'assistant'} class="message-row">
@@ -23,7 +18,7 @@
   <div class="bubble-shell">
     <div class="message-meta">
       <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
-      <time datetime={message.createdAt.toISOString()}>{formatTime(message.createdAt)}</time>
+      <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
     </div>
 
     <div class="bubble">
