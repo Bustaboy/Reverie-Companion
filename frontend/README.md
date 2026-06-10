@@ -1,15 +1,45 @@
-# Frontend
+# Reverie Frontend
 
-Tauri 2.0 + SvelteKit frontend for Vision Companion.
+Tauri 2 + SvelteKit desktop frontend for Reverie, an offline-first AI companion experience.
 
-Modern, warm, and beginner-friendly desktop UI.
+## What is included
 
-## Planned Structure
+- Tauri 2 shell in `src-tauri/`
+- SvelteKit static frontend configured for desktop packaging
+- Warm premium dark theme
+- Future-ready app shell with a sidebar and main chat surface
+- Local-only chat state with simulated assistant replies
+- Assistant markdown rendering with sanitization
 
-- `src/` – Main SvelteKit application
-- `src/lib/components/` – Reusable UI components (chat, character cards, memory browser, etc.)
-- `src/routes/` – Pages and layouts
-- `src/stores/` – State management
-- Visual Novel mode components
+## Development
 
-This frontend communicates with the Python backend via HTTP/WebSocket.
+```bash
+npm install
+npm run tauri dev
+```
+
+Useful checks:
+
+```bash
+npm run check
+npm run build
+cd src-tauri && cargo check
+```
+
+## Structure
+
+```text
+frontend/
+├── src/
+│   ├── lib/
+│   │   ├── components/
+│   │   │   ├── Chat/       # Chat window, message list, bubbles, composer
+│   │   │   └── Layout/     # App shell and future navigation sidebar
+│   │   ├── types/          # Shared TypeScript contracts
+│   │   └── utils/          # Markdown rendering utilities
+│   ├── routes/             # SvelteKit routes
+│   └── styles/             # Global app theme
+└── src-tauri/              # Tauri 2 Rust desktop shell
+```
+
+Backend connectivity, character management, memory browsing, settings, and Visual Novel mode are intentionally left as future additions.
