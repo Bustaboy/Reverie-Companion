@@ -478,7 +478,7 @@ export class ChatService {
 
     if (error instanceof TypeError) {
       return new ChatServiceError(
-        'Could not connect to the local companion service. Make sure the backend is running on the configured address.',
+        'Could not connect to the local companion service. Make sure the backend is running on the configured address, then try again.',
         { cause: error }
       );
     }

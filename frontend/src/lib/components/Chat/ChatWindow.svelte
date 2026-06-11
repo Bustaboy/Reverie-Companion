@@ -6,6 +6,14 @@
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
   };
+
+  const statusLabel = $derived(
+    $chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'
+  );
+
+  const dismissError = () => {
+    chatStore.clearError();
+  };
 </script>
 
 <section class="chat-window" aria-label="Reverie chat">
@@ -18,10 +26,21 @@
 
     <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
       <span></span>
-      {$chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'}
+      {statusLabel}
     </div>
   </header>
 
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
+
+  {#if $chatStore.error}
+    <div class="chat-error-banner" role="status" aria-live="polite">
+      <div>
+        <strong>Reverie paused for a moment.</strong>
+        <span>{$chatStore.error}</span>
+      </div>
+      <button type="button" aria-label="Dismiss connection message" onclick={dismissError}>Close</button>
+    </div>
+  {/if}
+
   <MessageInput onSend={handleSend} disabled={$chatStore.generationState !== 'idle'} />
 </section>
