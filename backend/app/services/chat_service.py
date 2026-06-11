@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Iterable
@@ -11,7 +12,13 @@ from app.core.config import Settings
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
 from app.core.reflection import JournalEntry, ReflectionManager
-from app.models.chat import MAX_MESSAGE_LENGTH, ChatMessage, ChatRequest, ChatResponse
+from app.models.chat import (
+    MAX_MESSAGE_LENGTH,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    GrowthNotification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +64,8 @@ class ChatService:
     _reflection_lock: asyncio.Lock | None = None
     _last_reflection_started_at: float = 0.0
     _inflight_reflection_tasks: set[asyncio.Task[None]] = set()
+    _last_growth_notification_at: float = 0.0
+    _emitted_growth_notification_ids: set[str] = set()
 
     def __init__(
         self,
@@ -76,8 +85,15 @@ class ChatService:
     ) -> ChatResponse:
         """Run a non-streaming chat completion with optional continuity context."""
 
-        prepared_request = await self._prepare_request(request, request_id=request_id)
-        return await self._ollama_client.chat(prepared_request, request_id=request_id)
+        prepared_request, growth_notification = await self._prepare_request_with_growth(
+            request, request_id=request_id
+        )
+        response = await self._ollama_client.chat(
+            prepared_request, request_id=request_id
+        )
+        if growth_notification is None:
+            return response
+        return response.model_copy(update={"growth_notification": growth_notification})
 
     async def stream_chat(
         self,
@@ -87,8 +103,14 @@ class ChatService:
     ) -> AsyncIterator[str]:
         """Return an Ollama SSE stream with optional continuity context injected."""
 
-        prepared_request = await self._prepare_request(request, request_id=request_id)
-        return self._ollama_client.stream_chat(prepared_request, request_id=request_id)
+        prepared_request, growth_notification = await self._prepare_request_with_growth(
+            request, request_id=request_id
+        )
+        return self._stream_with_growth_notification(
+            prepared_request,
+            growth_notification=growth_notification,
+            request_id=request_id,
+        )
 
     async def _prepare_request(
         self,
@@ -98,12 +120,29 @@ class ChatService:
     ) -> ChatRequest:
         """Build the model-facing request while keeping route handlers thin."""
 
+        prepared_request, _growth_notification = (
+            await self._prepare_request_with_growth(request, request_id=request_id)
+        )
+        return prepared_request
+
+    async def _prepare_request_with_growth(
+        self,
+        request: ChatRequest,
+        *,
+        request_id: str | None,
+    ) -> tuple[ChatRequest, GrowthNotification | None]:
+        """Build a model request and choose at most one optional growth notice."""
+
         # The prompt uses only reflections that already exist. Any new reflection
         # produced from this request is queued below and can influence later turns,
         # which keeps the current chat response from waiting on journaling work.
-        memory_context, reflection_context = await asyncio.gather(
+        memory_context, reflection_entries = await asyncio.gather(
             self._retrieve_memory_context(request, request_id=request_id),
-            self._retrieve_reflection_context(request, request_id=request_id),
+            self._retrieve_reflection_entries(request, request_id=request_id),
+        )
+        reflection_context = self._reflection_context_from_entries(reflection_entries)
+        growth_notification = self._select_growth_notification(
+            reflection_entries, request_id=request_id
         )
         self._schedule_reflection_if_due(request, request_id=request_id)
 
@@ -126,7 +165,7 @@ class ChatService:
             )
 
         if not context_messages:
-            return request
+            return request, growth_notification
 
         enriched_messages = self._inject_context_after_system_messages(
             request.messages, context_messages
@@ -141,7 +180,10 @@ class ChatService:
                 "message_count": len(enriched_messages),
             },
         )
-        return request.model_copy(update={"messages": enriched_messages})
+        return (
+            request.model_copy(update={"messages": enriched_messages}),
+            growth_notification,
+        )
 
     async def _retrieve_memory_context(
         self,
@@ -208,13 +250,13 @@ class ChatService:
         )
         return capped_context
 
-    async def _retrieve_reflection_context(
+    async def _retrieve_reflection_entries(
         self,
         request: ChatRequest,
         *,
         request_id: str | None,
-    ) -> str:
-        """Read compact journal insights for the prompt without doing heavy search."""
+    ) -> list[JournalEntry]:
+        """Read compact journal entries for prompt context and growth notices."""
 
         if not self._settings.reflection_enabled:
             logger.debug(
@@ -225,7 +267,7 @@ class ChatService:
                     "chat_continues": True,
                 },
             )
-            return ""
+            return []
 
         if self._reflection_manager is None:
             logger.debug(
@@ -236,7 +278,7 @@ class ChatService:
                     "chat_continues": True,
                 },
             )
-            return ""
+            return []
 
         query = self._build_memory_query(request)
         try:
@@ -253,7 +295,7 @@ class ChatService:
                     "chat_continues": True,
                 },
             )
-            return ""
+            return []
 
         selected_entries = self._select_reflection_entries(entries, query)
         if not selected_entries:
@@ -261,6 +303,22 @@ class ChatService:
                 "No reflection journal entries selected for chat prompt",
                 extra={"request_id": request_id, "available_entry_count": len(entries)},
             )
+            return []
+
+        logger.info(
+            "Retrieved reflection entries for chat prompt",
+            extra={
+                "request_id": request_id,
+                "available_entry_count": len(entries),
+                "selected_entry_count": len(selected_entries),
+            },
+        )
+        return selected_entries
+
+    def _reflection_context_from_entries(
+        self, selected_entries: list[JournalEntry]
+    ) -> str:
+        if not selected_entries:
             return ""
 
         context = self._build_reflection_context(selected_entries)
@@ -268,18 +326,7 @@ class ChatService:
             self._settings.reflection_context_max_chars,
             self._reflection_message_context_budget(),
         )
-        capped_context = context[:max_context_chars].rstrip()
-        logger.info(
-            "Retrieved reflection context for chat prompt",
-            extra={
-                "request_id": request_id,
-                "entry_count": len(selected_entries),
-                "reflection_context_chars": len(capped_context),
-                "truncated": len(capped_context) < len(context),
-                "max_context_chars": max_context_chars,
-            },
-        )
-        return capped_context
+        return context[:max_context_chars].rstrip()
 
     def _schedule_reflection_if_due(
         self,
@@ -395,10 +442,123 @@ class ChatService:
             },
         )
 
+    async def _stream_with_growth_notification(
+        self,
+        request: ChatRequest,
+        *,
+        growth_notification: GrowthNotification | None,
+        request_id: str | None,
+    ) -> AsyncIterator[str]:
+        """Pass through Ollama SSE frames, adding growth metadata to done."""
+
+        async for frame in self._ollama_client.stream_chat(
+            request, request_id=request_id
+        ):
+            yield self._inject_growth_notification_into_done_sse(
+                frame, growth_notification
+            )
+
+    def _inject_growth_notification_into_done_sse(
+        self, frame: str, growth_notification: GrowthNotification | None
+    ) -> str:
+        if growth_notification is None or "event: done" not in frame:
+            return frame
+
+        data_lines: list[str] = []
+        other_lines: list[str] = []
+        for line in frame.splitlines():
+            if line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").strip())
+            else:
+                other_lines.append(line)
+
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            payload = {"done": True}
+
+        if not isinstance(payload, dict):
+            payload = {"done": True}
+        payload["growth_notification"] = growth_notification.model_dump()
+        return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
+
+    def _select_growth_notification(
+        self, entries: list[JournalEntry], *, request_id: str | None
+    ) -> GrowthNotification | None:
+        """Choose a rare, dismissible growth note from existing journal entries."""
+
+        if not self._settings.growth_notifications_enabled:
+            return None
+
+        now = time.monotonic()
+        elapsed = now - type(self)._last_growth_notification_at
+        min_interval = self._settings.growth_notification_min_interval_seconds
+        if elapsed < min_interval:
+            logger.debug(
+                "Growth notification skipped by interval throttle",
+                extra={
+                    "request_id": request_id,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "min_interval_seconds": min_interval,
+                },
+            )
+            return None
+
+        for entry in entries:
+            raw_notice = entry.get("growth_notification")
+            if raw_notice is None and hasattr(
+                self._reflection_manager, "build_growth_notification"
+            ):
+                try:
+                    raw_notice = self._reflection_manager.build_growth_notification(
+                        entry
+                    )
+                except Exception as exc:  # pragma: no cover - defensive graceful path.
+                    logger.debug(
+                        "Growth notification synthesis skipped",
+                        extra={"request_id": request_id, "error": str(exc)},
+                    )
+                    continue
+
+            if not isinstance(raw_notice, dict):
+                continue
+            notification_id = str(raw_notice.get("id") or "")
+            if (
+                not notification_id
+                or notification_id in type(self)._emitted_growth_notification_ids
+            ):
+                continue
+
+            try:
+                notification = GrowthNotification.model_validate(raw_notice)
+            except Exception as exc:
+                logger.debug(
+                    "Growth notification failed validation",
+                    extra={"request_id": request_id, "error": str(exc)},
+                )
+                continue
+
+            type(self)._last_growth_notification_at = now
+            type(self)._emitted_growth_notification_ids.add(notification.id)
+            logger.info(
+                "Selected growth notification for chat response",
+                extra={
+                    "request_id": request_id,
+                    "notification_id": notification.id,
+                    "journal_entry_id": notification.journal_entry_id,
+                    "theme": notification.theme,
+                },
+            )
+            return notification
+
+        return None
+
     def _reflection_trigger_reason(self, request: ChatRequest) -> str | None:
         """Choose low-cost, natural reflection moments instead of every turn."""
 
-        user_messages = [message for message in request.messages if message.role == "user"]
+        user_messages = [
+            message for message in request.messages if message.role == "user"
+        ]
         if not user_messages:
             return None
 
@@ -424,7 +584,9 @@ class ChatService:
     def _user_message_count(self, request: ChatRequest) -> int:
         return sum(1 for message in request.messages if message.role == "user")
 
-    def _reflection_history_window(self, messages: list[ChatMessage]) -> list[dict[str, str]]:
+    def _reflection_history_window(
+        self, messages: list[ChatMessage]
+    ) -> list[dict[str, str]]:
         """Return a small evidence window for the journal writer."""
 
         window_size = max(1, self._settings.reflection_history_message_limit)
@@ -481,7 +643,8 @@ class ChatService:
             insight_summaries = [
                 str(insight.get("summary") or "").strip()
                 for insight in entry.get("insights", [])[:2]
-                if isinstance(insight, dict) and str(insight.get("summary") or "").strip()
+                if isinstance(insight, dict)
+                and str(insight.get("summary") or "").strip()
             ]
             for insight_summary in insight_summaries:
                 lines.append(f"  Insight: {insight_summary}")

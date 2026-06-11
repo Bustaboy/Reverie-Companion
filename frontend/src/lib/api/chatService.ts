@@ -1,5 +1,5 @@
 import { dev } from '$app/environment';
-import type { MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -43,6 +43,8 @@ export interface ChatResponse {
   done: boolean;
   /** Optional normalized memory context returned by newer backends. */
   memoryContext?: MemoryContext;
+  /** Optional subtle note that a journaled growth signal is available. */
+  growthNotification?: GrowthNotification;
 }
 
 export interface ChatStreamOptions {
@@ -56,6 +58,7 @@ export interface ChatStreamMessageEvent {
   model?: string;
   requestId?: string;
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
 
 export interface ChatStreamMemoryEvent {
@@ -76,6 +79,7 @@ export interface ChatStreamDoneEvent {
   done: boolean;
   requestId?: string;
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
 
 export type ChatStreamEvent =
@@ -106,7 +110,12 @@ interface RawSseEvent {
   data: string;
 }
 
-interface BackendMemoryContextBody {
+interface BackendGrowthNotificationBody {
+  growth_notification?: unknown;
+  growthNotification?: unknown;
+}
+
+interface BackendMemoryContextBody extends BackendGrowthNotificationBody {
   memory_context?: unknown;
   memoryContext?: unknown;
   memory?: unknown;
@@ -353,7 +362,8 @@ export class ChatService {
     const body = responseBody as ChatResponse & BackendMemoryContextBody;
     return {
       ...body,
-      memoryContext: this.extractMemoryContext(body)
+      memoryContext: this.extractMemoryContext(body),
+      growthNotification: this.extractGrowthNotification(body)
     };
   }
 
@@ -456,7 +466,8 @@ export class ChatService {
         content: typeof body.content === 'string' ? body.content : '',
         model: typeof body.model === 'string' ? body.model : undefined,
         requestId: this.readRequestId(body),
-        memoryContext: this.extractMemoryContext(body)
+        memoryContext: this.extractMemoryContext(body),
+        growthNotification: this.extractGrowthNotification(body)
       };
     }
 
@@ -480,7 +491,8 @@ export class ChatService {
         event: 'done',
         done: typeof body.done === 'boolean' ? body.done : true,
         requestId: this.readRequestId(body),
-        memoryContext: this.extractMemoryContext(body)
+        memoryContext: this.extractMemoryContext(body),
+        growthNotification: this.extractGrowthNotification(body)
       };
     }
 
@@ -495,6 +507,31 @@ export class ChatService {
       event: 'memory',
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
+    };
+  }
+
+  private extractGrowthNotification(body: BackendGrowthNotificationBody | Record<string, unknown>): GrowthNotification | undefined {
+    const raw = body.growth_notification ?? body.growthNotification;
+    if (!this.isRecord(raw)) {
+      return undefined;
+    }
+
+    const id = this.normalizeText(raw.id);
+    const journalEntryId = this.normalizeText(raw.journal_entry_id ?? raw.journalEntryId);
+    const message = this.normalizeText(raw.message);
+    if (!id || !journalEntryId || !message) {
+      return undefined;
+    }
+
+    return {
+      id,
+      journalEntryId,
+      createdAt: this.parseDate(raw.created_at ?? raw.createdAt),
+      message,
+      why: this.normalizeText(raw.why),
+      theme: this.normalizeText(raw.theme),
+      style: this.normalizeText(raw.style),
+      controls: Array.isArray(raw.controls) ? raw.controls.filter((item): item is string => typeof item === 'string') : undefined
     };
   }
 
@@ -620,6 +657,17 @@ export class ChatService {
     }
 
     return text.length > 72 ? `${text.slice(0, 69).trimEnd()}…` : text;
+  }
+
+  private parseDate(value: unknown): Date {
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return new Date();
   }
 
   private normalizeText(value: unknown): string | undefined {

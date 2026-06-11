@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     reflection_context_entry_limit: int = Field(default=5, gt=0, le=20)
     reflection_context_max_chars: int = Field(default=1600, gt=200, le=8000)
 
+    # Growth notifications are rare, privacy-safe UI whispers surfaced from
+    # journal entries on later turns. They do not trigger extra model calls.
+    growth_notifications_enabled: bool = True
+    growth_notification_min_interval_seconds: float = Field(default=900.0, ge=0.0)
+    growth_notification_min_confidence: float = Field(default=0.62, ge=0.0, le=1.0)
+    growth_notification_min_evidence_count: int = Field(default=2, gt=0, le=20)
+    growth_notification_style: str = "whisper"
+
 
 @lru_cache
 def get_settings() -> Settings:

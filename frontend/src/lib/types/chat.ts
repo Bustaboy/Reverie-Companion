@@ -22,6 +22,17 @@ export interface MemoryContext {
   items?: MemoryContextItem[];
 }
 
+export interface GrowthNotification {
+  id: string;
+  journalEntryId: string;
+  createdAt: Date;
+  message: string;
+  why?: string;
+  theme?: string;
+  style?: 'whisper' | string;
+  controls?: string[];
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
