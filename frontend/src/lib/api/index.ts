@@ -16,3 +16,6 @@ export type { MemoryContext, MemoryContextItem, MemoryContextStatus } from '$lib
 
 export { JournalService, JournalServiceError, journalService, type JournalServiceOptions } from './journalService';
 export type { JournalEntriesResponse, JournalEntry, JournalEntryMetadata, ReflectionInsight } from '$lib/types/journal';
+
+export { GrowthService, GrowthServiceError, growthService, type GrowthServiceOptions } from './growthService';
+export type { LoRATrainingExample, LoRATrainingJob, PersonalLoRACounts, PersonalLoRASettings, PersonalLoRAStatusResponse } from '$lib/types/growth';
