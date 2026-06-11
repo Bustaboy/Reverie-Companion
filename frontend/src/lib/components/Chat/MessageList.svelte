@@ -9,30 +9,67 @@
     generationState: ChatGenerationState;
   }
 
+  const STICKY_SCROLL_THRESHOLD_PX = 140;
+
   let { messages, generationState }: Props = $props();
   let listElement: HTMLElement;
+  let shouldStickToBottom = true;
+  let pendingScrollFrame: number | null = null;
 
   const scrollSignature = $derived(
     messages.map((message) => `${message.id}:${message.content.length}:${message.status ?? 'complete'}`).join('|')
   );
 
+  const updateStickyScrollPreference = () => {
+    if (!listElement) return;
+
+    const distanceFromBottom = listElement.scrollHeight - listElement.scrollTop - listElement.clientHeight;
+    shouldStickToBottom = distanceFromBottom < STICKY_SCROLL_THRESHOLD_PX;
+  };
+
+  const scrollToConversationEnd = async (behavior: ScrollBehavior = 'smooth') => {
+    await tick();
+
+    if (!listElement || !shouldStickToBottom) return;
+
+    if (pendingScrollFrame) {
+      cancelAnimationFrame(pendingScrollFrame);
+    }
+
+    // Streaming can produce many small DOM updates. Coalescing scroll work into
+    // one animation frame keeps token rendering smooth and avoids scroll jitter.
+    pendingScrollFrame = requestAnimationFrame(() => {
+      listElement?.scrollTo({ top: listElement.scrollHeight, behavior });
+      pendingScrollFrame = null;
+    });
+  };
+
   $effect(() => {
     scrollSignature;
 
-    void tick().then(() => {
-      listElement?.scrollTo({ top: listElement.scrollHeight, behavior: 'smooth' });
-    });
+    void scrollToConversationEnd(generationState === 'streaming' ? 'auto' : 'smooth');
+
+    return () => {
+      if (pendingScrollFrame) {
+        cancelAnimationFrame(pendingScrollFrame);
+        pendingScrollFrame = null;
+      }
+    };
   });
 </script>
 
-<section bind:this={listElement} class="message-list" aria-label="Conversation messages">
+<section bind:this={listElement} class="message-list" aria-label="Conversation messages" onscroll={updateStickyScrollPreference}>
   <div class="message-list-inner">
     {#each messages as message (message.id)}
       <MessageBubble {message} />
     {/each}
 
     {#if generationState === 'thinking'}
-      <p class="thinking-state" aria-live="polite">Reverie is thinking<span aria-hidden="true">...</span></p>
+      <div class="thinking-state" aria-live="polite" aria-label="Reverie is thinking">
+        <span class="thinking-orb" aria-hidden="true"></span>
+        <span>Reverie is gathering her thoughts</span>
+        <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
     {/if}
   </div>
 </section>

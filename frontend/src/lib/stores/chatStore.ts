@@ -22,6 +22,9 @@ const createAssistantPlaceholder = (): ChatMessage => ({
   status: 'streaming'
 });
 
+const LOCAL_BACKEND_HELP =
+  "I'm still here, but I couldn't reach the local companion service. Start the backend when you're ready and we can continue.";
+
 const toServiceHistory = (messages: ChatMessage[]): Message[] =>
   messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -71,9 +74,7 @@ function createChatStore() {
   const failAssistantMessage = (assistantMessageId: string, errorMessage: string) => {
     store.update((state) => {
       const assistantMessage = state.messages.find((message) => message.id === assistantMessageId);
-      const fallbackContent =
-        assistantMessage?.content.trim() ||
-        "I'm sorry, I couldn't reach the local companion service right now. Please make sure the backend is running and try again.";
+      const fallbackContent = assistantMessage?.content.trim() || LOCAL_BACKEND_HELP;
 
       return {
         ...state,
@@ -98,6 +99,8 @@ function createChatStore() {
         return;
       }
 
+      // Capture history before appending the optimistic messages so the backend
+      // receives exactly the conversation the user saw before pressing Send.
       const history = toServiceHistory(currentState.messages);
       const userMessage = createChatMessage('user', trimmedContent);
       const assistantMessage = createAssistantPlaceholder();
@@ -116,6 +119,8 @@ function createChatStore() {
           if (event.event === 'message') {
             if (!event.content) continue;
 
+            // Append token chunks in-place by message id so Svelte only needs to
+            // refresh the active assistant bubble during a stream.
             store.update((state) => ({
               ...state,
               generationState: 'streaming',

@@ -6,6 +6,10 @@
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
   };
+
+  const dismissError = () => {
+    chatStore.clearError();
+  };
 </script>
 
 <section class="chat-window" aria-label="Reverie chat">
@@ -23,5 +27,16 @@
   </header>
 
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
+
+  {#if $chatStore.error}
+    <div class="chat-error-banner" role="status" aria-live="polite">
+      <div>
+        <strong>Connection softened, not lost.</strong>
+        <span>{$chatStore.error}</span>
+      </div>
+      <button type="button" aria-label="Dismiss connection message" onclick={dismissError}>Dismiss</button>
+    </div>
+  {/if}
+
   <MessageInput onSend={handleSend} disabled={$chatStore.generationState !== 'idle'} />
 </section>
