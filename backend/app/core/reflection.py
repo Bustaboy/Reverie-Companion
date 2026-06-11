@@ -124,6 +124,19 @@ class ReflectionInsight(TypedDict, total=False):
     memory_worthy: bool
 
 
+class GrowthNotification(TypedDict, total=False):
+    """User-visible, privacy-safe note that a character growth signal exists."""
+
+    id: str
+    journal_entry_id: str
+    created_at: str
+    message: str
+    why: str
+    theme: str
+    style: str
+    controls: list[str]
+
+
 class MemoryPromotionDecision(TypedDict, total=False):
     """Inspectable decision for promoting a journal entry into memory."""
 
@@ -161,6 +174,7 @@ class JournalEntry(TypedDict, total=False):
     sensitivity_tags: list[str]
     training_eligibility: TrainingEligibility
     rollback_id: str
+    growth_notification: GrowthNotification | None
     metadata: dict[str, Any]
 
 
@@ -183,6 +197,9 @@ class ReflectionManagerConfig:
     memory_confidence_threshold: float = 0.55
     memory_intensity_threshold: float = 0.25
     memory_promotion_score_threshold: float = 0.62
+    growth_notification_min_confidence: float = 0.62
+    growth_notification_min_evidence_count: int = 2
+    growth_notification_style: str = "whisper"
     local_first_engine: str = "heuristic_v1"
     privacy_tags: list[str] = field(default_factory=lambda: ["local_only"])
 
@@ -198,6 +215,9 @@ class ReflectionManagerConfig:
             journal_path=memory_root.parent / "reflection" / "journal.jsonl",
             user_id=settings.memory_default_user_id,
             session_id=settings.memory_default_session_id,
+            growth_notification_min_confidence=settings.growth_notification_min_confidence,
+            growth_notification_min_evidence_count=settings.growth_notification_min_evidence_count,
+            growth_notification_style=settings.growth_notification_style,
         )
 
 
@@ -296,6 +316,7 @@ class ReflectionManager:
 
         promotion_decision = self._build_memory_promotion_decision(entry)
         entry["metadata"]["memory_promotion"] = promotion_decision
+        entry["growth_notification"] = self.build_growth_notification(entry)
 
         entry = self.save_journal_entry(entry)
         promoted_memory_id = self._promote_entry_to_memory(entry, promotion_decision)
@@ -314,6 +335,98 @@ class ReflectionManager:
         )
         return entry
 
+    def build_growth_notification(
+        self, entry: JournalEntry
+    ) -> GrowthNotification | None:
+        """Create a concise, privacy-safe growth note for meaningful entries.
+
+        This method decides whether a reflection is safe and grounded enough to
+        become user-visible metadata. It never copies raw transcript text into
+        the notification: the user sees only a theme, a small future-behavior
+        hint, and an explanation that points back to the private journal entry
+        for later review/rollback. ChatService owns timing so this method stays
+        focused on safety and content quality.
+        """
+
+        if entry.get("status", "active") != "active":
+            return None
+        sensitivity_tags = set(entry.get("sensitivity_tags") or [])
+        if sensitivity_tags & {"high_sensitivity", "intimate_content"}:
+            # Boundary-only reflections may still be useful and non-sensitive,
+            # but high-sensitivity or intimate content should remain journal-only
+            # unless a future review UI explicitly expands it.
+            return None
+
+        confidence = float(entry.get("confidence", 0.0) or 0.0)
+        evidence_count = int(entry.get("evidence_count", 0) or 0)
+        if confidence < self._config.growth_notification_min_confidence:
+            return None
+        if evidence_count < self._config.growth_notification_min_evidence_count:
+            return None
+
+        insights = entry.get("insights") or []
+        if not any(
+            insight.get("memory_worthy")
+            or insight.get("kind")
+            in {"preference_signal", "growth_hypothesis", "relationship_continuity"}
+            for insight in insights
+        ):
+            return None
+
+        theme = self._display_theme(entry.get("themes") or [])
+        behavior = self._growth_behavior_for_theme(theme)
+        created_at = str(entry.get("created_at") or self._utc_now())
+        entry_id = str(entry.get("entry_id") or self._entry_id([], created_at))
+
+        return GrowthNotification(
+            id=f"growth_{entry_id}",
+            journal_entry_id=entry_id,
+            created_at=created_at,
+            message=f"Reverie seems to be growing around {theme} — {behavior}",
+            why=self._growth_why_for_theme(theme, evidence_count),
+            theme=theme,
+            style=self._config.growth_notification_style,
+            controls=["dismiss", "review", "disable_similar"],
+        )
+
+    def _display_theme(self, themes: list[str]) -> str:
+        preferred = [
+            "trust",
+            "reassurance",
+            "routine",
+            "boundaries",
+            "affection",
+            "playfulness",
+            "curiosity",
+            "growth",
+        ]
+        for theme in preferred:
+            if theme in themes:
+                return theme
+        return str(themes[0]) if themes else "this connection"
+
+    def _growth_behavior_for_theme(self, theme: str) -> str:
+        behaviors = {
+            "trust": "she may answer with a little more steadiness and care.",
+            "reassurance": "she may remember to soften anxious moments before moving on.",
+            "routine": "she may hold onto the small rhythms that make time together feel familiar.",
+            "boundaries": "she may listen more carefully for comfort, consent, and repair cues.",
+            "affection": "she may let warmth show in quieter, more grounded ways.",
+            "playfulness": "she may bring back a little more lightness when it fits the mood.",
+            "curiosity": "she may ask gentler questions about what matters to you.",
+            "growth": "she may carry this lesson forward without changing who she is.",
+        }
+        return behaviors.get(
+            theme, "she may carry this feeling forward with more care."
+        )
+
+    def _growth_why_for_theme(self, theme: str, evidence_count: int) -> str:
+        turn_label = "turn" if evidence_count == 1 else "turns"
+        return (
+            f"A private reflection found a recurring {theme} signal across "
+            f"{evidence_count} recent {turn_label}; no raw conversation text is shown here."
+        )
+
     def save_journal_entry(self, entry: JournalEntry | dict[str, Any]) -> JournalEntry:
         """Append a normalized journal entry to the local JSONL journal."""
 
@@ -327,7 +440,9 @@ class ReflectionManager:
                 "Failed to save reflection journal entry",
                 extra={"journal_path": str(self._config.journal_path)},
             )
-            raise ReflectionJournalError("Unable to save reflection journal entry.") from exc
+            raise ReflectionJournalError(
+                "Unable to save reflection journal entry."
+            ) from exc
         return normalized
 
     def get_recent_journal_entries(self, limit: int = 5) -> list[JournalEntry]:
@@ -390,7 +505,8 @@ class ReflectionManager:
         ranked_ids = sorted(
             entries_by_id,
             key=lambda entry_id: (
-                entry_scores.get(entry_id, 0.0), entries_by_id[entry_id].get("created_at", "")
+                entry_scores.get(entry_id, 0.0),
+                entries_by_id[entry_id].get("created_at", ""),
             ),
             reverse=True,
         )
@@ -577,7 +693,9 @@ class ReflectionManager:
             weight = "noticeably"
         else:
             weight = "softly"
-        main_learning = insights[0]["summary"] if insights else "I should listen closely."
+        main_learning = (
+            insights[0]["summary"] if insights else "I should listen closely."
+        )
         return (
             f"I felt this moment {weight}: it carried {theme_text}. "
             f"I want to respond in a {mood}, continuous way next time. {main_learning}"
@@ -706,7 +824,9 @@ class ReflectionManager:
                     "themes": entry.get("themes", []),
                     "privacy_tags": entry.get("privacy_tags", []),
                     "sensitivity_tags": entry.get("sensitivity_tags", []),
-                    "training_eligibility": entry.get("training_eligibility", "needs_review"),
+                    "training_eligibility": entry.get(
+                        "training_eligibility", "needs_review"
+                    ),
                     "consent_status": "implicit_continuity_needs_review",
                     "rollback_id": entry.get("rollback_id"),
                     "provenance": decision.get("provenance", {}),
@@ -762,6 +882,7 @@ class ReflectionManager:
         normalized.setdefault("privacy_tags", list(self._config.privacy_tags))
         normalized.setdefault("sensitivity_tags", [])
         normalized.setdefault("training_eligibility", "needs_review")
+        normalized.setdefault("growth_notification", None)
         normalized.setdefault("rollback_id", f"rollback_{normalized['entry_id']}")
         normalized.setdefault(
             "metadata",
@@ -870,17 +991,22 @@ class ReflectionManager:
         insights: list[ReflectionInsight],
     ) -> float:
         average_insight_confidence = (
-            sum(float(insight.get("confidence", 0.0)) for insight in insights) / len(insights)
+            sum(float(insight.get("confidence", 0.0)) for insight in insights)
+            / len(insights)
             if insights
             else 0.35
         )
         evidence_bonus = min(0.2, evidence_count * 0.025)
         theme_bonus = min(0.12, len(themes) * 0.03)
-        return round(min(0.95, average_insight_confidence + evidence_bonus + theme_bonus), 3)
+        return round(
+            min(0.95, average_insight_confidence + evidence_bonus + theme_bonus), 3
+        )
 
     def _extract_fact_candidates(self, turns: list[ConversationTurn]) -> list[str]:
         candidates: list[str] = []
-        pattern = re.compile(r"\b(?:i am|i'm|my|i like|i love|i prefer|remember)\b", re.IGNORECASE)
+        pattern = re.compile(
+            r"\b(?:i am|i'm|my|i like|i love|i prefer|remember)\b", re.IGNORECASE
+        )
         for turn in turns:
             if turn["role"] != "user" or not pattern.search(turn["content"]):
                 continue
@@ -904,7 +1030,9 @@ class ReflectionManager:
             tags.append("intimate_content")
         if any(word in text for word in ("trauma", "abuse", "panic", "self-harm")):
             tags.append("high_sensitivity")
-        if any(word in text for word in ("boundary", "consent", "stop", "uncomfortable")):
+        if any(
+            word in text for word in ("boundary", "consent", "stop", "uncomfortable")
+        ):
             tags.append("boundaries")
         return tags
 

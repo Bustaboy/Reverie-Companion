@@ -79,6 +79,12 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
             self.assertEqual(metadata["rollback_id"], entry["rollback_id"])
             self.assertEqual(metadata["privacy_tags"], ["local_only"])
             self.assertEqual(metadata["training_eligibility"], "needs_review")
+            self.assertIsNotNone(entry.get("growth_notification"))
+            growth_notification = entry["growth_notification"]
+            self.assertIn("Reverie seems to be growing", growth_notification["message"])
+            self.assertIn("no raw conversation text", growth_notification["why"])
+            self.assertEqual(growth_notification["journal_entry_id"], entry["entry_id"])
+            self.assertIn("dismiss", growth_notification["controls"])
             self.assertGreaterEqual(
                 metadata["promotion_score"],
                 entry["metadata"]["memory_promotion"]["threshold"],
@@ -110,7 +116,9 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
 
             relevant = manager.get_relevant_reflections("trust and reassurance")
 
-            self.assertEqual([item["entry_id"] for item in relevant], [entry["entry_id"]])
+            self.assertEqual(
+                [item["entry_id"] for item in relevant], [entry["entry_id"]]
+            )
 
     def test_memory_promotion_failure_does_not_discard_journal(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -130,7 +138,9 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
             self.assertEqual(entry["linked_memory_ids"], [])
             self.assertEqual(len(manager.get_recent_journal_entries(limit=5)), 1)
             self.assertTrue(entry["metadata"]["memory_promotion"]["should_promote"])
-            self.assertEqual(self._journal_lines(temp_dir)[0]["entry_id"], entry["entry_id"])
+            self.assertEqual(
+                self._journal_lines(temp_dir)[0]["entry_id"], entry["entry_id"]
+            )
 
     def _manager(self, temp_dir: str, fake_memory: FakeMemory) -> ReflectionManager:
         return ReflectionManager(

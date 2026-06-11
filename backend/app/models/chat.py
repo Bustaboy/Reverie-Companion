@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 MessageRole = Literal["system", "user", "assistant"]
 MAX_MESSAGE_LENGTH = 8_000
 MAX_MODEL_NAME_LENGTH = 128
@@ -49,7 +48,9 @@ class ChatRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     num_predict: int | None = Field(default=None, gt=0)
-    stream: bool = Field(default=True, description="Whether to stream tokens using Server-Sent Events.")
+    stream: bool = Field(
+        default=True, description="Whether to stream tokens using Server-Sent Events."
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -58,7 +59,9 @@ class ChatRequest(BaseModel):
 
         if isinstance(data, dict) and "messages" not in data and "message" in data:
             normalized = dict(data)
-            normalized["messages"] = [{"role": "user", "content": normalized.pop("message")}]
+            normalized["messages"] = [
+                {"role": "user", "content": normalized.pop("message")}
+            ]
             return normalized
         return data
 
@@ -72,9 +75,25 @@ class ChatRequest(BaseModel):
         return value
 
 
+class GrowthNotification(BaseModel):
+    """Subtle, user-visible note that a grounded growth signal was recorded."""
+
+    id: str
+    journal_entry_id: str
+    created_at: str
+    message: str
+    why: str | None = None
+    theme: str | None = None
+    style: str = "whisper"
+    controls: list[str] = Field(
+        default_factory=lambda: ["dismiss", "review", "disable_similar"]
+    )
+
+
 class ChatResponse(BaseModel):
     """Non-streaming chat completion response."""
 
     model: str
     message: ChatMessage
     done: bool = True
+    growth_notification: GrowthNotification | None = None

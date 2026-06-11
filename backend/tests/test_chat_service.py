@@ -56,7 +56,9 @@ class FakeReflectionManager:
             raise self.recent_failure
         return self.entries[:limit]
 
-    def trigger_reflection(self, conversation_history: list[dict[str, str]]) -> dict[str, Any]:
+    def trigger_reflection(
+        self, conversation_history: list[dict[str, str]]
+    ) -> dict[str, Any]:
         if self.trigger_failure:
             raise self.trigger_failure
         self.triggered_histories.append(conversation_history)
@@ -72,6 +74,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
         ChatService._reflection_lock = None
         ChatService._last_reflection_started_at = 0.0
         ChatService._inflight_reflection_tasks.clear()
+        ChatService._last_growth_notification_at = 0.0
+        ChatService._emitted_growth_notification_ids.clear()
 
     def test_chat_injects_memory_and_reflection_context_then_triggers_background_reflection(
         self,
@@ -89,11 +93,23 @@ class ChatServiceReflectionTests(unittest.TestCase):
                     "character_summary": "I noticed reassurance helps the user feel safe.",
                     "insights": [
                         {
-                            "summary": "Use gentle reassurance when the user feels anxious."
+                            "summary": "Use gentle reassurance when the user feels anxious.",
+                            "memory_worthy": True,
                         }
                     ],
                     "themes": ["trust"],
                     "confidence": 0.8,
+                    "evidence_count": 2,
+                    "growth_notification": {
+                        "id": "growth_journal_1",
+                        "journal_entry_id": "journal_1",
+                        "created_at": "2026-06-11T00:00:00Z",
+                        "message": "Reverie seems steadier lately.",
+                        "why": "A private reflection noticed a trust pattern.",
+                        "theme": "trust",
+                        "style": "whisper",
+                        "controls": ["dismiss", "review", "disable_similar"],
+                    },
                 }
             ]
         )
@@ -101,6 +117,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
             settings=Settings(
                 reflection_min_interval_seconds=0,
                 reflection_user_message_interval=6,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
             ),
             ollama_client=ollama,  # type: ignore[arg-type]
             memory_manager=memory,  # type: ignore[arg-type]
@@ -121,11 +139,18 @@ class ChatServiceReflectionTests(unittest.TestCase):
         await asyncio.gather(*ChatService._inflight_reflection_tasks)
 
         self.assertEqual(response.message.content, "I hear you.")
+        self.assertIsNotNone(response.growth_notification)
+        self.assertEqual(response.growth_notification.id, "growth_journal_1")
+        self.assertEqual(
+            response.growth_notification.message, "Reverie seems steadier lately."
+        )
         prepared_messages = ollama.requests[0].messages
         self.assertEqual(prepared_messages[0].content, "You are Reverie.")
         self.assertIn("Long-term memory context", prepared_messages[1].content)
         self.assertIn("User prefers gentle reassurance", prepared_messages[1].content)
-        self.assertIn("Private reflection journal context", prepared_messages[2].content)
+        self.assertIn(
+            "Private reflection journal context", prepared_messages[2].content
+        )
         self.assertIn("tentative, lower-priority", prepared_messages[2].content)
         self.assertIn("not canon rewrites", prepared_messages[2].content)
         self.assertIn("reassurance helps the user", prepared_messages[2].content)
@@ -162,7 +187,9 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertEqual(len(ollama.requests), 1)
         self.assertEqual(ollama.requests[0].messages, request.messages)
 
-    def test_reflection_disabled_skips_journal_context_and_background_work(self) -> None:
+    def test_reflection_disabled_skips_journal_context_and_background_work(
+        self,
+    ) -> None:
         asyncio.run(self._assert_reflection_disabled_skips_work())
 
     async def _assert_reflection_disabled_skips_work(self) -> None:
@@ -191,6 +218,136 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
         self.assertEqual(ollama.requests[0].messages, request.messages)
         self.assertEqual(reflection.triggered_histories, [])
+
+    def test_growth_notifications_wait_for_message_count_and_interval(self) -> None:
+        asyncio.run(self._assert_growth_notifications_wait_for_count_and_interval())
+
+    async def _assert_growth_notifications_wait_for_count_and_interval(self) -> None:
+        entry = {
+            "entry_id": "journal_timing",
+            "status": "active",
+            "character_summary": "I noticed trust becoming easier.",
+            "insights": [
+                {"summary": "Trust is becoming steadier.", "memory_worthy": True}
+            ],
+            "themes": ["trust"],
+            "confidence": 0.85,
+            "evidence_count": 2,
+            "growth_notification": {
+                "id": "growth_journal_timing",
+                "journal_entry_id": "journal_timing",
+                "created_at": "2026-06-11T00:00:00Z",
+                "message": "Reverie seems more confident in your trust.",
+                "why": "A private reflection noticed a trust pattern.",
+                "theme": "trust",
+                "style": "whisper",
+                "controls": ["dismiss", "review", "disable_similar"],
+            },
+        }
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=3,
+                growth_notification_message_interval=3,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+
+        too_early = await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="Please remember this."),
+                    ChatMessage(role="user", content="Please remember this too."),
+                ],
+            ),
+            request_id="req-growth-too-early",
+        )
+        interval_turn = await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="Please remember this."),
+                    ChatMessage(role="user", content="Please remember this too."),
+                    ChatMessage(
+                        role="user", content="Please remember this third thing."
+                    ),
+                ],
+            ),
+            request_id="req-growth-interval",
+        )
+
+        self.assertIsNone(too_early.growth_notification)
+        self.assertIsNotNone(interval_turn.growth_notification)
+
+    def test_growth_notifications_are_throttled_and_configurable(self) -> None:
+        asyncio.run(self._assert_growth_notifications_are_throttled_and_configurable())
+
+    async def _assert_growth_notifications_are_throttled_and_configurable(self) -> None:
+        entry = {
+            "entry_id": "journal_growth",
+            "status": "active",
+            "character_summary": "I noticed trust becoming easier.",
+            "insights": [
+                {"summary": "Trust is becoming steadier.", "memory_worthy": True}
+            ],
+            "themes": ["trust"],
+            "confidence": 0.85,
+            "evidence_count": 2,
+            "growth_notification": {
+                "id": "growth_journal_growth",
+                "journal_entry_id": "journal_growth",
+                "created_at": "2026-06-11T00:00:00Z",
+                "message": "Reverie seems more confident in your trust.",
+                "why": "A private reflection noticed a trust pattern.",
+                "theme": "trust",
+                "style": "whisper",
+                "controls": ["dismiss", "review", "disable_similar"],
+            },
+        }
+        request = ChatRequest(
+            stream=False,
+            messages=[ChatMessage(role="user", content="Please remember this.")],
+        )
+
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
+                growth_notification_min_interval_seconds=999,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+
+        first = await service.chat(request, request_id="req-growth-1")
+        second = await service.chat(request, request_id="req-growth-2")
+
+        self.assertIsNotNone(first.growth_notification)
+        self.assertIsNone(second.growth_notification)
+
+        disabled_service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                growth_notifications_enabled=False,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+
+        disabled = await disabled_service.chat(
+            request, request_id="req-growth-disabled"
+        )
+        self.assertIsNone(disabled.growth_notification)
 
 
 if __name__ == "__main__":
