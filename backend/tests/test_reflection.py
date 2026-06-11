@@ -132,6 +132,52 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
             self.assertTrue(entry["metadata"]["memory_promotion"]["should_promote"])
             self.assertEqual(self._journal_lines(temp_dir)[0]["entry_id"], entry["entry_id"])
 
+
+    def test_growth_notification_is_short_safe_and_grounded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_memory = FakeMemory()
+            manager = self._manager(temp_dir, fake_memory)
+            entry = manager.trigger_reflection(
+                [
+                    {
+                        "role": "user",
+                        "content": "Please remember that quiet reassurance helps me trust you.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "I will keep that gentle reassurance close.",
+                    },
+                ]
+            )
+
+            notification = manager.build_growth_notification(
+                style="inline", min_confidence=0.5, recent_entry_limit=5
+            )
+
+            self.assertIsNotNone(notification)
+            assert notification is not None
+            self.assertEqual(notification.journal_entry_id, entry["entry_id"])
+            self.assertEqual(notification.style, "inline")
+            self.assertLessEqual(len(notification.text), 220)
+            self.assertIn("reassurance", notification.text.lower())
+            self.assertIn("dismiss", notification.controls)
+
+    def test_growth_notification_skips_high_sensitivity_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_memory = FakeMemory()
+            manager = self._manager(temp_dir, fake_memory)
+            manager.trigger_reflection(
+                [
+                    {
+                        "role": "user",
+                        "content": "Please remember this trauma boundary and reassure me.",
+                    },
+                    {"role": "assistant", "content": "I will be very careful."},
+                ]
+            )
+
+            self.assertIsNone(manager.build_growth_notification(min_confidence=0.5))
+
     def _manager(self, temp_dir: str, fake_memory: FakeMemory) -> ReflectionManager:
         return ReflectionManager(
             memory_manager=fake_memory,  # type: ignore[arg-type]

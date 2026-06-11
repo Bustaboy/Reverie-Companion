@@ -14,6 +14,14 @@
   const dismissError = () => {
     chatStore.clearError();
   };
+
+  const dismissGrowthNotification = (notificationId: string) => {
+    chatStore.dismissGrowthNotification(notificationId);
+  };
+
+  const disableGrowthNotifications = () => {
+    chatStore.setGrowthNotificationsEnabled(false);
+  };
 </script>
 
 <section class="chat-window" aria-label="Reverie chat">
@@ -30,7 +38,12 @@
     </div>
   </header>
 
-  <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
+  <MessageList
+    messages={$chatStore.messages}
+    generationState={$chatStore.generationState}
+    onDismissGrowthNotification={dismissGrowthNotification}
+    onDisableGrowthNotifications={disableGrowthNotifications}
+  />
 
   {#if $chatStore.error}
     <div class="chat-error-banner" role="status" aria-live="polite">

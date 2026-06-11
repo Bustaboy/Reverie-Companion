@@ -5,9 +5,17 @@
 
   interface Props {
     message: ChatMessage;
+    onDismissGrowthNotification?: (notificationId: string) => void;
+    onDisableGrowthNotifications?: () => void;
   }
 
-  let { message }: Props = $props();
+  let { message, onDismissGrowthNotification, onDisableGrowthNotifications }: Props = $props();
+
+  const dismissGrowthNotification = () => {
+    if (message.growthNotification) {
+      onDismissGrowthNotification?.(message.growthNotification.id);
+    }
+  };
 
   const memoryHint = $derived.by(() => {
     if (message.role !== 'assistant' || !message.memoryContext?.used) {
@@ -22,22 +30,34 @@
 <article
   class:from-user={message.role === 'user'}
   class:from-assistant={message.role === 'assistant'}
+  class:from-system={message.role === 'system'}
   class:is-streaming={message.status === 'streaming'}
   class:has-error={message.status === 'error'}
   class="message-row"
 >
   <div class="avatar" aria-hidden="true">
-    {message.role === 'assistant' ? 'R' : 'You'}
+    {message.role === 'assistant' ? 'R' : message.role === 'system' ? '✦' : 'You'}
   </div>
 
   <div class="bubble-shell">
     <div class="message-meta">
-      <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
+      <span>{message.role === 'assistant' ? 'Reverie' : message.role === 'system' ? 'Growth whisper' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
     </div>
 
     <div class="bubble">
-      {#if message.role === 'assistant'}
+      {#if message.role === 'system' && message.growthNotification}
+        <div class="growth-notification" role="status" aria-live="polite">
+          <div>
+            <span class="growth-kicker">Quiet growth</span>
+            <p>{message.growthNotification.text}</p>
+          </div>
+          <div class="growth-actions">
+            <button type="button" aria-label="Dismiss growth whisper" onclick={dismissGrowthNotification}>Dismiss</button>
+            <button type="button" aria-label="Hide future growth whispers" onclick={onDisableGrowthNotifications}>Hide these</button>
+          </div>
+        </div>
+      {:else if message.role === 'assistant'}
         {#if message.content}
           <Markdown content={message.content} />
         {:else}

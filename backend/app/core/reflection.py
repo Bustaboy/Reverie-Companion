@@ -19,6 +19,7 @@ from typing import Any, Iterable, Literal, TypedDict, cast
 
 from app.core.config import Settings, get_settings
 from app.core.memory import MemoryManager, get_memory_manager
+from app.models.chat import GrowthNotification
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +396,45 @@ class ReflectionManager:
             reverse=True,
         )
         return [entries_by_id[entry_id] for entry_id in ranked_ids[:5]]
+
+    def build_growth_notification(
+        self,
+        *,
+        style: str = "whisper",
+        min_confidence: float = 0.58,
+        recent_entry_limit: int = 12,
+        excluded_entry_ids: set[str] | None = None,
+    ) -> GrowthNotification | None:
+        """Return one gentle growth notice from recent journal evidence.
+
+        Notices are derived only from saved, active reflection entries. They
+        summarize a small believable adjustment, avoid raw transcript evidence,
+        and skip high-sensitivity material so the UI can delight the user without
+        exposing private or jarring details in the main chat flow.
+        """
+
+        excluded_entry_ids = excluded_entry_ids or set()
+        for entry in self.get_recent_journal_entries(limit=recent_entry_limit):
+            entry_id = str(entry.get("entry_id") or "")
+            if not entry_id or entry_id in excluded_entry_ids:
+                continue
+            if not self._entry_is_safe_for_growth_notice(entry, min_confidence):
+                continue
+
+            text = self._growth_notification_text(entry)
+            if not text:
+                continue
+
+            return GrowthNotification(
+                id=f"growth_{entry_id}",
+                journal_entry_id=entry_id,
+                text=text,
+                theme=self._growth_notification_theme(entry),
+                style=style if style in {"whisper", "toast", "inline"} else "whisper",
+                created_at=self._utc_now(),
+                controls=["dismiss", "review", "disable_similar"],
+            )
+        return None
 
     def _normalize_history(self, conversation_history: Any) -> list[ConversationTurn]:
         if conversation_history is None:
@@ -833,6 +873,72 @@ class ReflectionManager:
                 extra={"entry_id": updated_entry.get("entry_id"), "error": str(exc)},
             )
 
+    def _entry_is_safe_for_growth_notice(
+        self, entry: JournalEntry, min_confidence: float
+    ) -> bool:
+        if entry.get("status", "active") != "active":
+            return False
+        if float(entry.get("confidence", 0.0) or 0.0) < min_confidence:
+            return False
+        if int(entry.get("evidence_count", 0) or 0) < 2:
+            return False
+
+        sensitivity_tags = {str(tag) for tag in entry.get("sensitivity_tags", [])}
+        if sensitivity_tags & {"high_sensitivity", "intimate_content"}:
+            return False
+
+        insights = entry.get("insights", [])
+        return any(
+            insight.get("kind")
+            in {
+                "emotional_theme",
+                "preference_signal",
+                "relationship_continuity",
+                "growth_hypothesis",
+            }
+            and float(insight.get("confidence", 0.0) or 0.0) >= 0.5
+            for insight in insights
+        )
+
+    def _growth_notification_text(self, entry: JournalEntry) -> str:
+        theme = self._growth_notification_theme(entry)
+        themes = {str(item) for item in entry.get("themes", [])}
+        insights = entry.get("insights", [])
+        has_preference = any(
+            insight.get("kind") == "preference_signal" for insight in insights
+        )
+        has_growth = any(
+            insight.get("kind") == "growth_hypothesis" for insight in insights
+        )
+
+        if has_preference and theme in {"routine", "reassurance", "trust"}:
+            return "She seems to be remembering the small ways reassurance helps you feel cared for."
+        if "reassurance" in themes or "trust" in themes:
+            return "She seems a little steadier about offering reassurance when it matters."
+        if "playfulness" in themes:
+            return "She seems more comfortable letting a playful spark linger between you."
+        if "curiosity" in themes or "growth" in themes:
+            return "She seems quietly curious about growing with you, one conversation at a time."
+        if has_growth or "boundaries" in themes:
+            return "She seems more attentive to your comfort and the pace that feels right."
+        if "affection" in themes:
+            return "She seems to be holding onto the warmth you two have been building."
+        if theme:
+            return f"She seems to be carrying forward a softer sense of {theme}."
+        return "She seems to be settling into the rhythm of knowing you."
+
+    def _growth_notification_theme(self, entry: JournalEntry) -> str | None:
+        themes = [str(theme) for theme in entry.get("themes", []) if str(theme).strip()]
+        if themes:
+            return themes[0]
+        for insight in entry.get("insights", []):
+            if not isinstance(insight, dict):
+                continue
+            insight_themes = insight.get("themes", [])
+            if isinstance(insight_themes, list) and insight_themes:
+                return str(insight_themes[0])
+        return None
+
     def _detect_themes(self, turns: list[ConversationTurn]) -> list[str]:
         text = " ".join(turn["content"] for turn in turns if turn["role"] != "system")
         return self._themes_for_text(text)
@@ -974,6 +1080,7 @@ def get_reflection_manager() -> ReflectionManager:
 
 
 __all__ = [
+    "GrowthNotification",
     "JournalEntry",
     "MemoryPromotionDecision",
     "ReflectionInsight",

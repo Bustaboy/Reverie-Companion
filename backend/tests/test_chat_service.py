@@ -7,7 +7,7 @@ import unittest
 from typing import Any
 
 from app.core.config import Settings
-from app.models.chat import ChatMessage, ChatRequest, ChatResponse
+from app.models.chat import ChatMessage, ChatRequest, ChatResponse, GrowthNotification
 from app.services.chat_service import ChatService
 
 
@@ -50,11 +50,26 @@ class FakeReflectionManager:
         self.trigger_failure = trigger_failure
         self.recent_failure = recent_failure
         self.triggered_histories: list[list[dict[str, str]]] = []
+        self.growth_calls = 0
 
     def get_recent_journal_entries(self, limit: int = 5) -> list[dict[str, Any]]:
         if self.recent_failure:
             raise self.recent_failure
         return self.entries[:limit]
+
+    def build_growth_notification(self, **kwargs: Any) -> GrowthNotification | None:
+        self.growth_calls += 1
+        if not self.entries:
+            return None
+        entry = self.entries[0]
+        return GrowthNotification(
+            id=f"growth_{entry.get('entry_id', 'fake')}",
+            journal_entry_id=str(entry.get("entry_id", "journal_fake")),
+            text="She seems a little steadier about offering reassurance when it matters.",
+            theme="reassurance",
+            style="whisper",
+            created_at="2026-06-11T10:00:00+00:00",
+        )
 
     def trigger_reflection(self, conversation_history: list[dict[str, str]]) -> dict[str, Any]:
         if self.trigger_failure:
@@ -72,6 +87,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
         ChatService._reflection_lock = None
         ChatService._last_reflection_started_at = 0.0
         ChatService._inflight_reflection_tasks.clear()
+        ChatService._last_growth_notification_at = 0.0
+        ChatService._shown_growth_entry_ids.clear()
 
     def test_chat_injects_memory_and_reflection_context_then_triggers_background_reflection(
         self,
@@ -132,6 +149,53 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertEqual(prepared_messages[3].role, "user")
         self.assertEqual(len(reflection.triggered_histories), 1)
         self.assertEqual(reflection.triggered_histories[0][-1]["role"], "user")
+
+
+    def test_chat_attaches_rare_growth_notification_when_due(self) -> None:
+        asyncio.run(self._assert_chat_attaches_growth_notification_when_due())
+
+    async def _assert_chat_attaches_growth_notification_when_due(self) -> None:
+        ollama = FakeOllamaClient()
+        reflection = FakeReflectionManager(
+            entries=[
+                {
+                    "entry_id": "journal_growth",
+                    "status": "active",
+                    "character_summary": "I noticed reassurance helps.",
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=4,
+                growth_notification_user_message_interval=4,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=ollama,  # type: ignore[arg-type]
+            reflection_manager=reflection,  # type: ignore[arg-type]
+        )
+        request = ChatRequest(
+            stream=False,
+            messages=[
+                ChatMessage(role="user", content="Hi."),
+                ChatMessage(role="assistant", content="Hi there."),
+                ChatMessage(role="user", content="I like quiet evenings."),
+                ChatMessage(role="assistant", content="That sounds cozy."),
+                ChatMessage(role="user", content="Please remember reassurance."),
+                ChatMessage(role="assistant", content="I will."),
+                ChatMessage(role="user", content="Can you stay gentle?"),
+            ],
+        )
+
+        response = await service.chat(request, request_id="req-growth")
+
+        self.assertIsNotNone(response.growth_notification)
+        assert response.growth_notification is not None
+        self.assertEqual(response.growth_notification.id, "growth_journal_growth")
+        self.assertEqual(reflection.growth_calls, 1)
 
     def test_reflection_failures_do_not_block_chat(self) -> None:
         asyncio.run(self._assert_reflection_failures_do_not_block())

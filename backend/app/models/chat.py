@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 MessageRole = Literal["system", "user", "assistant"]
+GrowthNotificationStyle = Literal["whisper", "toast", "inline"]
 MAX_MESSAGE_LENGTH = 8_000
 MAX_MODEL_NAME_LENGTH = 128
 
@@ -29,6 +30,33 @@ class ChatMessage(BaseModel):
         if not value.strip():
             raise ValueError("Message content cannot be empty.")
         return value
+
+
+class GrowthNotification(BaseModel):
+    """A subtle, user-dismissible note about character growth.
+
+    Growth notices are generated from existing reflection journal entries and
+    intentionally avoid raw evidence or sensitive transcript details. They are
+    metadata for the UI, not instructions for the model.
+    """
+
+    id: str = Field(..., min_length=1, max_length=160)
+    journal_entry_id: str | None = Field(default=None, max_length=160)
+    text: str = Field(..., min_length=1, max_length=220)
+    theme: str | None = Field(default=None, max_length=80)
+    style: GrowthNotificationStyle = "whisper"
+    created_at: str = Field(..., min_length=1, max_length=80)
+    controls: list[str] = Field(
+        default_factory=lambda: ["dismiss", "review", "disable_similar"]
+    )
+
+    @field_validator("text")
+    @classmethod
+    def text_must_be_short_and_warm(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("Growth notification text cannot be empty.")
+        return normalized
 
 
 class ChatRequest(BaseModel):
@@ -78,3 +106,4 @@ class ChatResponse(BaseModel):
     model: str
     message: ChatMessage
     done: bool = True
+    growth_notification: GrowthNotification | None = None

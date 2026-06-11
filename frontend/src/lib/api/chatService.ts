@@ -1,5 +1,5 @@
 import { dev } from '$app/environment';
-import type { MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { GrowthNotification, GrowthNotificationStyle, MemoryContext, MemoryContextItem } from '$lib/types/chat';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -43,6 +43,7 @@ export interface ChatResponse {
   done: boolean;
   /** Optional normalized memory context returned by newer backends. */
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
 
 export interface ChatStreamOptions {
@@ -56,11 +57,18 @@ export interface ChatStreamMessageEvent {
   model?: string;
   requestId?: string;
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
 
 export interface ChatStreamMemoryEvent {
   event: 'memory';
   memoryContext: MemoryContext;
+  requestId?: string;
+}
+
+export interface ChatStreamGrowthEvent {
+  event: 'growth';
+  growthNotification: GrowthNotification;
   requestId?: string;
 }
 
@@ -76,11 +84,13 @@ export interface ChatStreamDoneEvent {
   done: boolean;
   requestId?: string;
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
 
 export type ChatStreamEvent =
   | ChatStreamMessageEvent
   | ChatStreamMemoryEvent
+  | ChatStreamGrowthEvent
   | ChatStreamErrorEvent
   | ChatStreamDoneEvent;
 
@@ -109,6 +119,8 @@ interface RawSseEvent {
 interface BackendMemoryContextBody {
   memory_context?: unknown;
   memoryContext?: unknown;
+  growth_notification?: unknown;
+  growthNotification?: unknown;
   memory?: unknown;
   memories?: unknown;
   context?: unknown;
@@ -353,7 +365,8 @@ export class ChatService {
     const body = responseBody as ChatResponse & BackendMemoryContextBody;
     return {
       ...body,
-      memoryContext: this.extractMemoryContext(body)
+      memoryContext: this.extractMemoryContext(body),
+      growthNotification: this.extractGrowthNotification(body)
     };
   }
 
@@ -456,12 +469,28 @@ export class ChatService {
         content: typeof body.content === 'string' ? body.content : '',
         model: typeof body.model === 'string' ? body.model : undefined,
         requestId: this.readRequestId(body),
-        memoryContext: this.extractMemoryContext(body)
+        memoryContext: this.extractMemoryContext(body),
+        growthNotification: this.extractGrowthNotification(body)
       };
     }
 
     if (['memory', 'context', 'memory_context'].includes(rawEvent.event)) {
       return this.toChatStreamMemoryEvent(data);
+    }
+
+    if (rawEvent.event === 'growth') {
+      const body = this.isRecord(data) ? data : {};
+      const growthNotification = this.extractGrowthNotification(body);
+
+      if (!growthNotification) {
+        throw new ChatServiceError('The companion stream sent an unreadable growth notification.');
+      }
+
+      return {
+        event: 'growth',
+        growthNotification,
+        requestId: this.readRequestId(body)
+      };
     }
 
     if (rawEvent.event === 'error') {
@@ -480,7 +509,8 @@ export class ChatService {
         event: 'done',
         done: typeof body.done === 'boolean' ? body.done : true,
         requestId: this.readRequestId(body),
-        memoryContext: this.extractMemoryContext(body)
+        memoryContext: this.extractMemoryContext(body),
+        growthNotification: this.extractGrowthNotification(body)
       };
     }
 
@@ -495,6 +525,34 @@ export class ChatService {
       event: 'memory',
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
+    };
+  }
+
+  private extractGrowthNotification(body: BackendMemoryContextBody | Record<string, unknown>): GrowthNotification | undefined {
+    const raw = body.growth_notification ?? body.growthNotification;
+    if (!this.isRecord(raw)) {
+      return undefined;
+    }
+
+    const id = this.normalizeText(raw.id);
+    const text = this.normalizeText(raw.text ?? raw.message ?? raw.summary);
+    if (!id || !text) {
+      return undefined;
+    }
+
+    const rawStyle = this.normalizeText(raw.style);
+    const style: GrowthNotificationStyle =
+      rawStyle === 'toast' || rawStyle === 'inline' || rawStyle === 'whisper' ? rawStyle : 'whisper';
+    const rawControls = Array.isArray(raw.controls) ? raw.controls : [];
+
+    return {
+      id,
+      journalEntryId: this.normalizeText(raw.journal_entry_id ?? raw.journalEntryId),
+      text,
+      theme: this.normalizeText(raw.theme),
+      style,
+      createdAt: this.parseDate(raw.created_at ?? raw.createdAt),
+      controls: rawControls.map((item) => this.normalizeText(item)).filter((item): item is string => Boolean(item))
     };
   }
 
@@ -611,6 +669,12 @@ export class ChatService {
       label,
       id: typeof item.id === 'string' ? item.id : undefined
     };
+  }
+
+  private parseDate(value: unknown): Date {
+    const text = this.normalizeText(value);
+    const parsed = text ? new Date(text) : new Date();
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   }
 
   private compactMemoryLabel(value: unknown): string | undefined {

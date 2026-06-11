@@ -7,11 +7,13 @@
   interface Props {
     messages: ChatMessage[];
     generationState: ChatGenerationState;
+    onDismissGrowthNotification?: (notificationId: string) => void;
+    onDisableGrowthNotifications?: () => void;
   }
 
   const STICKY_SCROLL_THRESHOLD_PX = 140;
 
-  let { messages, generationState }: Props = $props();
+  let { messages, generationState, onDismissGrowthNotification, onDisableGrowthNotifications }: Props = $props();
   let listElement: HTMLElement;
   let shouldStickToBottom = true;
   let pendingScrollFrame: number | null = null;
@@ -61,7 +63,11 @@
 <section bind:this={listElement} class="message-list" aria-label="Conversation messages" onscroll={updateStickyScrollPreference}>
   <div class="message-list-inner">
     {#each messages as message (message.id)}
-      <MessageBubble {message} />
+      <MessageBubble
+        {message}
+        onDismissGrowthNotification={onDismissGrowthNotification}
+        onDisableGrowthNotifications={onDisableGrowthNotifications}
+      />
     {/each}
 
     {#if generationState === 'thinking'}

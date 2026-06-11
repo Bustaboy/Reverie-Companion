@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
-import type { ChatMessage, MemoryContext } from '$lib/types/chat';
+import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
 
@@ -9,13 +9,22 @@ export interface ChatState {
   messages: ChatMessage[];
   generationState: ChatGenerationState;
   error: string | null;
+  growthNotificationsEnabled: boolean;
 }
 
 const INITIAL_STATE: ChatState = {
   messages: createInitialMessages(),
   generationState: 'idle',
-  error: null
+  error: null,
+  growthNotificationsEnabled: true
 };
+
+const createGrowthNotificationMessage = (notification: GrowthNotification): ChatMessage => ({
+  ...createChatMessage('system', notification.text),
+  id: notification.id,
+  createdAt: notification.createdAt,
+  growthNotification: notification
+});
 
 const createAssistantPlaceholder = (): ChatMessage => ({
   ...createChatMessage('assistant', ''),
@@ -74,6 +83,7 @@ const toFriendlyErrorMessage = (error: unknown): string => {
 function createChatStore() {
   const store = writable<ChatState>(INITIAL_STATE);
   let activeController: AbortController | null = null;
+  const dismissedGrowthNotificationIds = new Set<string>();
 
   const hasActiveSend = () => activeController !== null;
 
@@ -87,6 +97,25 @@ function createChatStore() {
         memoryContext
       )
     }));
+  };
+
+  const appendGrowthNotification = (notification?: GrowthNotification) => {
+    if (!notification) return;
+
+    store.update((state) => {
+      if (!state.growthNotificationsEnabled || dismissedGrowthNotificationIds.has(notification.id)) {
+        return state;
+      }
+
+      if (state.messages.some((message) => message.id === notification.id)) {
+        return state;
+      }
+
+      return {
+        ...state,
+        messages: [...state.messages, createGrowthNotificationMessage(notification)]
+      };
+    });
   };
 
   const failAssistantMessage = (assistantMessageId: string, errorMessage: string) => {
@@ -155,6 +184,11 @@ function createChatStore() {
             continue;
           }
 
+          if (event.event === 'growth') {
+            appendGrowthNotification(event.growthNotification);
+            continue;
+          }
+
           if (event.event === 'memory') {
             store.update((state) => ({
               ...state,
@@ -167,6 +201,7 @@ function createChatStore() {
             throw new ChatServiceError(event.error, { requestId: event.requestId, details: event.details });
           }
 
+          appendGrowthNotification(event.growthNotification);
           finishAssistantMessage(assistantMessage.id, event.memoryContext);
         }
       } catch (error) {
@@ -179,6 +214,20 @@ function createChatStore() {
     },
     stopStreaming() {
       activeController?.abort();
+    },
+    dismissGrowthNotification(notificationId: string) {
+      dismissedGrowthNotificationIds.add(notificationId);
+      store.update((state) => ({
+        ...state,
+        messages: state.messages.filter((message) => message.id !== notificationId)
+      }));
+    },
+    setGrowthNotificationsEnabled(enabled: boolean) {
+      store.update((state) => ({
+        ...state,
+        growthNotificationsEnabled: enabled,
+        messages: enabled ? state.messages : state.messages.filter((message) => !message.growthNotification)
+      }));
     },
     clearError() {
       store.update((state) => ({ ...state, error: null }));

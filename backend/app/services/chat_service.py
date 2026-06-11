@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Iterable
@@ -11,7 +12,13 @@ from app.core.config import Settings
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
 from app.core.reflection import JournalEntry, ReflectionManager
-from app.models.chat import MAX_MESSAGE_LENGTH, ChatMessage, ChatRequest, ChatResponse
+from app.models.chat import (
+    MAX_MESSAGE_LENGTH,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    GrowthNotification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +64,8 @@ class ChatService:
     _reflection_lock: asyncio.Lock | None = None
     _last_reflection_started_at: float = 0.0
     _inflight_reflection_tasks: set[asyncio.Task[None]] = set()
+    _last_growth_notification_at: float = 0.0
+    _shown_growth_entry_ids: set[str] = set()
 
     def __init__(
         self,
@@ -77,7 +86,11 @@ class ChatService:
         """Run a non-streaming chat completion with optional continuity context."""
 
         prepared_request = await self._prepare_request(request, request_id=request_id)
-        return await self._ollama_client.chat(prepared_request, request_id=request_id)
+        growth_notification = self._growth_notification_if_due(request, request_id=request_id)
+        response = await self._ollama_client.chat(prepared_request, request_id=request_id)
+        if growth_notification is None:
+            return response
+        return response.model_copy(update={"growth_notification": growth_notification})
 
     async def stream_chat(
         self,
@@ -88,7 +101,132 @@ class ChatService:
         """Return an Ollama SSE stream with optional continuity context injected."""
 
         prepared_request = await self._prepare_request(request, request_id=request_id)
-        return self._ollama_client.stream_chat(prepared_request, request_id=request_id)
+        growth_notification = self._growth_notification_if_due(request, request_id=request_id)
+        return self._stream_with_growth_notification(
+            prepared_request,
+            request_id=request_id,
+            growth_notification=growth_notification,
+        )
+
+    async def _stream_with_growth_notification(
+        self,
+        request: ChatRequest,
+        *,
+        request_id: str | None,
+        growth_notification: GrowthNotification | None,
+    ) -> AsyncIterator[str]:
+        """Proxy Ollama SSE while inserting any growth note before terminal done."""
+
+        async for event in self._ollama_client.stream_chat(request, request_id=request_id):
+            if growth_notification is not None and self._is_successful_done_sse_event(event):
+                yield self._format_sse(
+                    event="growth",
+                    data={
+                        "growth_notification": growth_notification.model_dump(),
+                        "request_id": request_id,
+                    },
+                )
+                yield self._merge_growth_into_done_event(event, growth_notification)
+                continue
+            yield event
+
+    def _growth_notification_if_due(
+        self,
+        request: ChatRequest,
+        *,
+        request_id: str | None,
+    ) -> GrowthNotification | None:
+        """Choose rare, tasteful growth notices from existing journal entries."""
+
+        if not self._settings.growth_notifications_enabled:
+            return None
+        if self._reflection_manager is None or not self._settings.reflection_enabled:
+            return None
+
+        user_message_count = self._user_message_count(request)
+        if user_message_count < self._settings.growth_notification_min_user_messages:
+            return None
+
+        interval = max(1, self._settings.growth_notification_user_message_interval)
+        if user_message_count % interval != 0:
+            return None
+
+        now = time.monotonic()
+        elapsed = now - self._last_growth_notification_at
+        if elapsed < self._settings.growth_notification_min_interval_seconds:
+            logger.debug(
+                "Growth notification skipped by interval throttle",
+                extra={
+                    "request_id": request_id,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "min_interval_seconds": self._settings.growth_notification_min_interval_seconds,
+                },
+            )
+            return None
+
+        try:
+            notification = self._reflection_manager.build_growth_notification(
+                style=self._settings.growth_notification_style,
+                min_confidence=self._settings.growth_notification_min_confidence,
+                recent_entry_limit=self._settings.growth_notification_max_age_entries,
+                excluded_entry_ids=self._shown_growth_entry_ids,
+            )
+        except Exception as exc:  # pragma: no cover - defensive graceful degradation.
+            logger.warning(
+                "Growth notification generation failed; continuing chat without notice",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return None
+
+        if notification is None:
+            return None
+
+        self._last_growth_notification_at = now
+        if notification.journal_entry_id:
+            self._shown_growth_entry_ids.add(notification.journal_entry_id)
+        logger.info(
+            "Prepared growth notification for chat UI",
+            extra={
+                "request_id": request_id,
+                "notification_id": notification.id,
+                "journal_entry_id": notification.journal_entry_id,
+                "theme": notification.theme,
+                "style": notification.style,
+            },
+        )
+        return notification
+
+    def _is_successful_done_sse_event(self, event: str) -> bool:
+        if event.split("\n", 1)[0].strip() != "event: done":
+            return False
+        lines = event.strip().splitlines()
+        data_lines = [line[5:].strip() for line in lines if line.startswith("data:")]
+        if not data_lines:
+            return False
+        try:
+            payload = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and bool(payload.get("done", True))
+
+    def _merge_growth_into_done_event(
+        self, event: str, growth_notification: GrowthNotification
+    ) -> str:
+        lines = event.strip().splitlines()
+        data_lines = [line[5:].strip() for line in lines if line.startswith("data:")]
+        if not data_lines:
+            return event
+        try:
+            payload = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError:
+            return event
+        if isinstance(payload, dict):
+            payload["growth_notification"] = growth_notification.model_dump()
+            return self._format_sse(event="done", data=payload)
+        return event
+
+    def _format_sse(self, *, event: str, data: dict[str, object]) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def _prepare_request(
         self,

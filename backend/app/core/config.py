@@ -67,6 +67,20 @@ class Settings(BaseSettings):
     reflection_context_entry_limit: int = Field(default=5, gt=0, le=20)
     reflection_context_max_chars: int = Field(default=1600, gt=200, le=8000)
 
+    # Growth notifications are deliberately rare UI affordances generated from
+    # existing reflection journal entries. They never block chat generation and
+    # avoid raw/sensitive evidence so the feature feels warm rather than
+    # mechanical or invasive.
+    growth_notifications_enabled: bool = True
+    growth_notification_style: str = Field(
+        default="whisper", pattern="^(whisper|toast|inline)$"
+    )
+    growth_notification_min_user_messages: int = Field(default=4, gt=0, le=100)
+    growth_notification_user_message_interval: int = Field(default=8, gt=0, le=200)
+    growth_notification_min_interval_seconds: float = Field(default=900.0, ge=0.0)
+    growth_notification_min_confidence: float = Field(default=0.58, ge=0.0, le=1.0)
+    growth_notification_max_age_entries: int = Field(default=12, gt=0, le=50)
+
 
 @lru_cache
 def get_settings() -> Settings:

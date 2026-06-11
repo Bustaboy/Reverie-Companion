@@ -1,8 +1,20 @@
-export type ChatRole = 'user' | 'assistant';
+export type ChatRole = 'user' | 'assistant' | 'system';
 
 export type ChatMessageStatus = 'complete' | 'streaming' | 'error';
 
 export type MemoryContextStatus = 'used' | 'empty' | 'disabled' | 'unavailable' | 'unknown';
+
+export type GrowthNotificationStyle = 'whisper' | 'toast' | 'inline';
+
+export interface GrowthNotification {
+  id: string;
+  journalEntryId?: string;
+  text: string;
+  theme?: string;
+  style: GrowthNotificationStyle;
+  createdAt: Date;
+  controls: string[];
+}
 
 export interface MemoryContextItem {
   id?: string;
@@ -30,4 +42,5 @@ export interface ChatMessage {
   status?: ChatMessageStatus;
   error?: string;
   memoryContext?: MemoryContext;
+  growthNotification?: GrowthNotification;
 }
