@@ -13,3 +13,6 @@ export {
 } from './chatService';
 
 export type { MemoryContext, MemoryContextItem, MemoryContextStatus } from '$lib/types/chat';
+
+export { JournalService, JournalServiceError, journalService, type JournalServiceOptions } from './journalService';
+export type { JournalEntriesResponse, JournalEntry, JournalEntryMetadata, ReflectionInsight } from '$lib/types/journal';
