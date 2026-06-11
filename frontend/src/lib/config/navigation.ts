@@ -1,15 +1,19 @@
+export type WorkspaceSection = 'chat' | 'journal' | 'characters' | 'memory' | 'visual-novel' | 'settings';
+
 export interface NavigationItem {
+  id: WorkspaceSection;
   label: string;
   hint: string;
-  active: boolean;
+  enabled: boolean;
 }
 
 // Sidebar destinations are intentionally declared outside the component so future routes,
 // panels, and feature flags can be added without touching layout markup.
 export const navigationItems: NavigationItem[] = [
-  { label: 'Chat', hint: 'Current session', active: true },
-  { label: 'Characters', hint: 'Coming soon', active: false },
-  { label: 'Memory', hint: 'Long-term recall', active: false },
-  { label: 'Visual Novel', hint: 'Future mode', active: false },
-  { label: 'Settings', hint: 'Privacy & models', active: false }
+  { id: 'chat', label: 'Chat', hint: 'Current session', enabled: true },
+  { id: 'journal', label: 'Journal', hint: 'Private reflections', enabled: true },
+  { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
+  { id: 'memory', label: 'Memory', hint: 'Long-term recall', enabled: false },
+  { id: 'visual-novel', label: 'Visual Novel', hint: 'Future mode', enabled: false },
+  { id: 'settings', label: 'Settings', hint: 'Privacy & models', enabled: false }
 ];

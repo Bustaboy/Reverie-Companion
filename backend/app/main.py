@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
+from app.api.routes.journal import router as journal_router
 from app.core.config import Settings, get_settings
 from app.core.ollama_client import OllamaClient, OllamaClientError
 
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(chat_router)
+    app.include_router(journal_router)
     logger.info("Reverie backend application configured", extra={"app_version": settings.app_version})
 
     return app
