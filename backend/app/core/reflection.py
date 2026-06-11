@@ -494,6 +494,7 @@ class ReflectionManager:
         insights = self._generate_insights(turns, themes, valence, intensity)
         evidence_count = sum(1 for turn in turns if turn["role"] != "system")
         confidence = self._estimate_confidence(evidence_count, themes, insights)
+        sensitivity_tags = self._detect_sensitivity_tags(turns)
         created_at = self._utc_now()
         entry_id = self._entry_id(turns, created_at)
         rollback_id = f"rollback_{entry_id}"
@@ -531,8 +532,13 @@ class ReflectionManager:
             confidence=confidence,
             evidence_count=evidence_count,
             privacy_tags=list(self._config.privacy_tags),
-            sensitivity_tags=self._detect_sensitivity_tags(turns),
-            training_eligibility="needs_review",
+            sensitivity_tags=sensitivity_tags,
+            training_eligibility=self._training_eligibility_for_entry(
+                insights=insights,
+                confidence=confidence,
+                evidence_count=evidence_count,
+                sensitivity_tags=sensitivity_tags,
+            ),
             rollback_id=rollback_id,
             metadata={
                 "user_id": self._config.user_id,
@@ -1251,6 +1257,29 @@ class ReflectionManager:
             if "?" in turn["content"] and turn["role"] != "system"
         ]
         return questions[:5]
+
+    def _training_eligibility_for_entry(
+        self,
+        *,
+        insights: list[ReflectionInsight],
+        confidence: float,
+        evidence_count: int,
+        sensitivity_tags: list[str],
+    ) -> TrainingEligibility:
+        """Mark whether a journal entry may become a user-reviewed dataset item."""
+
+        if set(sensitivity_tags) - {"boundaries"}:
+            return "not_eligible"
+        if confidence < 0.72 or evidence_count < 2:
+            return "needs_review"
+        if any(
+            insight.get("memory_worthy")
+            or insight.get("kind")
+            in {"preference_signal", "growth_hypothesis", "relationship_continuity"}
+            for insight in insights
+        ):
+            return "eligible"
+        return "needs_review"
 
     def _detect_sensitivity_tags(self, turns: list[ConversationTurn]) -> list[str]:
         text = " ".join(turn["content"].lower() for turn in turns)

@@ -9,6 +9,7 @@ import time
 from collections.abc import AsyncIterator, Iterable
 
 from app.core.config import Settings
+from app.core.growth import GrowthOrchestrator
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
 from app.core.reflection import JournalEntry, ReflectionManager, ReflectionScheduler
@@ -53,12 +54,18 @@ class ChatService:
         ollama_client: OllamaClient,
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
+        growth_orchestrator: GrowthOrchestrator | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
-        self._reflection_scheduler = ReflectionScheduler.from_settings(settings)
+        self._growth_orchestrator = growth_orchestrator or GrowthOrchestrator(
+            settings=settings,
+            memory_manager=memory_manager,
+            reflection_manager=reflection_manager,
+        )
+        self._reflection_scheduler = self._growth_orchestrator.reflection_scheduler
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
@@ -206,7 +213,7 @@ class ChatService:
 
         try:
             context = await asyncio.to_thread(
-                self._memory_manager.get_relevant_context, query
+                self._growth_orchestrator.retrieve_memory_context, query
             )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
@@ -272,8 +279,8 @@ class ChatService:
         query = self._build_memory_query(request)
         try:
             entries = await asyncio.to_thread(
-                self._reflection_manager.get_recent_journal_entries,
-                self._settings.reflection_context_entry_limit,
+                self._growth_orchestrator.recent_reflections,
+                limit=self._settings.reflection_context_entry_limit,
             )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
@@ -310,7 +317,9 @@ class ChatService:
         if not selected_entries:
             return ""
 
-        context = self._build_reflection_context(selected_entries)
+        context = self._growth_orchestrator.build_growth_guidance(selected_entries)
+        if not context:
+            context = self._build_reflection_context(selected_entries)
         max_context_chars = min(
             self._settings.reflection_context_max_chars,
             self._reflection_message_context_budget(),
@@ -352,7 +361,7 @@ class ChatService:
             )
             return
 
-        decision = self._reflection_scheduler.evaluate(
+        decision = self._growth_orchestrator.evaluate_reflection_timing(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,
@@ -427,7 +436,7 @@ class ChatService:
 
         try:
             entry = await asyncio.to_thread(
-                self._reflection_manager.trigger_reflection, history
+                self._growth_orchestrator.trigger_reflection, history
             )
         except Exception as exc:  # pragma: no cover - defensive background path.
             logger.warning(
@@ -499,68 +508,44 @@ class ChatService:
         request: ChatRequest,
         request_id: str | None,
     ) -> GrowthNotification | None:
-        """Choose a rare, dismissible growth note from existing journal entries.
-
-        Notification timing is intentionally stricter than reflection timing. A
-        notice can appear only after enough user turns, only on configured message
-        intervals, and only after the wall-clock cooldown has elapsed. This keeps
-        growth legible without turning every journal entry into UI noise.
-        """
+        """Choose a rare, dismissible growth note through GrowthOrchestrator."""
 
         now = time.monotonic()
-        if not self._growth_notification_timing_allows(
-            request, request_id=request_id, now=now
-        ):
+        decision = self._growth_orchestrator.choose_growth_notification(
+            entries,
+            user_message_count=self._user_message_count(request),
+            now=now,
+            last_notification_at=type(self)._last_growth_notification_at,
+            emitted_notification_ids=type(self)._emitted_growth_notification_ids,
+        )
+        if decision.notification is None:
+            logger.debug(
+                "Growth notification skipped",
+                extra={"request_id": request_id, "reason": decision.reason},
+            )
             return None
 
-        for entry in entries:
-            raw_notice = entry.get("growth_notification")
-            if raw_notice is None and hasattr(
-                self._reflection_manager, "build_growth_notification"
-            ):
-                try:
-                    raw_notice = self._reflection_manager.build_growth_notification(
-                        entry
-                    )
-                except Exception as exc:  # pragma: no cover - defensive graceful path.
-                    logger.debug(
-                        "Growth notification synthesis skipped",
-                        extra={"request_id": request_id, "error": str(exc)},
-                    )
-                    continue
-
-            if not isinstance(raw_notice, dict):
-                continue
-            notification_id = str(raw_notice.get("id") or "")
-            if (
-                not notification_id
-                or notification_id in type(self)._emitted_growth_notification_ids
-            ):
-                continue
-
-            try:
-                notification = GrowthNotification.model_validate(raw_notice)
-            except Exception as exc:
-                logger.debug(
-                    "Growth notification failed validation",
-                    extra={"request_id": request_id, "error": str(exc)},
-                )
-                continue
-
-            type(self)._last_growth_notification_at = now
-            type(self)._emitted_growth_notification_ids.add(notification.id)
-            logger.info(
-                "Selected growth notification for chat response",
-                extra={
-                    "request_id": request_id,
-                    "notification_id": notification.id,
-                    "journal_entry_id": notification.journal_entry_id,
-                    "theme": notification.theme,
-                },
+        try:
+            notification = GrowthNotification.model_validate(decision.notification)
+        except Exception as exc:
+            logger.debug(
+                "Growth notification failed validation",
+                extra={"request_id": request_id, "error": str(exc)},
             )
-            return notification
+            return None
 
-        return None
+        type(self)._last_growth_notification_at = now
+        type(self)._emitted_growth_notification_ids.add(notification.id)
+        logger.info(
+            "Selected growth notification for chat response",
+            extra={
+                "request_id": request_id,
+                "notification_id": notification.id,
+                "journal_entry_id": notification.journal_entry_id,
+                "theme": notification.theme,
+            },
+        )
+        return notification
 
     def _growth_notification_timing_allows(
         self, request: ChatRequest, *, request_id: str | None, now: float
@@ -617,7 +602,7 @@ class ChatService:
     def _reflection_trigger_reason(self, request: ChatRequest) -> str | None:
         """Choose low-cost, natural reflection moments instead of every turn."""
 
-        decision = self._reflection_scheduler.evaluate(
+        decision = self._growth_orchestrator.evaluate_reflection_timing(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,

@@ -78,7 +78,7 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
             self.assertEqual(metadata["journal_entry_id"], entry["entry_id"])
             self.assertEqual(metadata["rollback_id"], entry["rollback_id"])
             self.assertEqual(metadata["privacy_tags"], ["local_only"])
-            self.assertEqual(metadata["training_eligibility"], "needs_review")
+            self.assertEqual(metadata["training_eligibility"], "eligible")
             self.assertIsNotNone(entry.get("growth_notification"))
             growth_notification = entry["growth_notification"]
             self.assertIn("Reverie seems to be growing", growth_notification["message"])

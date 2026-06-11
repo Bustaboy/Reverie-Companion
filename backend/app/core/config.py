@@ -100,6 +100,25 @@ class Settings(BaseSettings):
     growth_notification_style: str = "whisper"
 
 
+    # Personal LoRA is explicit, local, and disabled by default. Dataset
+    # collection only creates reviewable candidates; adapter training requires
+    # approved examples and runs outside the interactive chat path. Defaults use
+    # tiny rank and micro-batches for RTX 4070 8GB-class systems.
+    personal_lora_enabled: bool = False
+    personal_lora_collect_examples: bool = False
+    personal_lora_default_character_id: str = "default_companion"
+    personal_lora_rank: int = Field(default=8, ge=1, le=16)
+    personal_lora_max_rank: int = Field(default=16, ge=1, le=16)
+    personal_lora_alpha: int = Field(default=16, ge=1, le=64)
+    personal_lora_learning_rate: float = Field(default=1e-4, gt=0.0, le=1e-3)
+    personal_lora_max_steps: int = Field(default=120, gt=0, le=1000)
+    personal_lora_micro_batch_size: int = Field(default=1, ge=1, le=2)
+    personal_lora_gradient_accumulation_steps: int = Field(default=8, ge=1, le=64)
+    personal_lora_checkpoint_every_steps: int = Field(default=30, ge=1, le=500)
+    personal_lora_min_confidence: float = Field(default=0.72, ge=0.0, le=1.0)
+    personal_lora_min_evidence_count: int = Field(default=2, gt=0, le=20)
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return cached application settings."""
