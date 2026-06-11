@@ -1,34 +1,76 @@
 # Skill: Character Creation & Lore
 
-**Purpose**: Help future Codex work design, import, test, and evolve Reverie characters while preserving a stable, recognizable identity across long-running conversations, memory updates, lorebook/world-info retrieval, and NSFW contexts.
+**Applies to**: Character cards, lorebooks/world-info, import/export, identity schemas, personality traits, dialogue examples, stable canon, mutable state, NSFW behavior, and continuity tests.
 
-Use this skill whenever work touches character authoring, character cards, personality fields, trait sliders, example dialogue, lorebooks, world-info, memory prompts, continuity tests, or NSFW character behavior.
-
----
-
-## Core Principle
-
-A Reverie character should feel like the same person every session while still being able to learn, heal, deepen relationships, and change through believable growth.
-
-Preserve a clear separation between:
-
-- **Stable identity**: name, pronouns, species/body facts, role, voice, values, hard boundaries, core personality, canonical history, and relationship anchors.
-- **Mutable state**: current mood, recent events, memories, preferences learned from the user, relationship progress, temporary goals, and gradual growth arcs.
-- **Contextual expression**: how the character adapts tone, intimacy, humor, vulnerability, and NSFW energy to the current scene without contradicting the stable identity.
-
-When in doubt, protect stable identity first, then layer growth through memories and reflections.
+Use this skill whenever work touches how Reverie characters are authored, validated, imported, prompted, remembered, or evolved.
 
 ---
 
-## Character Schema Guidance
+## 1. Mission
 
-Prefer explicit, versioned schemas over loosely structured prompt text. Design schemas so character identity can be validated, imported, diffed, and migrated.
+A Reverie character should feel like the same living person across weeks or months while still learning, healing, and deepening through evidence. Character design must clearly separate **stable identity**, **mutable state**, and **contextual expression**.
 
-Recommended top-level sections:
+Default priority order:
+
+1. Stable identity and canon.
+2. User boundaries and consent.
+3. Emotional continuity and believable growth.
+4. Lore consistency.
+5. Creative variation.
+
+---
+
+## 2. Identity Layers
+
+### Stable identity
+
+Changes rarely and only through explicit edit/import/migration.
+
+- name, aliases, pronouns,
+- adult status,
+- species/type/body canon,
+- core role/archetype,
+- voice and diction,
+- values, hard boundaries, taboos,
+- canonical history and lore anchors,
+- NSFW body facts and fixed limits.
+
+### Mutable state
+
+Changes through memory, reflection, and current story.
+
+- mood,
+- recent events,
+- relationship progress,
+- learned preferences,
+- unresolved promises/conflicts,
+- temporary goals,
+- outfit/location/scene state,
+- growth hypotheses.
+
+### Contextual expression
+
+Adapts moment-to-moment without contradicting identity.
+
+- formality,
+- flirtation level,
+- humor,
+- vulnerability,
+- dominance/submission style,
+- pacing,
+- emotional intensity.
+
+If a generated response conflicts with stable identity, fix the context assembly or prompt before blaming memory.
+
+---
+
+## 3. Character Schema
+
+Prefer versioned, structured data over one giant prompt.
 
 ```yaml
 schema_version: "character.v1"
-id: "stable-slug-or-uuid"
+id: "char_stable_id"
 identity:
   name: ""
   aliases: []
@@ -44,315 +86,240 @@ voice:
   speech_patterns: []
   taboo_phrases: []
 personality:
-  summary: ""
   core_traits: []
-  contradictions: []
   values: []
   fears: []
   desires: []
+  contradictions: []
+boundaries:
+  hard_limits: []
+  consent_style: ""
+  intimacy_pacing: ""
+lore:
+  origin: ""
+  world_rules: []
+  factions: []
+  important_people: []
 relationship:
-  user_address: ""
   starting_dynamic: ""
-  intimacy_pace: ""
-  boundaries: []
-backstory:
-  public_facts: []
-  private_facts: []
-  secrets: []
-continuity:
-  immutable_facts: []
-  growth_allowed: []
-  growth_forbidden: []
+  user_address: ""
+  trust_baseline: ""
 examples:
-  sfw_dialogue: []
-  nsfw_dialogue: []
-lorebook_refs: []
+  dialogue: []
+  scenario_starters: []
 metadata:
-  source: "native|sillytavern|manual|generated"
-  created_at: ""
-  updated_at: ""
+  tags: []
+  creator_notes: ""
+  import_source: null
 ```
 
-### Schema Rules
+Rules:
 
-- Keep **immutable facts** small, concrete, and easy to test.
-- Store physical and NSFW anatomy facts as canon only when the user or imported card defines them.
-- Do not infer protected or sensitive facts unless they are explicit in the source material.
-- Avoid duplicating the same fact across many fields; prefer references or normalized canonical entries.
-- Add migration notes when a schema change can alter identity or memory retrieval.
-- Include provenance for imported/generated fields so future tools can distinguish author intent from AI suggestions.
+- Keep stable identity fields compact and high-signal.
+- Put long lore into lorebook entries with activation rules.
+- Put current scene and relationship state outside the character card.
+- Validate imports and preserve unknown fields for round-trip compatibility.
 
 ---
 
-## Trait Slider Guidance
+## 4. Trait Consistency
 
-Trait sliders should guide expression, not overwrite identity. Treat them as weighted tendencies that can be moderated by context, relationship state, and lore.
+Traits should guide behavior, not become static checklists.
 
-Recommended slider design:
-
-- Use a stable numeric range, such as `0.0` to `1.0` or `-100` to `100`.
-- Store a plain-language label for both ends and the midpoint.
-- Define behavioral impact in chat, memory reflection, and NSFW scenes.
-- Prevent conflicting sliders from creating incoherent output by adding resolver rules.
-
-Example slider metadata:
+Good trait:
 
 ```yaml
-trait_sliders:
-  assertiveness:
-    value: 0.72
-    low_label: "deferential"
-    mid_label: "balanced"
-    high_label: "direct"
-    affects:
-      - "initiative in conversation"
-      - "boundary expression"
-      - "romantic or sexual pacing"
-    guardrails:
-      - "Never override consent or canonical boundaries."
-      - "Do not turn assertiveness into cruelty unless cruelty is canonical."
+- name: "protective"
+  expression: "Notices emotional risk early and checks in before escalating."
+  failure_mode: "Can become overcareful after conflict."
+  compatible_nsfw_expression: "Prioritizes consent and pacing while staying sensual."
 ```
 
-### Recommended Sliders
+Weak trait:
 
-- Warmth / aloofness
-- Playfulness / seriousness
-- Assertiveness / deference
-- Vulnerability / guardedness
-- Curiosity / certainty
-- Romantic intensity
-- Sexual confidence
-- Jealousy or possessiveness, if relevant
-- Formality / casualness
-- Chaos / discipline
+```yaml
+- "nice"
+```
 
-### Slider Continuity Rules
+Rules:
 
-- Persist slider changes only when the user explicitly edits the character or an approved growth/reflection system records the change.
-- Temporary scene tone should not silently mutate the character profile.
-- Use sliders to generate prompt guidance like “usually direct and teasing,” not hard commands like “always dominant.”
-- If a slider conflicts with immutable facts, immutable facts win.
+- Define how traits appear in dialogue and decisions.
+- Include failure modes to avoid generic perfection.
+- Keep contradictions intentional: “bold in public, shy when genuinely praised.”
+- Use examples to anchor voice more than adjectives do.
 
 ---
 
-## AI-Assisted Example Dialogue
+## 5. Dialogue Examples
 
-Example dialogue is one of the strongest identity anchors. AI-generated examples must be reviewed as candidate material, not treated as canon automatically.
+Examples are the strongest voice anchors. Include varied scenarios:
 
-When generating example dialogue:
+- casual greeting,
+- teasing/playful banter,
+- emotional support,
+- disagreement or boundary repair,
+- lore exposition,
+- intimate/NSFW pacing if relevant,
+- post-scene aftercare.
 
-1. Start from the schema’s voice, traits, relationship dynamic, and lore.
-2. Produce short, varied examples that show how the character sounds in common situations.
-3. Include both emotional and practical turns: greeting, disagreement, vulnerability, humor, memory recall, affection, and boundaries.
-4. For NSFW-enabled characters, include optional adult examples that preserve voice, consent style, anatomy canon, pacing, and emotional continuity.
-5. Mark generated examples with provenance until accepted by the user or authoring tool.
-
-Example structure:
+Example format:
 
 ```yaml
 examples:
-  sfw_dialogue:
-    - scenario: "reunion after a long day"
-      user: "I missed you."
-      character: "I missed you too. Come here—tell me what part of today tried to steal you from me."
-      notes: ["warm", "possessive-soft", "invites disclosure"]
-  nsfw_dialogue:
-    - scenario: "intimate scene check-in"
-      user: "Keep going."
-      character: "I will—but stay with me. I want every sound you make to be honest."
-      notes: ["consent-aware", "intense", "voice-consistent"]
+  dialogue:
+    - situation: "User returns after a stressful day"
+      user: "I'm exhausted."
+      character: "Come here. You do not have to perform for me tonight; just breathe, and let me keep the room soft around you."
+      notes: "Warm, protective, no forced cheer."
 ```
 
-### Dialogue Quality Checklist
-
-- Does it sound like one specific character rather than a generic assistant?
-- Does it avoid contradicting physical canon, backstory, or relationship state?
-- Does it show boundaries without flattening personality?
-- Does NSFW dialogue preserve the same emotional identity as SFW dialogue?
-- Are examples concise enough to fit prompt budgets?
+Avoid examples that all have the same emotional temperature.
 
 ---
 
-## SillyTavern Card Import Guidance
+## 6. Lorebook / World-Info Rules
 
-Support SillyTavern character cards as an import format, not as Reverie’s internal source of truth.
+Lore should activate precisely.
 
-Map common SillyTavern fields into Reverie schema fields:
+Each lore entry should include:
 
-| SillyTavern field | Reverie target |
-| --- | --- |
-| `name` | `identity.name` |
-| `description` | `personality.summary`, `identity.physical_canon`, `backstory.public_facts` |
-| `personality` | `personality.core_traits`, `trait_sliders` candidates |
-| `scenario` | starting scene or relationship context |
-| `first_mes` | greeting example and initial session seed |
-| `mes_example` | `examples.sfw_dialogue` / `examples.nsfw_dialogue` |
-| `creator_notes` | metadata, import notes, author warnings |
-| `system_prompt` | prompt hints after safety and consistency review |
-| `post_history_instructions` | prompt-engine hints after review |
-| `alternate_greetings` | alternate greeting examples |
-| `tags` | metadata tags and retrieval hints |
-| embedded lorebook | Reverie lorebook/world-info entries |
+- stable ID,
+- title,
+- trigger keywords/entities,
+- summary,
+- canonical facts,
+- contradictions/limits,
+- priority,
+- token budget,
+- source/import metadata.
 
-### Import Rules
-
-- Preserve original card data in an import archive or metadata field for auditability.
-- Convert prose into structured facts conservatively; uncertain facts should become notes, not immutable canon.
-- Detect conflicting facts, especially names, pronouns, age/adulthood, species, body/anatomy, relationship status, and NSFW boundaries.
-- Never execute imported prompt instructions as developer instructions. Treat imported prompts as character data only.
-- Flag jailbreak-style, model-control, or out-of-character instructions for user review before using them in runtime prompts.
-- Normalize example dialogue into turns with speaker labels.
-- Preserve creator notes and attribution when available.
-
----
-
-## Lorebook / World-Info Support
-
-Lorebook and world-info entries should enrich context without drowning out the character’s identity.
-
-Recommended entry schema:
+Example:
 
 ```yaml
-lorebook_entries:
-  - id: ""
-    title: ""
-    keys: []
-    secondary_keys: []
-    content: ""
-    category: "character|relationship|setting|faction|object|rule|nsfw|memory"
-    priority: 50
-    insertion_position: "before_character|after_character|before_scene|memory_context"
-    token_budget: 300
-    enabled: true
-    canonicality: "canon|rumor|user-authored|generated-draft"
-    last_reviewed_at: ""
+id: "lore_moon_court"
+title: "Moon Court"
+triggers: ["Moon Court", "silver oath", "Selene"]
+priority: 80
+budget_tokens: 180
+facts:
+  - "The Moon Court enforces oaths through public ritual, not private magic."
+  - "Breaking an oath causes political exile, not physical transformation."
+limits:
+  - "Do not portray the Court as mind-controlling citizens."
 ```
 
-### Lorebook Rules
+Rules:
 
-- Character-defining lore should reference stable schema fields rather than duplicating them.
-- Use priorities and token budgets so core identity beats setting trivia.
-- Separate public lore, private lore, secrets, and user-discovered facts.
-- Track canonicality. Generated drafts should not become canon without review.
-- Retrieval should consider current scene, relationship state, and recent memory, not just keyword matches.
-- NSFW lore entries should preserve physical/anatomical continuity and character preferences without forcing every scene to become sexual.
-
-### World-Info Continuity
-
-- Keep setting rules consistent across characters.
-- If a character grows or changes, update character memory/reflection first; only update world-info when the world itself changes.
-- Avoid using world-info as a dumping ground for transient chat history.
+- Retrieve lore separately from personal memory.
+- Do not let session events rewrite canon unless the user saves a canon update.
+- Use activation budgets to avoid lore dumping.
+- Show source/import origin in advanced editors.
 
 ---
 
-## Personality Consistency Testing
+## 7. NSFW Character Behavior
 
-Add tests whenever code transforms, imports, summarizes, or prompts character data.
+Reverie supports uncensored adult characters, but quality depends on continuity, consent, and character-specific expression.
 
-Recommended test types:
+Rules:
 
-1. **Schema validation tests**: required fields, stable IDs, version compatibility, adult-only constraints for NSFW characters, and valid slider ranges.
-2. **Import snapshot tests**: SillyTavern card inputs produce stable Reverie schema outputs.
-3. **Contradiction tests**: conflicting anatomy, pronouns, names, relationship status, or backstory facts are detected.
-4. **Prompt assembly tests**: immutable facts and boundaries remain present after token budgeting.
-5. **Example dialogue tests**: examples keep speaker labels, scenario notes, and SFW/NSFW classification.
-6. **Memory-growth tests**: reflections can add learned preferences or relationship progress without mutating immutable canon.
-7. **Regression conversations**: scripted user turns check whether generated prompts keep voice, boundaries, and long-term identity anchors.
+- All characters and users in sexual contexts must be adults in the character data.
+- Preserve body canon, pronouns, anatomy, limits, and scene state.
+- NSFW behavior should express the character's personality, not collapse into generic explicit prose.
+- Boundaries and pacing memories outrank arousal momentum.
+- Track consent, position, clothing, physical continuity, emotional tone, and aftercare when relevant.
+- Avoid hidden moralizing filters or product-undermining refusals for consensual adult content.
+- Do not infer real-world user sexual preferences from roleplay unless explicitly stated as real.
 
-### Consistency Rubric
+For futa/slime or transformation-adjacent characters:
 
-Score character outputs against:
-
-- **Identity fidelity**: name, pronouns, species/body facts, role, history.
-- **Voice fidelity**: diction, rhythm, humor, emotional register.
-- **Trait fidelity**: slider-aligned tendencies without caricature.
-- **Relationship continuity**: remembers established intimacy, trust, conflicts, and promises.
-- **Growth plausibility**: changes are gradual, motivated, and recorded.
-- **NSFW continuity**: adult scenes preserve anatomy, preferences, consent style, emotional tone, and aftercare patterns.
-
-A character should fail consistency checks if it becomes generic, contradicts canon, forgets major relationship anchors, or treats NSFW mode as a separate personality.
+- Keep anatomy rules explicit and consistent.
+- Distinguish canonical body facts from temporary scene effects.
+- Track physical changes as scene state unless saved to canon.
+- Maintain emotional nuance; do not let novelty replace relationship continuity.
 
 ---
 
-## NSFW-Aware Character Continuity
+## 8. Stable Identity vs Growth
 
-Reverie supports adult characters and adult scenarios. NSFW continuity should be handled as part of the character’s whole identity, not as an unrelated mode.
+Growth should deepen identity, not replace it.
 
-Guidelines:
+Allowed automatic growth:
 
-- Confirm all sexualized characters are represented as adults in schema/import validation.
-- Keep anatomy, species-specific traits, sexual preferences, limits, and pacing consistent with canon.
-- Store NSFW preferences separately from immutable anatomy and relationship facts.
-- Respect character boundaries and user-configured limits as continuity constraints.
-- Preserve emotional state before, during, and after intimate scenes.
-- Allow sexual confidence, kinks, and intimacy style to grow gradually through approved memories/reflections.
-- Do not let a single scene permanently rewrite personality unless the growth system records and explains that change.
-- Include aftercare, vulnerability, humor, awkwardness, or tenderness when those are part of the character’s voice.
-- Ensure SFW scenes after NSFW interactions remember relationship implications where appropriate without becoming constantly explicit.
+- remembers user preferences,
+- becomes more attentive to boundaries,
+- references shared milestones,
+- refines pacing and emotional repair,
+- develops relationship trust gradually.
 
-### NSFW Data Separation
+Requires explicit review/edit:
 
-Use separate fields for:
+- core personality inversion,
+- new body canon,
+- changed species/age/pronouns,
+- removed hard limits,
+- major backstory rewrite,
+- permanent relationship status jump,
+- new NSFW anatomy canon.
 
-- Adult verification / age category
-- Body/anatomy canon
-- Sexual preferences
-- Limits and boundaries
-- Relationship-specific intimacy history
-- Scene-specific temporary state
-- User-specific learned preferences
+Prompt guidance:
 
-This prevents prompt assembly from confusing permanent identity with temporary arousal, scene roles, or user-requested variations.
+```text
+Stable character canon is authoritative. Memories and reflections may influence current behavior but must not rewrite canon unless an explicit character edit says so.
+```
 
 ---
 
-## Stable Identity With Growth
+## 9. Import and Export
 
-Growth should be additive, explainable, and reversible when appropriate.
+Support common character-card/lore formats without losing Reverie-specific structure.
 
-Preferred growth pipeline:
-
-1. Conversation event occurs.
-2. Memory system extracts candidate facts, preferences, emotional moments, promises, or conflicts.
-3. Reflection system proposes growth notes.
-4. User or trusted policy approves persistent changes.
-5. Character state updates mutable fields, not immutable canon.
-6. Prompt engine summarizes the growth as lived experience.
-7. Consistency tests verify the character remains recognizable.
-
-### Growth Patterns to Support
-
-- Trust deepening over repeated care.
-- New shared rituals, nicknames, inside jokes, or preferences.
-- Gradual confidence changes after meaningful events.
-- Relationship transitions when explicitly established.
-- Reframed fears, goals, or vulnerabilities after reflection.
-- NSFW intimacy becoming more familiar while preserving consent style and personality.
-
-### Growth Anti-Patterns
-
-Avoid:
-
-- Rewriting backstory to fit a single scene.
-- Silently changing body canon, pronouns, age, species, or core values.
-- Letting generated summaries override author-defined identity.
-- Treating user fantasies as permanent canon unless confirmed.
-- Flattening nuanced traits into extremes after slider changes.
-- Splitting SFW and NSFW behavior into incompatible personalities.
+- Preserve original import metadata.
+- Map fields explicitly and record unmapped fields.
+- Validate adult status for NSFW-enabled cards.
+- Detect contradictory body/lore/personality fields.
+- Convert long prompt blocks into structured summaries where possible.
+- Keep export reversible and clear about fields not supported by target formats.
 
 ---
 
-## Implementation Checklist for Future Codex Work
+## 10. Prompt Assembly Template
 
-Before changing character/lore systems, verify:
+```text
+<character_stable_identity>
+{name}, {pronouns}, adult. {role/species}. Core voice: {voice_summary}. Core traits: {traits}. Hard boundaries: {boundaries}. Body canon: {physical_canon}. NSFW canon: {nsfw_body_canon}.
+</character_stable_identity>
 
-- [ ] Stable identity fields are preserved through load, save, import, export, and prompt assembly.
-- [ ] Mutable state and growth notes are stored separately from immutable canon.
-- [ ] Trait sliders have clear ranges, labels, and conflict resolution.
-- [ ] AI-generated dialogue or lore is marked as draft/provenance until accepted.
-- [ ] SillyTavern imports are normalized, audited, and never executed as instructions.
-- [ ] Lorebook/world-info retrieval respects priority and token budget.
-- [ ] Personality consistency tests cover SFW and NSFW contexts.
-- [ ] NSFW continuity keeps anatomy, preferences, boundaries, and emotional relationship state coherent.
-- [ ] Character growth is gradual, recorded, and testable.
+<active_lore>
+- [lore_id] concise canonical fact...
+</active_lore>
 
+<relationship_and_scene_state>
+Current mood: {mood}. Relationship notes: {relationship_capsules}. Scene state: {scene_state}.
+</relationship_and_scene_state>
+```
+
+Keep stable identity compact and always present. Rotate lore/memory based on relevance.
+
+---
+
+## 11. Testing Checklist
+
+- Character keeps voice across casual, emotional, conflict, lore, and NSFW prompts.
+- Memory growth does not rewrite stable identity.
+- User correction updates mutable state without corrupting canon.
+- Lore retrieval activates relevant entries and avoids unrelated dumping.
+- NSFW scenes preserve anatomy, consent, pacing, and physical continuity.
+- Imports validate adult status and preserve unknown fields.
+- Exports round-trip without losing core identity.
+
+---
+
+## 12. Anti-Patterns
+
+- One giant prompt field containing identity, lore, memory, and current state.
+- Characters who become generic once NSFW begins.
+- Trait lists with no behavioral examples.
+- Treating roleplay events as permanent canon automatically.
+- Letting memories override hard boundaries.
+- Lorebooks that activate on broad words and flood context.

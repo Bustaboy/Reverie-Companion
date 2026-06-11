@@ -1,171 +1,247 @@
-# FastAPI Backend Patterns Skill
+# Skill: FastAPI Backend Patterns
 
-Use this skill when implementing or extending Reverie Companion backend features. It captures the preferred local-first architecture for API routes, service orchestration, background jobs, model integrations, training workflows, and memory/growth data flow.
+**Applies to**: FastAPI routes, Pydantic schemas, service/repository layering, workers, job queues, model adapters, memory/reflection/growth APIs, persistence, health checks, and backend tests.
 
-## Core Principles
+Use this skill whenever backend code changes in Reverie's custom local-first API.
 
-- Keep the backend local-first by default: every feature should work without external hosted services unless the user explicitly opts in.
-- Prefer clear route/service/repository boundaries over putting business logic directly in FastAPI route handlers.
-- Make long-running work explicit through job APIs and background workers instead of blocking request/response cycles.
-- Treat model providers, training runners, storage backends, and worker queues as replaceable adapters behind stable service interfaces.
-- Design schemas and data flow so future desktop, CLI, and automation clients can reuse the same API contracts.
+---
 
-## Route, Service, and Data Layering
+## 1. Mission
 
-Use a layered structure for backend feature work:
+Reverie's backend should be boring, typed, observable, and extensible. It must protect local user data, coordinate local AI workloads under 8GB constraints, and expose clean APIs for chat, memory, reflection, growth, character management, and optional media integrations.
 
-1. **Routes** define HTTP behavior only.
-   - Parse path/query/body parameters through Pydantic schemas.
-   - Inject dependencies such as services, repositories, settings, and worker clients.
-   - Return response schemas or standard error responses.
-   - Avoid direct file I/O, database queries, model calls, or training orchestration.
-2. **Services** own business logic and orchestration.
-   - Validate domain preconditions that require application state.
-   - Coordinate repositories, model adapters, job creation, and event emission.
-   - Convert provider-specific errors into domain errors.
-   - Keep methods small enough to test without a live FastAPI server.
-3. **Repositories or stores** own persistence.
-   - Encapsulate database, JSONL, SQLite, vector index, or filesystem details.
-   - Expose domain-oriented methods such as `append_memory`, `list_training_runs`, or `update_job_status`.
-   - Keep transaction boundaries close to data mutations.
-4. **Adapters** isolate external or heavy dependencies.
-   - Place Ollama, Unsloth, filesystem watcher, vector database, and subprocess logic behind interfaces.
-   - Keep adapter configuration in settings objects rather than global constants.
+Default priority order:
 
-A route handler should generally look like: receive schema -> call service -> return response schema. If it needs more than light mapping, move that logic into the service.
+1. Correctness and user trust.
+2. Local-first privacy and deletion.
+3. Clear service boundaries.
+4. Predictable performance on 8GB systems.
+5. Extensibility without framework sprawl.
 
-## Pydantic Schema Guidance
+---
 
-Create explicit schemas for every API boundary:
+## 2. Architecture Layers
 
-- Use `*Request`, `*Response`, `*Create`, `*Update`, and `*Status` suffixes consistently.
-- Keep request schemas client-focused and response schemas stable; do not leak internal ORM or storage objects.
-- Prefer typed enums for job states, model providers, training phases, memory categories, and error codes.
-- Include IDs, timestamps, and status fields on resources that clients may poll or cache.
-- Use validation constraints for user-provided text, file paths, batch sizes, ranks, learning rates, and scheduling options.
-- Mark experimental fields clearly in schema descriptions and default them safely.
-- Avoid overloading one schema for unrelated flows; separate chat, memory ingestion, training, and growth analytics payloads.
+Use explicit layers. Do not put business rules directly in route handlers.
 
-When introducing a schema, add enough field descriptions that generated OpenAPI documentation is useful to future implementers.
+```text
+api/routes/*        HTTP/WebSocket/SSE boundaries, auth/session, request parsing
+schemas/*           Pydantic request/response/event models
+services/*          business workflows and policy decisions
+repositories/*      persistence and query abstractions
+adapters/*          LLM, embeddings, rerankers, ComfyUI, filesystem, model backends
+workers/*           background jobs and schedulers
+domain/*            pure domain models, scoring, validation, state transitions
+```
 
-## Job API Pattern
+Rules:
 
-Use job APIs for any operation that can take more than a few seconds, performs repeated model calls, touches large files, or launches training.
+- Routes should call services and return schemas.
+- Services may orchestrate repositories, adapters, and jobs.
+- Repositories should not know about HTTP.
+- Adapters should hide vendor/backend details.
+- Domain logic should be testable without FastAPI startup.
+
+---
+
+## 3. Pydantic Schema Rules
+
+- Use versioned schemas for durable data: `MemoryV1`, `JournalEntryV1`, `CharacterCardV1`.
+- Separate create/update/read models.
+- Avoid returning raw ORM objects.
+- Include IDs, timestamps, lifecycle flags, and policy fields for memory/growth resources.
+- Use enums for memory type, sensitivity, job status, and promotion status.
+- Validate user-facing text lengths and list sizes at API boundaries.
+- For partial updates, distinguish “field omitted” from “set to null.”
+
+Example:
+
+```python
+class MemoryCreate(BaseModel):
+    character_id: str
+    type: MemoryType
+    text: constr(min_length=1, max_length=1000)
+    source_message_ids: list[str] = Field(default_factory=list, max_length=50)
+    sensitivity: Sensitivity = Sensitivity.normal
+    training_allowed: bool = False
+```
+
+---
+
+## 4. Service Patterns
+
+Services own workflows and policy gates.
+
+### Memory service responsibilities
+
+- extraction candidate intake,
+- deduplication and contradiction checks,
+- sensitivity/privacy gates,
+- provenance writes,
+- retrieval orchestration,
+- deletion/tombstone enforcement,
+- usage audit logging.
+
+### Reflection service responsibilities
+
+- bounded evidence collection,
+- journal creation,
+- promotion scoring,
+- downstream memory/state writes,
+- rollback links,
+- privacy review.
+
+### Growth service responsibilities
+
+- relationship state updates,
+- practice notes,
+- training eligibility,
+- dashboard summaries,
+- rollback of state and artifacts.
+
+### Chat service responsibilities
+
+- context assembly,
+- streaming generation,
+- cancellation,
+- model adapter selection,
+- memory/growth injection,
+- response audit events.
+
+---
+
+## 5. Repository Rules
+
+- Prefer small repositories per aggregate: `MemoryRepository`, `JournalRepository`, `CharacterRepository`, `JobRepository`.
+- Keep transaction boundaries explicit in services.
+- Use tombstones for user-visible deletion where audit/rollback needs exist, and hard delete when the user requests full erasure.
+- Ensure deleted/private records are excluded by default query methods.
+- Provide explicit `include_deleted=True` only for admin/debug/rollback paths.
+- Preserve provenance and supersession chains in persistence.
+- Add migrations for schema changes; never rely on implicit JSON shape drift.
+
+---
+
+## 6. Error Handling
+
+Return calm, typed errors. Do not leak stack traces or private content.
+
+Use an application error model:
+
+```json
+{
+  "error": {
+    "code": "memory_conflict_requires_review",
+    "message": "This memory conflicts with an existing note and needs review.",
+    "details": {"conflict_id": "conf_..."},
+    "retryable": false
+  }
+}
+```
+
+Rules:
+
+- Map domain errors to appropriate HTTP statuses.
+- Include stable error codes for UI handling.
+- Log technical details locally with correlation IDs.
+- Scrub raw message content from logs unless debug capture is enabled.
+- Make cancellation a normal outcome, not an exception-looking failure.
+
+---
+
+## 7. Streaming and Events
+
+Use streaming for chat tokens and job progress.
+
+- Prefer WebSocket or SSE for chat and background job events.
+- Include event type, ID, timestamp, and sequence number.
+- Support cancellation by request/job ID.
+- Send structured lifecycle events: `queued`, `started`, `progress`, `partial`, `completed`, `failed`, `cancelled`.
+- Keep payloads small; do not stream huge memory dumps.
+
+Example event:
+
+```json
+{
+  "event": "job.progress",
+  "job_id": "job_...",
+  "phase": "embedding",
+  "progress": 0.42,
+  "message": "Indexing recent memories",
+  "resource_mode": "idle"
+}
+```
+
+---
+
+## 8. Job Scheduling and 8GB Coordination
+
+Heavy backend work must go through a scheduler.
+
+- Classify jobs as interactive, near-interactive, idle, or exclusive.
+- Ensure chat generation can preempt idle indexing.
+- Ensure training/media jobs acquire exclusive resource locks unless measured safe.
+- Store job status durably so the UI can recover after restart.
+- Jobs must report progress and support cancellation or checkpointing.
+- Cleanup must unload models, release locks, close files, and delete temp data.
+
+Never start embedding backfills, media generation, or training from a request handler without queueing/resource checks.
+
+---
+
+## 9. API Design for Memory and Reflection
 
 Recommended endpoints:
 
-- `POST /jobs/{kind}` or a domain-specific create endpoint such as `POST /training/lora/runs` to enqueue work.
-- `GET /jobs/{job_id}` to retrieve status, progress, timestamps, and the latest message.
-- `GET /jobs/{job_id}/events` for append-only progress events when streaming is useful.
-- `POST /jobs/{job_id}/cancel` to request cancellation.
-- `GET /jobs?kind=&state=` for client dashboards and recovery after app restart.
+```text
+POST   /api/chat/{conversation_id}/messages
+GET    /api/chat/{conversation_id}/events
+POST   /api/memories/search
+PATCH  /api/memories/{memory_id}
+DELETE /api/memories/{memory_id}
+GET    /api/memories/{memory_id}/provenance
+POST   /api/reflections/trigger
+GET    /api/reflections/{entry_id}
+POST   /api/reflections/{entry_id}/promote
+POST   /api/growth/{character_id}/rollback
+GET    /api/jobs/{job_id}
+POST   /api/jobs/{job_id}/cancel
+```
 
-Recommended job fields:
+Keep commands explicit. Avoid magical endpoints that both chat, reflect, train, and mutate state invisibly.
 
-- `id`, `kind`, `state`, `progress`, `created_at`, `updated_at`, `started_at`, `finished_at`.
-- `input_summary` for safe client display without storing secrets or large payloads.
-- `result` for small structured outputs and `artifact_paths` for local files.
-- `error_code`, `error_message`, and `retryable` for failures.
-- `cancellation_requested` to let workers exit safely between steps.
+---
 
-Job creation should be idempotent when practical. For example, a request may include a client-generated idempotency key or deterministic source hash to avoid duplicate ingestion/training work.
+## 10. Security and Privacy
 
-## Background Worker Pattern
+- Bind APIs to local loopback by default unless the user enables remote access.
+- Require explicit CORS origins for the Tauri frontend.
+- Store secrets/tokens in OS keychain or encrypted local config where possible.
+- Validate file paths; never allow path traversal for imports/exports/media.
+- Treat imported character cards/lorebooks as untrusted data.
+- Do not log raw NSFW/private content by default.
+- Honor deletion across database rows, embeddings, caches, exports, and training queues.
 
-Background workers should run long tasks outside route handlers while preserving local-first simplicity.
+---
 
-- Start with an in-process worker queue for local development unless the feature clearly needs a separate process.
-- Persist job records before enqueueing work so interrupted app sessions can recover or mark jobs as stale.
-- Make workers checkpoint progress after each meaningful step.
-- Support cooperative cancellation by checking job state between model calls, file batches, or training phases.
-- Keep worker functions thin: load job input -> call service/orchestrator -> update status/events.
-- Use structured logs and job events rather than print-only progress.
-- Never assume GPU availability; detect CPU/GPU capabilities and reflect them in job status.
-- Clean up temporary files on success, cancellation, and failure, while preserving declared artifacts.
+## 11. Testing Checklist
 
-For multi-process workers, keep the same service contracts and move only queue transport details behind an adapter.
+- Route tests validate request/response schemas and error codes.
+- Service tests cover memory promotion, contradiction, deletion, and rollback.
+- Repository tests ensure default queries exclude deleted/private records.
+- Streaming tests cover cancellation and ordered events.
+- Scheduler tests verify idle jobs pause during chat and exclusive jobs lock resources.
+- Privacy tests ensure private/deleted content is not exported, retrieved, reflected, or trained.
+- Migration tests load old sample data and preserve provenance.
 
-## Ollama Integration
+---
 
-Treat Ollama as a local model provider adapter, not as business logic.
+## 12. Anti-Patterns
 
-- Centralize Ollama base URL, timeout, default model, context length, and streaming options in settings.
-- Provide a health check that reports whether Ollama is reachable and which configured models are available.
-- Keep prompt construction in domain services or prompt modules, then pass final messages/options to the adapter.
-- Support streaming and non-streaming generation with a shared response shape.
-- Normalize provider errors into domain errors such as model unavailable, context too large, timeout, or generation failed.
-- Validate requested model names against local configuration or discovered models before starting expensive work.
-- Make embedding and generation separate interfaces so memory retrieval can evolve independently from chat generation.
-- Prefer local model calls by default; never silently fall back to a hosted provider.
-
-When a feature depends on Ollama, expose clear setup or readiness errors so the UI can guide the user without crashing.
-
-## Unsloth LoRA Training Orchestration
-
-LoRA training should be orchestrated as resumable, observable jobs.
-
-- Model training routes should create training-run resources and enqueue workers, not launch training inline.
-- Validate dataset paths, output directories, base model names, max sequence length, rank, learning rate, batch size, epochs, and quantization options before enqueueing.
-- Store a training manifest that captures input datasets, hyperparameters, base model, adapter output path, environment facts, and code version when available.
-- Split orchestration into phases: prepare dataset, validate environment, launch training, checkpoint adapter, evaluate or smoke-test, register artifact.
-- Wrap Unsloth execution behind a runner adapter that can use an imported Python API or subprocess command without changing route contracts.
-- Stream progress by parsing trainer logs into job events and coarse progress percentages.
-- Support cancellation between phases and, when possible, by terminating the subprocess or trainer gracefully.
-- Keep artifacts local and explicit: adapters, tokenizer files, merged model outputs, evaluation reports, and logs should have known paths.
-- Never delete prior adapters automatically; create versioned run directories and let cleanup be an explicit user action.
-
-If training prerequisites are missing, fail early with actionable local setup guidance instead of starting a doomed job.
-
-## Memory and Growth Data Flow
-
-Memory and growth features should preserve provenance and keep the user in control.
-
-1. **Capture** events from chat turns, reflections, files, or explicit user notes through ingestion endpoints.
-2. **Normalize** raw input into typed memory candidates with source metadata, timestamps, privacy flags, and confidence.
-3. **Review or policy-check** candidates before promoting them when the feature involves sensitive or identity-shaping data.
-4. **Persist** promoted memories in the memory store and record embeddings or search indexes as derived data.
-5. **Retrieve** relevant memories through a service that combines filters, semantic search, recency, and importance.
-6. **Apply** retrieved memories to prompts through prompt builders, not directly inside route handlers.
-7. **Measure growth** by writing structured observations, user feedback, model outcomes, and training examples to append-only logs or versioned stores.
-
-Keep raw memories, embeddings, summaries, and training examples distinguishable. Derived data should be rebuildable from local source records whenever possible.
-
-## Error Handling
-
-Use consistent domain errors and response mapping:
-
-- Define domain exception classes or error result types for validation, missing resources, provider unavailability, job conflicts, cancellation, and internal failures.
-- Map known domain errors to stable HTTP status codes and machine-readable error codes.
-- Include human-readable messages that are safe to show in the UI.
-- Do not expose stack traces, local secrets, full prompts, or sensitive file contents in API responses.
-- Preserve detailed diagnostics in local logs and job events when safe.
-- For background jobs, record failure state on the job before re-raising or logging the exception.
-- Make retryability explicit for transient errors such as Ollama timeouts, locked files, or temporary GPU/resource contention.
-
-Prefer returning a structured error schema over ad hoc dictionaries so clients can handle failures consistently.
-
-## Local-First Operation
-
-Every backend feature should respect local-first expectations:
-
-- Store user data, memory records, model artifacts, training datasets, and logs on local paths controlled by settings.
-- Avoid network calls except to local services such as Ollama unless the user has configured a remote integration.
-- Provide readiness checks for optional local dependencies instead of making them hard startup requirements.
-- Make features degrade gracefully when GPU, Ollama, Unsloth, or optional indexes are unavailable.
-- Keep secrets in local configuration or OS keychains; never write them to job events, manifests, or logs.
-- Support restart recovery by persisting job and artifact metadata.
-- Prefer deterministic, inspectable file formats such as JSON, JSONL, SQLite, and manifest files for user-owned data.
-- Document any cleanup, migration, or export behavior that touches user data.
-
-## Implementation Checklist
-
-Before opening a backend feature PR, verify that:
-
-- Routes are thin and delegate orchestration to services.
-- Request and response schemas are explicit, typed, and documented.
-- Long-running work uses a job API and background worker path.
-- Ollama and Unsloth logic is isolated behind adapters.
-- Memory/growth writes preserve provenance and separate raw from derived data.
-- Errors use stable codes and do not leak sensitive local details.
-- The feature works locally by default and has clear readiness messaging for optional dependencies.
-- Tests cover service logic, schema validation, job state transitions, and provider/runner failure paths.
+- Business logic in FastAPI route functions.
+- Raw dictionaries passed across every layer.
+- Background `asyncio.create_task` with no durable job record.
+- Endpoints that mutate memory without provenance.
+- Catch-all exceptions returning “500 something went wrong.”
+- Global singletons that make tests order-dependent.
+- Hidden cloud calls in a local-first feature.

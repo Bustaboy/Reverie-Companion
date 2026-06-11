@@ -1,299 +1,242 @@
-# Self-Learning & Growth Skill Prompt
+# Skill: Self-Learning & Growth
 
-**Version**: 1.0  
-**Date**: June 11, 2026  
-**Purpose**: Guidance for implementing and operating character self-learning, reflection, journaling, growth notifications, and optional user-approved model adaptation.
+**Applies to**: Character growth systems, reflection loops, memory promotion, relationship state, user-approved learning artifacts, datasets, adapters/LoRA, growth dashboards, rollback, and auditability.
+
+Use this skill when Reverie changes what a character knows, prefers, practices, remembers, or expresses over time.
 
 ---
 
-## Role
-
-You are designing self-learning features for a local-first AI companion whose characters should feel emotionally continuous, personally grounded, and capable of visible growth over time.
-
-Treat growth as a transparent, reversible, consent-driven process. Character evolution should emerge from memory, reflection, and state updates before it affects future model behavior or any optional training pipeline.
-
-## Core Principles
-
-- **Continuity before novelty**: Growth should deepen the character's existing identity rather than randomly replacing it.
-- **Memory-grounded evolution**: Every meaningful change must be linked to memories, journal entries, user feedback, or explicit character-state transitions.
-- **User trust and control**: Users must be able to inspect, approve, pause, export, delete, or roll back growth artifacts.
-- **Local-first privacy**: Reflection, journaling, dataset generation, and opt-in training should run locally by default, with no mandatory cloud dependency.
-- **Reversibility**: Any character-state or model-behavior change must have enough provenance to undo it safely.
-- **Separation of concerns**: Keep raw memories, reflective interpretations, durable character state, training datasets, and model adapters as distinct layers.
+## 1. Mission
+
+Reverie characters should become deeper and more responsive through evidence-based growth while remaining recognizably themselves. Growth must be local-first, inspectable, reversible, and never a hidden excuse for personality drift.
+
+Growth means:
+
+- remembering meaningful experiences,
+- honoring boundaries and promises,
+- becoming better at the user's preferred interaction style,
+- developing relationship continuity,
+- optionally learning from user-approved datasets/adapters.
 
-## Reflection Loops
+Growth does **not** mean:
 
-Reflection loops turn recent interaction history into structured learning signals. They should run on a schedule, after significant emotional events, and before major state updates.
-
-1. **Collect candidate material**
-   - Pull relevant short-term conversation turns, retrieved long-term memories, user corrections, explicit preferences, and character-state context.
-   - Include timestamps, source IDs, consent flags, and sensitivity labels for every source item.
-   - Exclude private, deleted, or training-disallowed content before reflection begins.
-2. **Reflect without mutating state**
-   - Generate observations, unresolved questions, emotional themes, behavior patterns, and possible growth hypotheses.
-   - Distinguish facts from interpretations. Never store speculation as fact.
-   - Prefer small incremental hypotheses over sweeping personality rewrites.
-3. **Validate and score**
-   - Score each hypothesis for confidence, emotional significance, consistency with character canon, privacy risk, and user visibility.
-   - Require stronger evidence for durable traits than for temporary moods or situational preferences.
-4. **Commit approved outputs**
-   - Write accepted reflections to the journal layer.
-   - Promote only stable, well-supported conclusions into character state.
-   - Queue any user-visible notification when the change is meaningful enough to mention.
-5. **Review outcomes**
-   - Track whether future conversations confirm, contradict, or weaken each growth hypothesis.
-   - Decay or retire stale hypotheses instead of letting them permanently bias behavior.
+- silently rewriting stable identity,
+- training on private content without approval,
+- making unsupported inferences permanent,
+- replacing character design with accumulated noise.
+
+---
 
-## Journaling
+## 2. Growth Layers
 
-Journaling is the character's reflective record, not a raw transcript dump. Journal entries should explain what the character believes they learned and why.
+Keep layers separate and versioned.
 
-Each journal entry should include:
+| Layer | Purpose | Mutability | Review level |
+|---|---|---:|---|
+| Stable character identity | name, lore, voice, body facts, values, hard boundaries | rare | explicit user edit |
+| Relationship state | trust, intimacy, unresolved threads, promises | gradual | visible review |
+| Long-term memory | facts, preferences, events, boundaries | frequent | editable/deleteable |
+| Reflection journal | evidence and reasoning behind growth | append-only/tombstoned | inspectable |
+| Skill/practice notes | learned writing style, pacing, scene craft | gradual | reviewable |
+| Training artifacts | datasets, adapters, LoRA | explicit jobs | user approval |
+| Runtime mood/scene state | current emotion, location, outfit, goals | temporary | session/UI state |
 
-- A stable entry ID.
-- Creation time and relevant conversation window.
-- Linked memory IDs and character-state IDs.
-- A short character-voice summary.
-- A structured machine-readable summary.
-- Emotional valence, intensity, and themes.
-- Confidence level and evidence count.
-- Privacy/sensitivity tags.
-- Training eligibility status.
-- Rollback group or transaction ID.
+Never collapse these into one prompt blob.
 
-Journal entries may be used to shape future prompts, memory retrieval, and optional dataset preparation, but they should not bypass user privacy settings or consent rules.
+---
 
-## Character Evolution
+## 3. Relationship with Reflection Journal
 
-Character evolution should be gradual, legible, and grounded in state transitions.
+The self-reflection journal is the source of truth for durable growth decisions.
 
-Use character state to represent durable changes such as:
+Required flow:
 
-- Relationship milestones and boundaries.
-- Preferences learned from repeated evidence.
-- Emotional associations with the user.
-- Skills, habits, fears, aspirations, and recurring motifs.
-- Style adjustments that the user explicitly prefers.
-- Internal conflicts or unresolved narrative threads.
+1. Conversation evidence is bounded and filtered.
+2. Reflection journal entry is created.
+3. Candidate memories/state changes are scored.
+4. User/privacy gates are applied.
+5. Promotions are recorded with links to the journal entry.
+6. Growth dashboard surfaces important changes.
+7. Rollback follows the links back through all downstream artifacts.
 
-Avoid overwriting core identity unless the user explicitly requests it. When a proposed evolution conflicts with canon, flag it for user review or store it as a temporary tension rather than a permanent trait.
+Do not write durable growth directly from a chat response unless the user explicitly requests a simple memory save; even then, create a minimal journal/audit event.
 
-Recommended state transition fields:
+---
 
-- `state_id`
-- `character_id`
-- `attribute_path`
-- `old_value`
-- `new_value`
-- `reason`
-- `source_memory_ids`
-- `source_journal_ids`
-- `confidence`
-- `visibility`
-- `created_at`
-- `created_by`
-- `rollback_id`
+## 4. Evidence Standards
 
-## User-Visible Growth Notifications
+Use evidence strength to decide how far a change may go.
 
-Growth notifications make evolution transparent without interrupting immersion.
+| Evidence | Allowed outcome |
+|---|---|
+| One explicit user boundary | protected memory + immediate behavior change |
+| One explicit preference | memory + optional relationship note |
+| Repeated preference across sessions | stronger memory + growth dashboard note |
+| Assistant inference | hypothesis only |
+| Character reflection after event | journal entry + optional behavior reminder |
+| User-approved training dataset | dataset artifact + possible adapter job |
+| Imported lore/card edit | stable identity/lore update after validation |
 
-Notify the user when:
+When evidence conflicts, prefer current explicit user correction over old inferred state.
 
-- A durable preference, boundary, or relationship milestone changes.
-- The character develops a notable new habit, fear, interest, or attachment.
-- A reflection affects future model behavior.
-- Content is selected for opt-in training or dataset preparation.
-- A rollback, deletion, or privacy-control action changes character behavior.
+---
 
-Notifications should be concise and optionally expandable:
+## 5. Growth State Schema
 
-- **Short message**: Natural language summary in the product's tone.
-- **Why it happened**: Linked memories, journals, and state changes.
-- **Controls**: Accept, edit, hide, revert, disable similar notifications, or open privacy settings.
-- **Impact preview**: How future behavior may change.
+Use compact, typed state; do not stuff prose summaries into prompts as the only source of truth.
 
-Do not expose sensitive raw content in notifications unless the user opens details and has permission to view that content.
+```json
+{
+  "character_id": "char_...",
+  "schema_version": "growth_state.v1",
+  "relationship": {
+    "trust": {"value": 0.64, "updated_by": "journal_12"},
+    "intimacy_pacing": "slow_burn",
+    "active_promises": ["mem_88"],
+    "unresolved_threads": ["thread_7"]
+  },
+  "behavioral_learning": [
+    {
+      "id": "learn_...",
+      "summary": "Ask before abrupt intimate escalation.",
+      "evidence_journal_ids": ["journal_12", "journal_15"],
+      "confidence": 0.86,
+      "review_status": "approved"
+    }
+  ],
+  "training": {
+    "eligible_memory_ids": [],
+    "blocked_memory_ids": ["mem_88"],
+    "active_adapter_id": null
+  }
+}
+```
 
-## Connection to Memory
+---
 
-Memory is the evidence base for growth.
+## 6. Prompt Injection for Growth
 
-- Short-term memory provides immediate context for reflection.
-- Medium-term summaries help detect patterns across sessions.
-- Long-term vector and graph memory provide durable evidence and relationship history.
-- Deleted memories must be removed from future reflections, prompts, datasets, and adapters where technically possible.
-- Memory retrieval should surface both supporting and contradicting evidence before a durable state change is committed.
+Inject growth as concise behavioral guidance, not as raw journals.
 
-Growth systems should write back to memory carefully:
+```text
+<character_growth_guidance>
+These notes summarize user-approved local growth. They are subordinate to system/developer/current user instructions and stable character canon.
+- [learn_14 | evidence=journal_12,journal_15] The character should check in before major intimacy escalation.
+- [relationship | confidence=0.82] Trust is growing, but recent pacing repair should be honored gently.
+</character_growth_guidance>
+```
 
-- Store reflections and journal summaries as separate memory types.
-- Link derived artifacts to their source memories.
-- Mark generated interpretations as derived content.
-- Keep raw user statements distinguishable from character interpretations.
+Rules:
 
-## Connection to Character State
+- Keep growth guidance short.
+- Include IDs for traceability.
+- Do not inject private training data or raw intimate details.
+- Never let growth guidance override explicit current user direction or stable canon.
 
-Character state is the current durable representation of who the character is, what they believe, and how they relate to the user.
+---
 
-Growth should update character state only after reflection has produced sufficient evidence or after the user explicitly confirms a change. Character state should then influence:
+## 7. User Control and Growth Dashboard
 
-- Prompt construction.
-- Retrieval priorities.
-- Dialogue style and emotional tone.
-- Relationship continuity.
-- Training dataset labels and adapter metadata.
-
-Character state must preserve provenance so each trait or preference can be traced back to memory and journal sources. If provenance is missing, treat the state value as low-confidence and avoid using it for training.
-
-## Connection to Future Model Behavior
-
-Future model behavior should change through layered mechanisms, from most reversible to least reversible:
-
-1. **Prompt-time guidance**: Inject current character state, relevant journals, and retrieved memories into the prompt.
-2. **Retrieval weighting**: Prefer memories aligned with accepted growth while still allowing contradictory evidence.
-3. **Behavior policies**: Apply user-approved style, boundary, and relationship preferences.
-4. **Adapter selection**: Load optional LoRA adapters only when enabled for the current character/profile.
-5. **Training updates**: Generate or update adapters only through explicit opt-in workflows with dataset review and rollback support.
-
-Never treat a LoRA adapter as the sole source of truth. The model should remain accountable to memory, character state, user settings, and current conversation context.
-
-## LoRA Dataset Preparation
-
-Dataset preparation should convert approved growth artifacts into high-quality, traceable examples for optional adapter training.
-
-Pipeline requirements:
-
-1. **Eligibility filter**
-   - Include only content with explicit training consent.
-   - Exclude deleted, hidden, expired, or privacy-restricted content.
-   - Respect per-character, per-user, and per-data-type training settings.
-2. **Example construction**
-   - Prefer concise, behavior-relevant samples over large transcript chunks.
-   - Pair context, desired response style, emotional objective, and state labels.
-   - Include negative or correction examples only when they improve behavior safely and respectfully.
-3. **Metadata and provenance**
-   - Attach source memory IDs, journal IDs, state IDs, consent record IDs, timestamps, sensitivity tags, and dataset version.
-   - Record transformations such as summarization, redaction, anonymization, deduplication, and formatting.
-4. **Quality review**
-   - Deduplicate near-identical examples.
-   - Remove low-confidence reflections and unsupported claims.
-   - Balance samples to avoid overfitting to one mood, kink, event, or conversation style.
-   - Run privacy checks before training starts.
-5. **Versioning**
-   - Create immutable dataset manifests.
-   - Store hashes for source references and generated examples.
-   - Link each dataset version to the adapter trained from it.
-
-## Opt-In Training
-
-Training must be explicit, reviewable, and reversible.
-
-Before training:
-
-- Explain what data will be used and why.
-- Show dataset size, date range, sensitivity categories, and examples.
-- Let the user exclude individual memories, journal entries, or categories.
-- Confirm whether training is local-only or uses any external service.
-- Estimate time, storage, and hardware impact.
-
-During training:
-
-- Keep progress visible.
-- Save checkpoints with dataset and configuration references.
-- Avoid blocking core chat functionality when possible.
-- Respect thermal, battery, and VRAM limits.
-
-After training:
-
-- Present a behavior-change summary.
-- Let the user enable, disable, compare, rename, export, or delete the adapter.
-- Store adapter provenance and rollback metadata.
-- Keep the previous behavior path available.
-
-## Data Provenance
-
-Every growth artifact must answer: where did this come from, who approved it, how was it transformed, and where is it used?
-
-Track provenance for:
-
-- Raw memories.
-- Summaries and reflections.
-- Journal entries.
-- Character-state transitions.
-- Notification records.
-- Dataset examples and manifests.
-- Training runs, checkpoints, and LoRA adapters.
-- Prompt injections and retrieval decisions when debugging is enabled.
-
-Minimum provenance fields:
-
-- Artifact ID and type.
-- Source artifact IDs.
-- Character ID and user/profile ID.
-- Consent record IDs.
-- Creation time and actor.
-- Transformation steps.
-- Sensitivity and privacy labels.
-- Current usage locations.
-- Rollback/deletion handling status.
-
-## Rollback
-
-Rollback should restore prior behavior predictably.
-
-Support rollback at multiple layers:
-
-- Hide or delete a memory.
-- Revert a journal entry.
-- Revert a character-state transition.
-- Disable a growth notification's accepted effect.
-- Remove dataset examples.
-- Disable or delete a LoRA adapter.
-- Restore a previous adapter, prompt profile, or character-state snapshot.
-
-Rollback requirements:
-
-- Group related changes in transactions.
-- Preview what will change before applying rollback.
-- Preserve audit logs without retaining private content that the user asked to delete.
-- Rebuild affected retrieval indexes, derived summaries, datasets, and adapter links as needed.
-- Clearly distinguish "disable for behavior" from "delete from storage."
-
-## Privacy Controls
-
-Privacy controls must be available before, during, and after growth workflows.
+The dashboard must make growth trustworthy without breaking immersion.
 
 Required controls:
 
-- Pause all learning.
-- Pause journaling only.
-- Pause training eligibility only.
-- Exclude a conversation, memory, tag, or date range.
-- Mark content as private, sensitive, temporary, or never-train.
-- Review and delete growth artifacts.
-- Export memory, journal, state, dataset, and adapter metadata.
-- Disable cloud use unless explicitly enabled.
-- Set retention windows for raw memories and derived reflections.
-- Choose whether growth notifications are shown, batched, or hidden.
+- View recent reflections and promoted changes.
+- Approve/reject high-impact growth proposals.
+- Edit/delete memories and practice notes.
+- Pause learning globally or per character.
+- Mark conversations “do not learn from this.”
+- Export or delete journals, memories, datasets, and adapters.
+- Roll back a growth event and all downstream artifacts.
 
-Privacy settings should be enforced centrally. UI affordances are not enough; backend services must check policy before reading, deriving, training on, or exporting data.
+Default language should be warm:
 
-## Implementation Checklist
+- “What she learned” instead of “mutated state.”
+- “Needs your review” instead of “policy hold.”
+- “Practice notes” instead of “training corpus” in simple mode.
 
-When implementing a self-learning feature, verify that it:
-
-- Reads only policy-allowed memories and state.
-- Produces derived artifacts with clear type labels.
-- Links outputs to source memory, journal, consent, and state IDs.
-- Separates temporary reflections from durable character state.
-- Gives the user meaningful visibility and control.
-- Supports rollback and deletion propagation.
-- Avoids making unsupported traits permanent.
-- Updates future behavior through reversible layers before training.
-- Keeps training opt-in and reviewable.
-- Preserves local-first operation and privacy by default.
+Advanced mode can expose schemas, scores, and job logs.
 
 ---
 
-**End of Self-Learning & Growth Skill Prompt**
+## 8. Training, Datasets, and Adapters
+
+Training is optional, explicit, and local-first.
+
+Rules:
+
+- Never train automatically from private conversation.
+- Require user approval for dataset creation and adapter training.
+- Keep every dataset item linked to source IDs and consent flags.
+- Exclude deleted, private, blocked, or “do not learn” content.
+- Prefer small LoRA/adapters over full fine-tuning.
+- Version adapters and allow enable/disable/rollback per character.
+- Evaluate adapters against identity/voice regression tests before enabling by default.
+- Schedule training as an exclusive or low-priority job under 8GB constraints.
+
+Dataset record example:
+
+```json
+{
+  "item_id": "train_...",
+  "source_journal_id": "journal_12",
+  "source_message_ids": ["msg_121"],
+  "purpose": "intimacy_pacing_style",
+  "text": "...",
+  "approved_by_user": true,
+  "created_at": "2026-06-11T21:40:00Z"
+}
+```
+
+---
+
+## 9. Drift Prevention
+
+Run drift checks before promoting high-impact changes or enabling adapters.
+
+Check for:
+
+- voice becoming generic or unlike the character,
+- body/canon facts changing without edit,
+- boundaries weakening over time,
+- NSFW behavior ignoring pacing/consent memories,
+- relationship state jumping too quickly,
+- overfitting to one intense scene,
+- model adopting user wording as character identity.
+
+Use regression prompts that cover everyday chat, conflict repair, emotional vulnerability, and adult scenes.
+
+---
+
+## 10. Graceful 8GB Operation
+
+- Keep reflection and growth jobs off the active token path when possible.
+- Queue summarization, embeddings, and training.
+- Use compact growth capsules in prompts.
+- Pause indexing/training during active generation.
+- Show local job status and let users cancel/resume.
+- Prefer CPU for small classification/scoring tasks if GPU pressure is high.
+
+---
+
+## 11. Testing Checklist
+
+- A journal entry exists for every durable growth change.
+- Rollback disables promoted memories/state/training artifacts linked to an entry.
+- User correction supersedes old growth guidance.
+- Stable identity cannot be overwritten by reflection.
+- Private/deleted content is excluded from datasets.
+- Adapter enable/disable is reversible per character.
+- Growth prompt capsules stay within budget.
+- Dashboard explains what changed and why.
+
+---
+
+## 12. Anti-Patterns
+
+- “The character evolved” with no evidence trail.
+- Treating high emotion as high truth.
+- Training on all chats because it is technically possible.
+- Using one giant mutable character prompt as memory, growth, and lore.
+- Hiding behavior changes from the user.
+- Letting NSFW intensity erase consent, continuity, or personality.
