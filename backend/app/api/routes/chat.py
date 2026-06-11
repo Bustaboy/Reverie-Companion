@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.core.config import Settings, get_settings
 from app.core.memory import MemoryManager, get_memory_manager
 from app.core.ollama_client import OllamaClient, OllamaClientError
+from app.core.reflection import ReflectionManager
 from app.models.chat import ChatRequest, ChatResponse
 from app.services.chat_service import ChatService
 
@@ -32,10 +33,12 @@ def get_chat_service(
 ) -> ChatService:
     """Provide the service that assembles chat prompts and calls Ollama."""
 
+    reflection_manager = ReflectionManager(memory_manager=memory_manager)
     return ChatService(
         settings=settings,
         ollama_client=ollama_client,
         memory_manager=memory_manager,
+        reflection_manager=reflection_manager,
     )
 
 
