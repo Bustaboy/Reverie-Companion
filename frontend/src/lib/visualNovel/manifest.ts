@@ -2,8 +2,10 @@ import {
   VISUAL_EXPRESSIONS,
   VISUAL_POSES,
   type CharacterVisualManifest,
+  type ResolvedCharacterLayer,
   type ResolvedVisualAsset,
   type ResolvedVisualScene,
+  type VisualAssetLayer,
   type VisualAssetRef,
   type VisualExpression,
   type VisualPose,
@@ -92,23 +94,27 @@ export const resolveVisualScene = (
   const expressionRef = manifest.expressions[visualState.expression] ?? manifest.expressions[fallbackExpression];
   const poseRef = manifest.poses[visualState.pose] ?? manifest.poses.idle;
   const backgroundRef = manifest.backgrounds?.[visualState.background] ?? manifest.defaultBackground;
+  const pose = resolveAsset(poseRef, `pose:${visualState.pose}`, `${visualState.pose} pose`, !manifest.poses[visualState.pose]);
+  const expression = resolveAsset(
+    expressionRef,
+    `expression:${visualState.expression}`,
+    `${visualState.expression} expression`,
+    !manifest.expressions[visualState.expression]
+  );
 
   return {
     background: resolveAsset(backgroundRef, `background:${visualState.background}`, 'Scene background', !manifest.backgrounds?.[visualState.background]),
-    pose: resolveAsset(poseRef, `pose:${visualState.pose}`, `${visualState.pose} pose`, !manifest.poses[visualState.pose]),
-    expression: resolveAsset(
-      expressionRef,
-      `expression:${visualState.expression}`,
-      `${visualState.expression} expression`,
-      !manifest.expressions[visualState.expression]
-    )
+    pose,
+    expression,
+    characterLayers: resolveCharacterLayers(manifest, pose, expression)
   };
 };
 
 export const preloadVisualSceneAssets = (scene: ResolvedVisualScene, cache = visualAssetCache): void => {
   cache.preload(scene.background);
-  cache.preload(scene.pose);
-  cache.preload(scene.expression);
+  for (const layer of scene.characterLayers) {
+    cache.preload(layer.asset);
+  }
 };
 
 export const isPlaceholderAsset = (asset: ResolvedVisualAsset): boolean => asset.kind === 'placeholder';
@@ -139,4 +145,55 @@ const resolveAsset = (
     slot,
     fallbackUsed
   };
+};
+
+const resolveCharacterLayers = (
+  manifest: CharacterVisualManifest,
+  pose: ResolvedVisualAsset,
+  expression: ResolvedVisualAsset
+): ResolvedCharacterLayer[] => {
+  const orderedLayers = ensureCoreLayers(manifest.layers);
+  const layers: ResolvedCharacterLayer[] = [];
+
+  for (const layer of orderedLayers) {
+    if (layer === 'base') {
+      layers.push({ layer, asset: pose });
+      continue;
+    }
+
+    if (layer === 'expression') {
+      layers.push({ layer, asset: expression });
+      continue;
+    }
+
+    const customLayerRef = manifest.layerAssets?.[layer];
+    if (!customLayerRef) {
+      continue;
+    }
+
+    layers.push({
+      layer,
+      asset: resolveAsset(customLayerRef, `layer:${layer}`, `${layer} layer`, false)
+    });
+  }
+
+  return layers.length ? layers : [
+    { layer: 'base', asset: pose },
+    { layer: 'expression', asset: expression }
+  ];
+};
+
+const ensureCoreLayers = (layers: VisualAssetLayer[]): VisualAssetLayer[] => {
+  const orderedLayers = layers.length ? [...layers] : ['base', 'expression'];
+
+  if (!orderedLayers.includes('base')) {
+    orderedLayers.unshift('base');
+  }
+
+  if (!orderedLayers.includes('expression')) {
+    const baseIndex = orderedLayers.indexOf('base');
+    orderedLayers.splice(baseIndex + 1, 0, 'expression');
+  }
+
+  return orderedLayers;
 };

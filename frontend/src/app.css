@@ -2027,6 +2027,12 @@ h1 {
   outline: none;
 }
 
+.vn-media-button:disabled {
+  cursor: default;
+  opacity: 0.52;
+  filter: saturate(0.72);
+}
+
 .visual-novel-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -2146,10 +2152,22 @@ h1 {
   height: 100%;
   object-fit: contain;
   object-position: bottom center;
+  pointer-events: none;
+  transition: opacity 180ms ease;
 }
 
-.vn-expression-layer {
+.vn-layer-base,
+.vn-pose-layer {
+  z-index: 1;
+}
+
+.vn-layer-clothing {
   z-index: 2;
+}
+
+.vn-layer-expression,
+.vn-expression-layer {
+  z-index: 3;
 }
 
 .vn-sprite-sheet {
@@ -2159,6 +2177,7 @@ h1 {
 
 .vn-character-placeholder {
   position: absolute;
+  z-index: 1;
   inset: auto 12% 0;
   height: 92%;
 }
@@ -2196,7 +2215,7 @@ h1 {
 
 .vn-expression-mark {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   left: 50%;
   top: 24%;
   width: 5rem;
@@ -2378,5 +2397,9 @@ h1 {
   .vn-character-sprite.growth-active {
     transition: none;
     transform: translateX(-50%);
+  }
+
+  .vn-sprite-layer {
+    transition: none;
   }
 }

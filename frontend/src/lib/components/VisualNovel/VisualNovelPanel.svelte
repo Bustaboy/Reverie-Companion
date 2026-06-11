@@ -22,8 +22,45 @@
     visualNovelStore.clearMediaStatus();
   };
 
+  const isTextEntryTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    const tagName = target.tagName.toLowerCase();
+    return target.isContentEditable || ['input', 'textarea', 'select'].includes(tagName);
+  };
+
+  const handleKeyboardShortcut = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || isTextEntryTarget(event.target)) {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onReturnToChat();
+      return;
+    }
+
+    if (
+      event.key.toLowerCase() === 'g' &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      $visualNovelView.mediaCapabilities.available
+    ) {
+      event.preventDefault();
+      requestSceneMedia();
+    }
+  };
+
   onMount(() => {
     void visualNovelStore.refreshMediaCapabilities();
+    window.addEventListener('keydown', handleKeyboardShortcut);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyboardShortcut);
+    };
   });
 </script>
 
@@ -37,7 +74,15 @@
       </p>
     </div>
 
-    <button type="button" class="ghost-button" onclick={onReturnToChat}>Back to Chat</button>
+    <button
+      type="button"
+      class="ghost-button"
+      aria-label="Return to chat mode"
+      aria-keyshortcuts="Escape"
+      onclick={onReturnToChat}
+    >
+      Back to Chat
+    </button>
   </header>
 
   <VNScene

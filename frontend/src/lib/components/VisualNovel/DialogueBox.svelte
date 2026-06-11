@@ -8,6 +8,8 @@
     visualState: VisualState;
     growthModifier: GrowthVisualModifier | null;
     mediaStatusMessage: string | null;
+    canGenerateScene: boolean;
+    mediaCapabilityMessage?: string;
     onGenerateScene: () => void;
     onDismissMediaStatus: () => void;
   }
@@ -17,6 +19,8 @@
     visualState,
     growthModifier,
     mediaStatusMessage,
+    canGenerateScene,
+    mediaCapabilityMessage,
     onGenerateScene,
     onDismissMediaStatus
   }: Props = $props();
@@ -32,10 +36,19 @@
       <strong>Reverie</strong>
       <span>{visualState.expression} · {visualState.pose}</span>
     </div>
-    <button type="button" class="vn-media-button" onclick={onGenerateScene}>Generate Scene</button>
+    <button
+      type="button"
+      class="vn-media-button"
+      aria-label={canGenerateScene ? 'Generate current visual novel scene' : (mediaCapabilityMessage ?? 'Scene generation is unavailable')}
+      aria-keyshortcuts="G"
+      disabled={!canGenerateScene}
+      onclick={onGenerateScene}
+    >
+      Generate Scene
+    </button>
   </div>
 
-  <div class="vn-dialogue-content">
+  <div class="vn-dialogue-content" role="document" aria-label="Current assistant dialogue">
     <Markdown content={dialogueContent} />
   </div>
 

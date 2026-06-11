@@ -30,7 +30,7 @@
   );
 </script>
 
-<section class="vn-scene" aria-label={sceneLabel}>
+<section class="vn-scene" aria-label={sceneLabel} role="group">
   <div class="vn-background-layer" aria-hidden="true">
     {#if view.scene.background.kind === 'image' && view.scene.background.src}
       <img src={view.scene.background.src} alt="" loading="eager" />
@@ -52,6 +52,8 @@
     visualState={view.visualState}
     growthModifier={view.growthModifier}
     mediaStatusMessage={view.mediaStatusMessage}
+    canGenerateScene={view.mediaCapabilities.available}
+    mediaCapabilityMessage={view.mediaCapabilities.message}
     {onGenerateScene}
     {onDismissMediaStatus}
   />

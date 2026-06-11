@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ResolvedVisualAsset, ResolvedVisualScene, VisualState } from '$lib/types/visualNovel';
+  import type { ResolvedCharacterLayer, ResolvedVisualAsset, ResolvedVisualScene, VisualState } from '$lib/types/visualNovel';
 
   interface Props {
     scene: ResolvedVisualScene;
@@ -25,25 +25,35 @@
   const spriteLabel = $derived(
     `Reverie character sprite, ${visualState.expression} expression, ${visualState.pose} pose`
   );
+
+  const layerClass = (layer: ResolvedCharacterLayer): string =>
+    `vn-layer-${layer.layer.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
 </script>
 
 <div class:growth-active={growthActive} class="vn-character-sprite" role="img" aria-label={spriteLabel}>
-  {#if scene.pose.kind === 'image' && scene.pose.src}
-    <img class="vn-sprite-layer vn-pose-layer" src={scene.pose.src} alt="" aria-hidden="true" loading="eager" />
-  {:else if scene.pose.kind === 'spritesheet'}
-    <div class="vn-sprite-layer vn-pose-layer vn-sprite-sheet" style={assetStyle(scene.pose)} aria-hidden="true"></div>
-  {:else}
-    <div class="vn-character-placeholder" aria-hidden="true">
-      <span class="vn-placeholder-head"></span>
-      <span class="vn-placeholder-body"></span>
-    </div>
-  {/if}
-
-  {#if scene.expression.kind === 'image' && scene.expression.src}
-    <img class="vn-sprite-layer vn-expression-layer" src={scene.expression.src} alt="" aria-hidden="true" loading="eager" />
-  {:else if scene.expression.kind === 'spritesheet'}
-    <div class="vn-sprite-layer vn-expression-layer vn-sprite-sheet" style={assetStyle(scene.expression)} aria-hidden="true"></div>
-  {:else}
-    <span class={`vn-expression-mark expression-${visualState.expression}`} aria-hidden="true"></span>
-  {/if}
+  {#each scene.characterLayers as layer (`${layer.layer}:${layer.asset.slot}`)}
+    {#if layer.asset.kind === 'image' && layer.asset.src}
+      <img
+        class={`vn-sprite-layer ${layerClass(layer)}`}
+        src={layer.asset.src}
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+        decoding="async"
+      />
+    {:else if layer.asset.kind === 'spritesheet'}
+      <div
+        class={`vn-sprite-layer vn-sprite-sheet ${layerClass(layer)}`}
+        style={assetStyle(layer.asset)}
+        aria-hidden="true"
+      ></div>
+    {:else if layer.layer === 'base'}
+      <div class="vn-character-placeholder" aria-hidden="true">
+        <span class="vn-placeholder-head"></span>
+        <span class="vn-placeholder-body"></span>
+      </div>
+    {:else if layer.layer === 'expression'}
+      <span class={`vn-expression-mark expression-${visualState.expression}`} aria-hidden="true"></span>
+    {/if}
+  {/each}
 </div>

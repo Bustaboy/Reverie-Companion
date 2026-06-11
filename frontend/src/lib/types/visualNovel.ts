@@ -42,6 +42,7 @@ export interface CharacterVisualManifest {
   expressions: Partial<Record<VisualExpression, VisualAssetRef>>;
   poses: Partial<Record<VisualPose, VisualAssetRef>>;
   backgrounds?: Record<string, VisualAssetRef>;
+  layerAssets?: Partial<Record<VisualAssetLayer, VisualAssetRef>>;
   layers: VisualAssetLayer[];
 }
 
@@ -73,10 +74,16 @@ export interface ResolvedVisualAsset {
   fallbackUsed: boolean;
 }
 
+export interface ResolvedCharacterLayer {
+  layer: VisualAssetLayer;
+  asset: ResolvedVisualAsset;
+}
+
 export interface ResolvedVisualScene {
   background: ResolvedVisualAsset;
   pose: ResolvedVisualAsset;
   expression: ResolvedVisualAsset;
+  characterLayers: ResolvedCharacterLayer[];
 }
 
 export interface SceneMediaCapabilities {

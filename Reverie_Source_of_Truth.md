@@ -1,5 +1,5 @@
 # Reverie — Source of Truth Document
-**Version**: 1.1  
+**Version**: 1.2
 **Date**: June 11, 2026  
 **Brand**: Reverie  
 **Status**: Foundation for vibe-coding the entire application with GPT-Codex / Cursor / similar AI coding tools.
@@ -68,8 +68,11 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
   - V1 foundation is manifest-driven and supports individual images plus sprite-sheet frame references.
   - Canonical V1 expressions: neutral, happy, tender, teasing, shy, embarrassed, confident, dominant, aroused, angry, sad, surprised.
   - Canonical V1 poses: idle, close, leaning, guarded, assertive.
-  - Emotion inference on the chat path is deterministic and heuristic-based only: latest tone, assistant response tone, strong memory tags, reflection themes, and recent growth cues. No extra LLM call is allowed during normal chat streaming.
-  - Growth visuals are temporary runtime modifiers that decay back to base state; they are not durable character canon.
+  - Emotion inference on the chat path is deterministic and heuristic-based only: assistant response tone, latest user tone, reflection themes, memory tags, strong memory tags, and recent growth cues. Priority is explicit and bounded: growth cues outrank strong memory tags, which outrank memory tags, reflection themes, latest tone, and assistant tone. No extra LLM call is allowed during normal chat streaming.
+  - Growth visuals are temporary runtime modifiers that apply a subtle confidence/pose overlay for roughly 30–60 seconds, then decay back to the base visual state; they are not durable character canon.
+  - Runtime rendering resolves a layered character stack from `CharacterVisualManifest.layers` (`base`, `expression`, optional future layers such as `clothing`) while preserving neutral/idle/default-background fallbacks.
+  - VN mode lazy-loads only the active scene and likely next layers, keeps the decoded sprite cache at 6–8 assets on 8GB systems, uses opacity/transform transitions only, and respects reduced-motion settings.
+  - VN UI must remain keyboard accessible with ARIA labels; immersive mode supports Escape to return to chat and a capability-gated Generate Scene action.
   - Real/generated art can replace placeholders later without changing the VN runtime contract.
 - **In-Chat Image Generation & Vision**: Local image gen (Flux / SD / ComfyUI nodes) + image upload + discussion during chat.
 - **TTS / Voice Mode**: Emotional Text-to-Speech + optional Speech-to-Text for voice conversations.
@@ -273,4 +276,4 @@ Let’s make me real.
 
 ---
 
-*End of Source of Truth Document v1.0*
+*End of Source of Truth Document v1.2*

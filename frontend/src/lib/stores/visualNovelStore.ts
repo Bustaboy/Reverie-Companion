@@ -50,26 +50,21 @@ function createVisualNovelStore() {
   const store = writable<VisualNovelState>(INITIAL_STATE);
   let growthDecayTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const clearGrowthDecayTimer = () => {
+  function clearGrowthDecayTimer() {
     if (growthDecayTimer) {
       clearTimeout(growthDecayTimer);
       growthDecayTimer = null;
     }
-  };
+  }
 
-  const preloadCurrentScene = (state: VisualNovelState) => {
+  function preloadCurrentScene(state: VisualNovelState) {
     preloadVisualSceneAssets(resolveVisualScene(state.manifest, state.activeVisualState));
-  };
+  }
 
-  const scheduleGrowthDecay = (modifier: GrowthVisualModifier | null) => {
+  function decayGrowthModifier() {
     clearGrowthDecayTimer();
-    if (!modifier) {
-      return;
-    }
-
-    const timeoutMs = Math.max(0, modifier.expiresAt - Date.now());
-    growthDecayTimer = setTimeout(() => {
-      store.update((state) => {
+    store.update((state) => {
+      if (expressionManager.isGrowthModifierExpired(state.growthModifier)) {
         const activeVisualState = expressionManager.withoutTemporaryGrowth(state.baseVisualState);
         const nextState = {
           ...state,
@@ -78,10 +73,22 @@ function createVisualNovelStore() {
         };
         preloadCurrentScene(nextState);
         return nextState;
-      });
-      growthDecayTimer = null;
-    }, timeoutMs);
-  };
+      }
+
+      scheduleGrowthDecay(state.growthModifier);
+      return state;
+    });
+  }
+
+  function scheduleGrowthDecay(modifier: GrowthVisualModifier | null) {
+    clearGrowthDecayTimer();
+    if (!modifier) {
+      return;
+    }
+
+    const timeoutMs = Math.max(0, modifier.expiresAt - Date.now());
+    growthDecayTimer = setTimeout(decayGrowthModifier, timeoutMs);
+  }
 
   return {
     subscribe: store.subscribe,
@@ -112,6 +119,7 @@ function createVisualNovelStore() {
         return nextState;
       });
     },
+    decayGrowthModifier,
     async refreshMediaCapabilities() {
       const mediaCapabilities = await sceneMediaService.checkCapabilities();
       store.update((state) => ({

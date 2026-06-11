@@ -7,9 +7,9 @@ background reflection jobs, where it will not compete with streaming chat.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Any
 
 from app.models.chat import (
@@ -28,16 +28,49 @@ class WeightedTextSignal:
     source: str
     text: str
     weight: float
+    priority: "SignalPriority"
+
+
+class SignalPriority(IntEnum):
+    """Deterministic priority tiers for bounded visual inference signals."""
+
+    NONE = 0
+    ASSISTANT_RESPONSE_TONE = 10
+    LATEST_MESSAGE_TONE = 20
+    REFLECTION_THEMES = 30
+    MEMORY_TAGS = 40
+    STRONG_MEMORY_TAGS = 50
+    GROWTH_CUE = 60
+
+
+@dataclass
+class ExpressionScore:
+    """Accumulated score and strongest signal priority for one expression."""
+
+    score: float = 0.0
+    priority: SignalPriority = SignalPriority.NONE
+    sources: list[str] | None = None
+
+    def add(self, amount: float, priority: SignalPriority, source: str) -> None:
+        self.score += amount
+        self.priority = max(self.priority, priority)
+        if self.sources is None:
+            self.sources = []
+        if source not in self.sources:
+            self.sources.append(source)
 
 
 class EmotionInferenceEngine:
     """Infer VN expression, pose, and background from bounded local signals."""
 
-    # Growth cues and memory tags intentionally outrank immediate tone; they
-    # represent recent evidence-backed growth and durable continuity signals.
+    # Priority order is explicit and deterministic:
+    # growth cue > strong memory tag > memory tag > reflection theme >
+    # latest user tone > assistant response tone > neutral fallback.
+    # We still keep weights because multiple hits within the same tier should
+    # affect intensity/confidence and stable tie-breaking.
     _LATEST_USER_WEIGHT = 1.25
     _ASSISTANT_WEIGHT = 1.0
-    _REFLECTION_THEME_WEIGHT = 1.2
+    _REFLECTION_THEME_WEIGHT = 1.45
     _MEMORY_TAG_WEIGHT = 1.9
     _GROWTH_CUE_WEIGHT = 2.6
 
@@ -155,7 +188,16 @@ class EmotionInferenceEngine:
     }
 
     _STRONG_MEMORY_TAGS: dict[VisualExpression, tuple[str, ...]] = {
-        "tender": ("boundary", "promise", "trust", "reassurance", "slow-burn"),
+        "tender": (
+            "attachment",
+            "boundary",
+            "comfort",
+            "promise",
+            "trust",
+            "reassurance",
+            "slow-burn",
+            "safe",
+        ),
         "confident": ("growth", "confidence", "steady", "learned", "milestone"),
         "dominant": ("possessive", "dominant", "assertive", "claiming"),
     }
@@ -202,19 +244,18 @@ class EmotionInferenceEngine:
             reflection_entries=reflection_entries,
             growth_notification=growth_notification,
         )
-        scores: dict[VisualExpression, float] = defaultdict(float)
-        source_hits: list[str] = []
+        scores: dict[VisualExpression, ExpressionScore] = {}
 
         for signal in signals:
-            hit = self._score_signal(signal, scores)
-            if hit:
-                source_hits.append(signal.source)
+            self._score_signal(signal, scores)
 
-        expression, score = self._select_expression(scores)
-        sources = self._dedupe_sources(source_hits) or ["fallback_neutral"]
+        expression, expression_score = self._select_expression(scores)
+        sources = self._ordered_sources(expression_score.sources or [])
         growth_cue = self._growth_cue_label(growth_notification)
         if growth_cue and "growth_cue" not in sources:
             sources.insert(0, "growth_cue")
+        if not sources:
+            sources = ["fallback_neutral"]
 
         return VisualState(
             character_id=character_id,
@@ -222,8 +263,10 @@ class EmotionInferenceEngine:
             expression=expression,
             pose=self._POSE_BY_EXPRESSION[expression],
             background=self._select_background(signals),
-            intensity=self._intensity(score),
-            confidence=self._confidence(score, sources),
+            intensity=self._intensity(expression_score.score, expression_score.priority),
+            confidence=self._confidence(
+                expression_score.score, expression_score.priority, sources
+            ),
             sources=sources[:8],
             growth_cue=growth_cue,
         )
@@ -245,6 +288,7 @@ class EmotionInferenceEngine:
                     "latest_message_tone",
                     latest_user_message,
                     self._LATEST_USER_WEIGHT,
+                    SignalPriority.LATEST_MESSAGE_TONE,
                 )
             )
         if assistant_text:
@@ -253,6 +297,7 @@ class EmotionInferenceEngine:
                     "assistant_response_tone",
                     assistant_text,
                     self._ASSISTANT_WEIGHT,
+                    SignalPriority.ASSISTANT_RESPONSE_TONE,
                 )
             )
         if memory_context:
@@ -261,6 +306,7 @@ class EmotionInferenceEngine:
                     "memory_tags",
                     memory_context,
                     self._MEMORY_TAG_WEIGHT,
+                    SignalPriority.MEMORY_TAGS,
                 )
             )
 
@@ -271,6 +317,7 @@ class EmotionInferenceEngine:
                     "reflection_themes",
                     reflection_text,
                     self._REFLECTION_THEME_WEIGHT,
+                    SignalPriority.REFLECTION_THEMES,
                 )
             )
 
@@ -281,42 +328,65 @@ class EmotionInferenceEngine:
                     "growth_cue",
                     growth_text,
                     self._GROWTH_CUE_WEIGHT,
+                    SignalPriority.GROWTH_CUE,
                 )
             )
         return signals
 
     def _score_signal(
-        self, signal: WeightedTextSignal, scores: dict[VisualExpression, float]
-    ) -> bool:
+        self, signal: WeightedTextSignal, scores: dict[VisualExpression, ExpressionScore]
+    ) -> None:
         text = self._normalize(signal.text)
-        hit = False
         for expression, keywords in self._KEYWORDS.items():
             for keyword in keywords:
                 if keyword in text:
-                    scores[expression] += signal.weight
-                    hit = True
+                    self._add_score(
+                        scores,
+                        expression,
+                        signal.weight,
+                        signal.priority,
+                        signal.source,
+                    )
 
         if signal.source == "memory_tags":
             for expression, tags in self._STRONG_MEMORY_TAGS.items():
-                if expression not in self._KEYWORDS:
-                    continue
                 for tag in tags:
                     if tag in text:
-                        scores[expression] += signal.weight * 0.8
-                        hit = True
-        return hit
+                        self._add_score(
+                            scores,
+                            expression,
+                            signal.weight * 1.15,
+                            SignalPriority.STRONG_MEMORY_TAGS,
+                            signal.source,
+                        )
+
+    def _add_score(
+        self,
+        scores: dict[VisualExpression, ExpressionScore],
+        expression: VisualExpression,
+        amount: float,
+        priority: SignalPriority,
+        source: str,
+    ) -> None:
+        if expression not in scores:
+            scores[expression] = ExpressionScore()
+        scores[expression].add(amount, priority, source)
 
     def _select_expression(
-        self, scores: dict[VisualExpression, float]
-    ) -> tuple[VisualExpression, float]:
+        self, scores: dict[VisualExpression, ExpressionScore]
+    ) -> tuple[VisualExpression, ExpressionScore]:
         if not scores:
-            return "neutral", 0.0
+            return "neutral", ExpressionScore()
         expression, score = max(
             scores.items(),
-            key=lambda item: (item[1], self._tie_break_rank(item[0])),
+            key=lambda item: (
+                item[1].priority,
+                item[1].score,
+                self._tie_break_rank(item[0]),
+            ),
         )
-        if score <= 0:
-            return "neutral", 0.0
+        if score.score <= 0:
+            return "neutral", ExpressionScore()
         return expression, score
 
     def _select_background(self, signals: Iterable[WeightedTextSignal]) -> str:
@@ -337,6 +407,13 @@ class EmotionInferenceEngine:
             summary = entry.get("character_summary")
             if isinstance(summary, str):
                 parts.append(summary)
+            insights = entry.get("insights")
+            if isinstance(insights, list):
+                for insight in insights:
+                    if isinstance(insight, Mapping):
+                        insight_summary = insight.get("summary")
+                        if isinstance(insight_summary, str):
+                            parts.append(insight_summary)
         return " ".join(parts)
 
     def _growth_notification_text(
@@ -384,27 +461,55 @@ class EmotionInferenceEngine:
         ]
         return len(priority) - priority.index(expression)
 
-    def _intensity(self, score: float) -> float:
+    def _intensity(self, score: float, priority: SignalPriority) -> float:
         if score <= 0:
             return 0.15
-        return round(min(1.0, max(0.2, score / 5.0)), 3)
+        priority_floor = {
+            SignalPriority.GROWTH_CUE: 0.55,
+            SignalPriority.STRONG_MEMORY_TAGS: 0.48,
+            SignalPriority.MEMORY_TAGS: 0.42,
+            SignalPriority.REFLECTION_THEMES: 0.36,
+        }.get(priority, 0.2)
+        return round(min(1.0, max(priority_floor, score / 5.4)), 3)
 
-    def _confidence(self, score: float, sources: list[str]) -> float:
+    def _confidence(
+        self, score: float, priority: SignalPriority, sources: list[str]
+    ) -> float:
         if score <= 0:
             return 0.25
         source_bonus = min(0.18, len(sources) * 0.035)
-        growth_bonus = 0.08 if "growth_cue" in sources else 0.0
-        return round(min(0.95, 0.36 + (score / 10.0) + source_bonus + growth_bonus), 3)
+        priority_bonus = min(0.14, int(priority) / 500)
+        return round(
+            min(0.95, 0.36 + (score / 10.0) + source_bonus + priority_bonus), 3
+        )
 
-    def _dedupe_sources(self, sources: Iterable[str]) -> list[str]:
-        ordered: list[str] = []
+    def _ordered_sources(self, sources: Iterable[str]) -> list[str]:
+        priority = [
+            "growth_cue",
+            "memory_tags",
+            "reflection_themes",
+            "latest_message_tone",
+            "assistant_response_tone",
+        ]
+        deduped = []
         for source in sources:
-            if source not in ordered:
-                ordered.append(source)
-        return ordered
+            if source not in deduped:
+                deduped.append(source)
+        return sorted(
+            deduped,
+            key=lambda source: (
+                priority.index(source) if source in priority else len(priority),
+                source,
+            ),
+        )
 
     def _normalize(self, text: str) -> str:
         return text.lower().replace("_", "-")
 
 
-__all__ = ["EmotionInferenceEngine", "WeightedTextSignal"]
+__all__ = [
+    "EmotionInferenceEngine",
+    "ExpressionScore",
+    "SignalPriority",
+    "WeightedTextSignal",
+]

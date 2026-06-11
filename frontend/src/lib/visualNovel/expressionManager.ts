@@ -52,6 +52,10 @@ export class ExpressionManager {
     };
   }
 
+  isGrowthModifierExpired(modifier: GrowthVisualModifier | null, now = Date.now()): boolean {
+    return !modifier || modifier.expiresAt <= now;
+  }
+
   withoutTemporaryGrowth(visualState: VisualState): VisualState {
     return {
       ...visualState,
