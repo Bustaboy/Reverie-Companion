@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
+import { settingsStore } from '$lib/stores/settingsStore';
 import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
@@ -18,7 +19,7 @@ const INITIAL_STATE: ChatState = {
   generationState: 'idle',
   error: null,
   growthNotification: null,
-  growthNotificationsEnabled: true
+  growthNotificationsEnabled: settingsStore.getSnapshot().growthNotificationsEnabled
 };
 
 const createAssistantPlaceholder = (): ChatMessage => ({
@@ -64,7 +65,6 @@ const applyMemoryContext = (messages: ChatMessage[], messageId: string, memoryCo
   return updateMessage(messages, messageId, { memoryContext });
 };
 
-
 const applyGrowthNotification = (state: ChatState, growthNotification?: GrowthNotification): ChatState => {
   if (!growthNotification || !state.growthNotificationsEnabled) {
     return state;
@@ -89,6 +89,15 @@ const toFriendlyErrorMessage = (error: unknown): string => {
 
 function createChatStore() {
   const store = writable<ChatState>(INITIAL_STATE);
+
+  settingsStore.subscribe((settings) => {
+    store.update((state) => ({
+      ...state,
+      growthNotificationsEnabled: settings.growthNotificationsEnabled,
+      growthNotification: settings.growthNotificationsEnabled ? state.growthNotification : null
+    }));
+  });
+
   let activeController: AbortController | null = null;
 
   const hasActiveSend = () => activeController !== null;
@@ -217,6 +226,7 @@ function createChatStore() {
       store.update((state) => ({ ...state, growthNotification: null }));
     },
     disableGrowthNotifications() {
+      settingsStore.setGrowthNotificationsEnabled(false);
       store.update((state) => ({
         ...state,
         growthNotification: null,
