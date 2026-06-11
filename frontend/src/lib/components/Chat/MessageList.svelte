@@ -8,12 +8,14 @@
   }
 
   let { messages }: Props = $props();
-  let listElement: HTMLDivElement;
+  let listElement: HTMLElement;
 
-  const latestMessageId = $derived(messages[messages.length - 1]?.id);
+  const latestMessageSignature = $derived(
+    messages.length > 0 ? `${messages[messages.length - 1].id}:${messages[messages.length - 1].content.length}` : ''
+  );
 
   $effect(() => {
-    latestMessageId;
+    latestMessageSignature;
 
     void tick().then(() => {
       listElement?.scrollTo({ top: listElement.scrollHeight, behavior: 'smooth' });

@@ -10,7 +10,12 @@
   let { message }: Props = $props();
 </script>
 
-<article class:from-user={message.role === 'user'} class:from-assistant={message.role === 'assistant'} class="message-row">
+<article
+  class:from-user={message.role === 'user'}
+  class:from-assistant={message.role === 'assistant'}
+  class:has-error={message.status === 'error'}
+  class="message-row"
+>
   <div class="avatar" aria-hidden="true">
     {message.role === 'assistant' ? 'R' : 'You'}
   </div>
@@ -21,11 +26,22 @@
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
     </div>
 
-    <div class="bubble">
-      {#if message.role === 'assistant'}
+    <div class="bubble" aria-live={message.status === 'thinking' || message.status === 'streaming' ? 'polite' : undefined}>
+      {#if message.status === 'thinking' && !message.content}
+        <div class="thinking-indicator" aria-label="Reverie is thinking">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <p class="thinking-copy">Reverie is thinking...</p>
+      {:else if message.role === 'assistant'}
         <Markdown content={message.content} />
       {:else}
         <p>{message.content}</p>
+      {/if}
+
+      {#if message.errorMessage}
+        <p class="message-error">{message.errorMessage}</p>
       {/if}
     </div>
   </div>

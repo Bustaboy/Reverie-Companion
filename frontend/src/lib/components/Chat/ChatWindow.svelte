@@ -1,17 +1,10 @@
 <script lang="ts">
+  import { chatStore } from '$lib/chat/chatStore';
   import MessageInput from './MessageInput.svelte';
   import MessageList from './MessageList.svelte';
-  import { createChatMessage, createInitialMessages, createPrototypeAssistantReply } from '$lib/chat/messages';
-  import type { ChatMessage } from '$lib/types/chat';
-
-  let messages = $state<ChatMessage[]>(createInitialMessages());
 
   const handleSend = (content: string) => {
-    messages = [...messages, createChatMessage('user', content)];
-
-    window.setTimeout(() => {
-      messages = [...messages, createPrototypeAssistantReply()];
-    }, 300);
+    void chatStore.sendMessageStream(content);
   };
 </script>
 
@@ -23,12 +16,24 @@
       <p class="subtitle">A warm, offline companion interface built for long conversations.</p>
     </div>
 
-    <div class="status-pill" aria-label="Prototype status">
+    <div class:streaming={$chatStore.connectionState === 'thinking' || $chatStore.connectionState === 'streaming'} class:error={$chatStore.connectionState === 'error'} class="status-pill" aria-live="polite">
       <span></span>
-      Local UI prototype
+      {#if $chatStore.connectionState === 'thinking'}
+        Reverie is thinking...
+      {:else if $chatStore.connectionState === 'streaming'}
+        Reverie is replying
+      {:else if $chatStore.connectionState === 'error'}
+        Connection needs attention
+      {:else}
+        Local backend ready
+      {/if}
     </div>
   </header>
 
-  <MessageList {messages} />
-  <MessageInput onSend={handleSend} />
+  <MessageList messages={$chatStore.messages} />
+  <MessageInput
+    disabled={$chatStore.connectionState === 'thinking' || $chatStore.connectionState === 'streaming'}
+    isStreaming={$chatStore.connectionState === 'thinking' || $chatStore.connectionState === 'streaming'}
+    onSend={handleSend}
+  />
 </section>
