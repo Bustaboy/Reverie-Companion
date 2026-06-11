@@ -27,8 +27,8 @@ export interface ChatRequest {
   temperature?: number;
   top_p?: number;
   num_predict?: number;
-  /** Keep false for this first non-streaming client implementation. */
-  stream: false;
+  /** False for regular JSON completions; true for Server-Sent Event streams. */
+  stream: boolean;
 }
 
 export interface MessagePayload {
@@ -42,10 +42,37 @@ export interface ChatResponse {
   done: boolean;
 }
 
+export interface ChatStreamOptions {
+  /** Optional cancellation signal for Svelte components to stop generation. */
+  signal?: AbortSignal;
+}
+
+export interface ChatStreamMessageEvent {
+  event: 'message';
+  content: string;
+  model?: string;
+  requestId?: string;
+}
+
+export interface ChatStreamErrorEvent {
+  event: 'error';
+  error: string;
+  requestId?: string;
+  details?: unknown;
+}
+
+export interface ChatStreamDoneEvent {
+  event: 'done';
+  done: boolean;
+  requestId?: string;
+}
+
+export type ChatStreamEvent = ChatStreamMessageEvent | ChatStreamErrorEvent | ChatStreamDoneEvent;
+
 export interface ChatServiceOptions {
   /** Backend base URL, for example http://localhost:8000. */
   baseUrl?: string;
-  /** Timeout applied to each request. */
+  /** Timeout applied to each JSON request and to stream startup/first event. */
   timeoutMs?: number;
   /** Optional fetch implementation for tests or future Tauri adapters. */
   fetcher?: typeof fetch;
@@ -57,6 +84,28 @@ interface BackendErrorBody {
     details?: unknown;
     request_id?: string;
   };
+}
+
+interface RawSseEvent {
+  event: string;
+  data: string;
+}
+
+interface BackendStreamMessageBody {
+  content?: unknown;
+  model?: unknown;
+  request_id?: unknown;
+}
+
+interface BackendStreamErrorBody {
+  error?: unknown;
+  details?: unknown;
+  request_id?: unknown;
+}
+
+interface BackendStreamDoneBody {
+  done?: unknown;
+  request_id?: unknown;
 }
 
 /** User-facing error with optional diagnostic context for logs/support. */
@@ -92,26 +141,106 @@ export class ChatService {
     this.fetcher = options.fetcher ?? fetch;
   }
 
-  /**
-   * Send one user message plus optional prior conversation history to /chat.
-   *
-   * Streaming is deliberately disabled for this first API layer. When streaming
-   * is added, this method can remain the simple completion path while a sibling
-   * method exposes an async iterable or SSE reader.
-   */
+  /** Send one user message plus optional prior conversation history to /chat. */
   async sendMessage(message: string, history: Message[] = []): Promise<ChatResponse> {
+    return this.postChat(this.createChatRequest(message, history, false));
+  }
+
+  /**
+   * Stream one user message plus optional prior conversation history from /chat.
+   *
+   * Consumers can append `message` event content as it arrives, surface `error`
+   * events without losing already-received text, and always clean up when a
+   * terminal `done` event is yielded. Breaking from the async iterator aborts
+   * the HTTP request so local generation work is not left running unnecessarily.
+   */
+  async *sendMessageStream(
+    message: string,
+    history: Message[] = [],
+    options: ChatStreamOptions = {}
+  ): AsyncGenerator<ChatStreamEvent, void, void> {
+    const request = this.createChatRequest(message, history, true);
+    const url = `${this.baseUrl}/chat`;
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+    const cancelExternalAbort = this.forwardAbort(options.signal, controller);
+    let responseBody: ReadableStream<Uint8Array> | null = null;
+    let sawDoneEvent = false;
+
+    this.logRequest(url, request);
+
+    try {
+      const response = await this.fetcher(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream'
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const responseBody = await this.parseJsonResponse<BackendErrorBody>(response);
+        throw this.toServiceError(response, responseBody);
+      }
+
+      if (!response.body) {
+        throw new ChatServiceError('The companion service opened a stream without a readable response body.', {
+          status: response.status
+        });
+      }
+
+      responseBody = response.body;
+
+      for await (const rawEvent of this.readSseEvents(response.body)) {
+        globalThis.clearTimeout(timeout);
+        const streamEvent = this.toChatStreamEvent(rawEvent);
+
+        if (streamEvent.event === 'message') {
+          this.logStreamToken(url, streamEvent);
+          yield streamEvent;
+          continue;
+        }
+
+        if (streamEvent.event === 'error') {
+          this.logStreamError(url, streamEvent);
+          yield streamEvent;
+          continue;
+        }
+
+        sawDoneEvent = true;
+        this.logResponse(url, streamEvent);
+        yield streamEvent;
+        return;
+      }
+
+      if (!sawDoneEvent) {
+        throw new ChatServiceError('The companion stream ended before sending a completion event.');
+      }
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+      cancelExternalAbort();
+
+      if (!sawDoneEvent && responseBody && !controller.signal.aborted) {
+        controller.abort();
+      }
+    }
+  }
+
+  private createChatRequest(message: string, history: Message[], stream: boolean): ChatRequest {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
       throw new ChatServiceError('Please enter a message before sending.');
     }
 
-    const request: ChatRequest = {
+    return {
       messages: [...this.toPayloadMessages(history), { role: 'user', content: trimmedMessage }],
-      stream: false
+      stream
     };
-
-    return this.postChat(request);
   }
 
   private async postChat(request: ChatRequest): Promise<ChatResponse> {
@@ -173,6 +302,157 @@ export class ChatService {
     }
   }
 
+  private async *readSseEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<RawSseEvent, void, void> {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = this.drainSseBuffer(buffer);
+        buffer = events.remainder;
+
+        for (const event of events.parsedEvents) {
+          yield event;
+        }
+      }
+
+      buffer += decoder.decode();
+
+      if (buffer.trim().length > 0) {
+        yield this.parseSseEvent(buffer);
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already be closed or aborted; cancellation is best-effort cleanup.
+      }
+
+      reader.releaseLock();
+    }
+  }
+
+  private drainSseBuffer(buffer: string): { parsedEvents: RawSseEvent[]; remainder: string } {
+    const parsedEvents: RawSseEvent[] = [];
+    let remainder = buffer;
+    let delimiterIndex = this.findSseDelimiter(remainder);
+
+    while (delimiterIndex !== -1) {
+      const frame = remainder.slice(0, delimiterIndex.index);
+      parsedEvents.push(this.parseSseEvent(frame));
+      remainder = remainder.slice(delimiterIndex.index + delimiterIndex.length);
+      delimiterIndex = this.findSseDelimiter(remainder);
+    }
+
+    return { parsedEvents, remainder };
+  }
+
+  private findSseDelimiter(buffer: string): { index: number; length: number } | -1 {
+    const delimiters = ['\r\n\r\n', '\n\n', '\r\r'];
+    const matches = delimiters
+      .map((delimiter) => ({ index: buffer.indexOf(delimiter), length: delimiter.length }))
+      .filter((match) => match.index !== -1)
+      .sort((left, right) => left.index - right.index);
+
+    return matches[0] ?? -1;
+  }
+
+  private parseSseEvent(frame: string): RawSseEvent {
+    let event = 'message';
+    const dataLines: string[] = [];
+
+    for (const rawLine of frame.split(/\r\n|\n|\r/)) {
+      if (!rawLine || rawLine.startsWith(':')) {
+        continue;
+      }
+
+      const separatorIndex = rawLine.indexOf(':');
+      const field = separatorIndex === -1 ? rawLine : rawLine.slice(0, separatorIndex);
+      const rawValue = separatorIndex === -1 ? '' : rawLine.slice(separatorIndex + 1);
+      const value = rawValue.startsWith(' ') ? rawValue.slice(1) : rawValue;
+
+      if (field === 'event') {
+        event = value || 'message';
+      }
+
+      if (field === 'data') {
+        dataLines.push(value);
+      }
+    }
+
+    return { event, data: dataLines.join('\n') };
+  }
+
+  private toChatStreamEvent(rawEvent: RawSseEvent): ChatStreamEvent {
+    const data = this.parseSseJson(rawEvent);
+
+    if (rawEvent.event === 'message') {
+      const body = data as BackendStreamMessageBody;
+      return {
+        event: 'message',
+        content: typeof body.content === 'string' ? body.content : '',
+        model: typeof body.model === 'string' ? body.model : undefined,
+        requestId: typeof body.request_id === 'string' ? body.request_id : undefined
+      };
+    }
+
+    if (rawEvent.event === 'error') {
+      const body = data as BackendStreamErrorBody;
+      return {
+        event: 'error',
+        error: typeof body.error === 'string' ? body.error : 'The companion stream reported an error.',
+        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        details: body.details
+      };
+    }
+
+    if (rawEvent.event === 'done') {
+      const body = data as BackendStreamDoneBody;
+      return {
+        event: 'done',
+        done: typeof body.done === 'boolean' ? body.done : true,
+        requestId: typeof body.request_id === 'string' ? body.request_id : undefined
+      };
+    }
+
+    throw new ChatServiceError(`The companion stream sent an unsupported '${rawEvent.event}' event.`);
+  }
+
+  private parseSseJson(rawEvent: RawSseEvent): unknown {
+    if (!rawEvent.data) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(rawEvent.data) as unknown;
+    } catch (error) {
+      throw new ChatServiceError('The companion stream returned an unreadable event.', { cause: error });
+    }
+  }
+
+  private forwardAbort(source: AbortSignal | undefined, target: AbortController): () => void {
+    if (!source) {
+      return () => undefined;
+    }
+
+    if (source.aborted) {
+      target.abort(source.reason);
+      return () => undefined;
+    }
+
+    const abortTarget = () => target.abort(source.reason);
+    source.addEventListener('abort', abortTarget, { once: true });
+    return () => source.removeEventListener('abort', abortTarget);
+  }
+
   private toServiceError(response: Response, body: BackendErrorBody): ChatServiceError {
     const detail = body.detail;
     const message = detail?.error ?? this.defaultMessageForStatus(response.status);
@@ -191,7 +471,7 @@ export class ChatService {
 
     if (error instanceof DOMException && error.name === 'AbortError') {
       return new ChatServiceError(
-        'The companion service took too long to respond. Make sure the local model is running and try again.',
+        'The companion service took too long to respond or the stream was cancelled. Make sure the local model is running and try again.',
         { cause: error }
       );
     }
@@ -231,6 +511,26 @@ export class ChatService {
     if (!dev) return;
 
     console.debug('[Reverie API] Response', url, response);
+  }
+
+  private logStreamToken(url: string, event: ChatStreamMessageEvent): void {
+    if (!dev) return;
+
+    console.debug('[Reverie API] Stream token', url, {
+      content: event.content,
+      requestId: event.requestId,
+      model: event.model
+    });
+  }
+
+  private logStreamError(url: string, event: ChatStreamErrorEvent): void {
+    if (!dev) return;
+
+    console.debug('[Reverie API] Stream error', url, {
+      error: event.error,
+      requestId: event.requestId,
+      details: event.details
+    });
   }
 }
 
