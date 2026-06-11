@@ -31,6 +31,69 @@ _MAX_HISTORY_CHARS = 12_000
 _MAX_JOURNAL_ENTRY_CHARS = 6_000
 _MAX_REFLECTION_MEMORY_CHARS = 1_200
 
+
+_EXPLICIT_REFLECTION_KEYWORDS = frozenset(
+    {
+        "remember",
+        "learn",
+        "learned",
+        "reflect",
+        "reflection",
+        "journal",
+        "prefer",
+        "preference",
+        "boundary",
+        "boundaries",
+        "promise",
+    }
+)
+
+_BALANCED_REFLECTION_KEYWORDS = frozenset(
+    {
+        *_EXPLICIT_REFLECTION_KEYWORDS,
+        "trust",
+        "routine",
+        "reassure",
+        "reassurance",
+        "anxious",
+        "afraid",
+        "hurt",
+        "important",
+        "always",
+        "never",
+    }
+)
+
+_RESPONSIVE_REFLECTION_KEYWORDS = frozenset(
+    {
+        *_BALANCED_REFLECTION_KEYWORDS,
+        "safe",
+        "safer",
+        "comfort",
+        "comfortable",
+        "confession",
+        "repair",
+        "sorry",
+        "forgive",
+        "change",
+        "growth",
+        "habit",
+        "usually",
+    }
+)
+
+_REFLECTION_FREQUENCY_MULTIPLIERS = {
+    "low": (2.0, 2.0),
+    "balanced": (1.0, 1.0),
+    "high": (0.5, 0.5),
+}
+
+_REFLECTION_SENSITIVITY_KEYWORDS = {
+    "conservative": _EXPLICIT_REFLECTION_KEYWORDS,
+    "balanced": _BALANCED_REFLECTION_KEYWORDS,
+    "responsive": _RESPONSIVE_REFLECTION_KEYWORDS,
+}
+
 _THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
     "affection": ("love", "care", "miss", "hug", "kiss", "cuddle", "cherish"),
     "trust": ("trust", "safe", "honest", "promise", "reliable", "vulnerable"),
@@ -223,6 +286,172 @@ class ReflectionManagerConfig:
 
 class ReflectionJournalError(Exception):
     """Raised when journal persistence fails in an expected way."""
+
+
+@dataclass(frozen=True)
+class ReflectionSchedulerConfig:
+    """User-facing controls that tune lightweight reflection scheduling.
+
+    The scheduler never performs reflection itself. It only makes a cheap,
+    deterministic decision so chat can queue journaling off the response path.
+    Frequency controls cadence and throttling; sensitivity controls how readily
+    natural-language cues count as meaningful enough to journal.
+    """
+
+    enabled: bool = True
+    frequency: Literal["low", "balanced", "high"] = "balanced"
+    sensitivity: Literal["conservative", "balanced", "responsive"] = "balanced"
+    user_message_interval: int = 6
+    min_interval_seconds: float = 180.0
+    min_user_messages: int = 2
+
+    @classmethod
+    def from_settings(
+        cls, settings: Settings | None = None
+    ) -> "ReflectionSchedulerConfig":
+        settings = settings or get_settings()
+        return cls(
+            enabled=settings.reflection_enabled,
+            frequency=cast(
+                Literal["low", "balanced", "high"], settings.reflection_frequency
+            ),
+            sensitivity=cast(
+                Literal["conservative", "balanced", "responsive"],
+                settings.reflection_sensitivity,
+            ),
+            user_message_interval=settings.reflection_user_message_interval,
+            min_interval_seconds=settings.reflection_min_interval_seconds,
+            min_user_messages=settings.reflection_min_user_messages,
+        )
+
+
+@dataclass(frozen=True)
+class ReflectionScheduleDecision:
+    """Result of a cheap scheduler check for background reflection."""
+
+    should_schedule: bool
+    reason: str | None = None
+    min_interval_seconds: float = 0.0
+    user_message_count: int = 0
+    matched_keywords: tuple[str, ...] = ()
+
+
+class ReflectionScheduler:
+    """Cheap, non-blocking policy for when conversation reflection feels natural.
+
+    The scheduler combines three gates: user controls, message-count cadence, and
+    wall-clock throttling. It intentionally uses only metadata and the latest
+    user text, avoiding model calls or full transcript scans on the chat path.
+    """
+
+    def __init__(self, config: ReflectionSchedulerConfig | None = None) -> None:
+        self._config = config or ReflectionSchedulerConfig.from_settings()
+
+    @classmethod
+    def from_settings(cls, settings: Settings | None = None) -> "ReflectionScheduler":
+        return cls(ReflectionSchedulerConfig.from_settings(settings))
+
+    @property
+    def config(self) -> ReflectionSchedulerConfig:
+        return self._config
+
+    def evaluate(
+        self,
+        messages: Iterable[Any],
+        *,
+        now: float,
+        last_started_at: float,
+        inflight_count: int = 0,
+    ) -> ReflectionScheduleDecision:
+        """Return whether this turn should queue a background reflection."""
+
+        user_texts = [
+            str(getattr(message, "content", "") or "")
+            for message in messages
+            if getattr(message, "role", None) == "user"
+            and str(getattr(message, "content", "") or "").strip()
+        ]
+        user_message_count = len(user_texts)
+
+        if not self._config.enabled:
+            return ReflectionScheduleDecision(
+                False, "disabled", user_message_count=user_message_count
+            )
+        if inflight_count > 0:
+            return ReflectionScheduleDecision(
+                False,
+                "reflection_already_running",
+                user_message_count=user_message_count,
+            )
+        latest_text = user_texts[-1].lower() if user_texts else ""
+        matched_keywords = self._matched_keywords(latest_text)
+        if (
+            user_message_count < self._effective_min_user_messages()
+            and not matched_keywords
+        ):
+            return ReflectionScheduleDecision(
+                False,
+                "needs_more_user_messages",
+                user_message_count=user_message_count,
+            )
+
+        min_interval = self.effective_min_interval_seconds()
+        elapsed = now - last_started_at
+        if elapsed < min_interval:
+            return ReflectionScheduleDecision(
+                False,
+                "interval_throttle",
+                min_interval_seconds=min_interval,
+                user_message_count=user_message_count,
+            )
+
+        if matched_keywords:
+            return ReflectionScheduleDecision(
+                True,
+                f"salient_keywords:{','.join(matched_keywords[:3])}",
+                min_interval_seconds=min_interval,
+                user_message_count=user_message_count,
+                matched_keywords=tuple(matched_keywords),
+            )
+
+        interval = self.effective_user_message_interval()
+        if user_message_count >= interval and user_message_count % interval == 0:
+            return ReflectionScheduleDecision(
+                True,
+                f"message_interval:{interval}",
+                min_interval_seconds=min_interval,
+                user_message_count=user_message_count,
+            )
+
+        return ReflectionScheduleDecision(
+            False,
+            "not_a_reflection_moment",
+            min_interval_seconds=min_interval,
+            user_message_count=user_message_count,
+        )
+
+    def effective_user_message_interval(self) -> int:
+        interval_multiplier, _cooldown_multiplier = _REFLECTION_FREQUENCY_MULTIPLIERS[
+            self._config.frequency
+        ]
+        return max(1, round(self._config.user_message_interval * interval_multiplier))
+
+    def effective_min_interval_seconds(self) -> float:
+        _interval_multiplier, cooldown_multiplier = _REFLECTION_FREQUENCY_MULTIPLIERS[
+            self._config.frequency
+        ]
+        return max(0.0, self._config.min_interval_seconds * cooldown_multiplier)
+
+    def _effective_min_user_messages(self) -> int:
+        if self._config.frequency == "high":
+            return max(1, self._config.min_user_messages - 1)
+        if self._config.frequency == "low":
+            return max(self._config.min_user_messages, 3)
+        return self._config.min_user_messages
+
+    def _matched_keywords(self, latest_text: str) -> list[str]:
+        keywords = _REFLECTION_SENSITIVITY_KEYWORDS[self._config.sensitivity]
+        return sorted(keyword for keyword in keywords if keyword in latest_text)
 
 
 class ReflectionManager:
