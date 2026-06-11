@@ -1,322 +1,267 @@
-# 8GB VRAM Optimization Skill
+# Skill: 8GB VRAM Optimization
 
-**Applies to**: Performance-sensitive backend, UI, model-serving, training, embedding, retrieval, media-generation, and ComfyUI work.
+**Applies to**: Model serving, inference, embeddings, retrieval, reranking, training, ComfyUI/media generation, background jobs, desktop responsiveness, and any feature that can affect CPU/GPU/RAM/disk pressure.
 
-Use this skill whenever a change can affect GPU memory, latency, throughput, responsiveness, model selection, generation quality, training jobs, embedding pipelines, image/video workflows, or long-running background tasks. Assume the baseline target is an RTX 4070 laptop GPU with 8GB VRAM unless a task explicitly states otherwise.
-
----
-
-## Core Principle
-
-Design for smooth local-first operation under tight GPU memory pressure. A feature is not complete until it has an explicit plan for:
-
-- Peak VRAM use.
-- Steady-state VRAM use.
-- CPU RAM fallback behavior.
-- UI responsiveness during heavy work.
-- Cleanup after model, training, embedding, or ComfyUI jobs.
-- Graceful degradation when the 8GB budget is not enough.
-
-Prefer predictable, bounded resource usage over maximum quality or raw throughput.
+Use this skill whenever work can change model residency, context length, batch sizes, queues, GPU memory, latency, startup time, or graceful degradation. Assume the baseline machine is an **RTX 4070 laptop GPU with 8GB VRAM** unless the task explicitly says otherwise.
 
 ---
 
-## Hardware Constraints
+## 1. Mission
 
-Treat 8GB VRAM as a hard product constraint, not an optional optimization target.
+Reverie must feel premium and alive on modest local hardware. A feature is not complete until it has a clear plan for peak memory, steady-state memory, cleanup, fallback behavior, and UI responsiveness during heavy work.
 
-### Required Targets
+Default tradeoff order:
 
-- Keep normal interactive operation below **7.5GB VRAM**.
-- Leave **300-500MB VRAM headroom** for driver overhead, desktop compositor usage, CUDA kernels, fragmentation, and short spikes.
-- Avoid loading multiple large GPU models at the same time unless their combined peak memory has been measured and budgeted.
-- Prefer fast model swaps, unload/reload flows, and queued execution over permanent residency of every model.
-- Never assume desktop-class sustained clocks, power limits, or thermals; laptop GPUs can throttle during long generation or training sessions.
-
-### Design Assumptions
-
-- Users may run the app alongside a browser, Discord, OBS, media players, or another local AI process.
-- Available VRAM can change while the app is running.
-- Windows, Linux, and driver versions can report memory differently.
-- Fragmentation can cause allocation failures even when reported free VRAM appears sufficient.
+1. Stable character continuity.
+2. Predictable local responsiveness.
+3. Avoiding CUDA OOM and app crashes.
+4. Quality within budget.
+5. Throughput and optional visual fidelity.
 
 ---
 
-## VRAM Budgeting
+## 2. Hard Targets
 
-Every performance-sensitive feature should document or encode a resource budget.
+Treat 8GB VRAM as a product constraint, not a best-effort optimization.
 
-### Budget Categories
-
-Track these categories separately where possible:
-
-1. **Base runtime overhead**: Python process, CUDA context, framework allocations, kernels.
-2. **Primary language model**: Weights, KV cache, activations, tokenizer/runtime buffers.
-3. **Embedding model**: Weights, batch buffers, vectorization queues.
-4. **Reranker or classifier models**: Any auxiliary model loaded for retrieval or filtering.
-5. **Image/video/ComfyUI models**: Checkpoints, VAEs, CLIP/text encoders, ControlNet, LoRA, upscalers.
-6. **Training jobs**: Base model, optimizer states, gradients, LoRA adapters, batches, validation pass.
-7. **Transient buffers**: Prompt processing spikes, image tensors, latent buffers, preview renders, audio/video frames.
-8. **Safety headroom**: Reserved memory for fragmentation and OS/driver overhead.
-
-### Budget Rules
-
-- Define a peak budget before adding a model or batch process.
-- Prefer explicit batch limits over dynamically growing queues.
-- Use sequential pipelines when parallel execution would exceed the budget.
-- Treat KV cache growth as a first-class VRAM consumer during long conversations.
-- Add guardrails that refuse, defer, downscale, unload, or queue work before CUDA out-of-memory occurs.
-- Log model load/unload events, selected quantization, estimated VRAM, and actual observed memory when available.
+- Keep normal interactive operation under **~7.5 GB VRAM**.
+- Reserve **300-500 MB headroom** for driver/compositor overhead, kernels, fragmentation, and transient spikes.
+- Avoid permanent residency for multiple large models.
+- Queue or serialize heavyweight work instead of running chat, embeddings, training, and image generation together.
+- Assume laptop thermals and power limits can throttle sustained jobs.
+- Assume available VRAM changes while Reverie is running because users may have browsers, Discord, OBS, games, or another AI process open.
 
 ---
 
-## Quantization Guidance
+## 3. Resource Budget Template
 
-Quantization is the default strategy for fitting capable models into 8GB VRAM.
+Every feature that touches models or heavy jobs should document this budget in code comments, config, docs, or tests:
 
-### Language Models
-
-- Prefer **4-bit quantized models** for primary local chat on 8GB VRAM.
-- Use **5-bit or 6-bit quantization** only when measured memory leaves enough headroom for the required context length and auxiliary models.
-- Avoid FP16/BF16 full-weight LLM inference on 8GB unless the model is very small and the total budget is proven safe.
-- Expose quantization as configuration, but choose conservative defaults.
-- Tune context length, batch size, and KV cache precision together; quantized weights do not eliminate KV cache pressure.
-
-### Embedding and Reranking Models
-
-- Prefer small, fast embedding models with predictable memory use.
-- Keep embedding models on CPU by default if GPU residency would interfere with chat or generation responsiveness.
-- Batch embeddings conservatively; use queue-based processing instead of large one-shot batches.
-- Allow GPU acceleration for embeddings only when the main model is idle or after reserving enough VRAM headroom.
-
-### Image, Video, and ComfyUI Models
-
-- Prefer memory-efficient checkpoints and workflows designed for 8GB cards.
-- Use quantized, pruned, tiled, or low-VRAM variants when available.
-- Avoid keeping large image/video models resident while chat inference is active unless explicitly budgeted.
-- Prefer lower resolution, lower batch count, tiled VAE decode, CPU offload, attention slicing, and xformers/SDPA-style memory-efficient attention where supported.
-- Treat upscalers, ControlNet, IP-Adapter, AnimateDiff/video nodes, and multiple LoRAs as significant memory additions.
-
-### Training and Fine-Tuning
-
-- Prefer LoRA/QLoRA-style training over full fine-tuning.
-- Use low-rank adapters, small batch sizes, gradient accumulation, mixed precision, checkpointing, and optimizer memory savings.
-- Never start training while interactive generation is using the GPU unless the scheduler has explicitly paused/unloaded the conflicting workload.
-- Save intermediate artifacts often enough to survive cancellation or OOM without losing all progress.
+```yaml
+feature: "memory embedding backfill"
+interactive_required: false
+primary_gpu_models: []
+peak_vram_mb_estimate: 600
+steady_vram_mb_estimate: 250
+cpu_ram_mb_estimate: 1500
+disk_temp_mb_estimate: 500
+concurrency_limit: 1
+fallbacks:
+  - pause during active chat generation
+  - reduce embedding batch size
+  - run on CPU if GPU pressure is high
+cleanup:
+  - release model after idle timeout
+  - clear CUDA cache after large batch
+telemetry:
+  - log start/end memory snapshots
+  - log batch size and duration
+```
 
 ---
 
-## Model Lifecycle Rules
+## 4. Model Residency Rules
 
-Models must have explicit lifecycle ownership.
+### Primary chat model
 
-### Load Rules
+- Prefer 4-bit quantized models for 8GB interactive chat.
+- 5-bit/6-bit or larger contexts are allowed only after measurement leaves headroom.
+- Load one primary LLM at a time by default.
+- Make context length configurable and bounded; long context increases KV cache and latency.
+- Reuse model sessions for chat, but support explicit unload and idle unload.
+- Log model name, quantization, context length, backend, load time, and observed memory.
 
-- Load models lazily, close to first use.
-- Validate available VRAM before loading.
-- Prefer a single owner/service responsible for model residency and eviction.
-- Avoid hidden global model instances that cannot be unloaded.
-- Record which component requested each model and why it remains loaded.
+### Auxiliary models
 
-### Unload Rules
+- Embedding, reranker, classifier, TTS, STT, and vision models should not silently remain on GPU forever.
+- Prefer CPU or small GPU residency for embeddings unless measured GPU acceleration is worth the memory.
+- Unload auxiliary GPU models before large image/video/training jobs.
+- Use lazy loading and idle timeouts.
 
-- Unload models when they are idle and another high-priority workload needs VRAM.
-- Release references, clear framework caches when appropriate, and verify memory drops where possible.
-- Use cooldowns to avoid thrashing when a model is needed repeatedly.
-- Provide cancellation points for long-running jobs so unload requests do not wait indefinitely.
+### Media/ComfyUI models
 
-### Eviction Priority
-
-When memory pressure rises, unload or move resources in this order unless the current user task requires otherwise:
-
-1. Preview, cache, and temporary tensors.
-2. Idle upscalers, VAEs, ControlNet, adapters, and ComfyUI nodes.
-3. Idle embedding/reranker models.
-4. Idle training state or paused training workers.
-5. Idle image/video generation model.
-6. Secondary language model.
-7. Primary interactive chat model last.
+- Keep ComfyUI optional and decoupled.
+- Do not assume chat model and diffusion model can coexist in VRAM.
+- Prefer “pause chat generation → unload LLM if needed → run media job → reload LLM” over OOM-prone concurrency.
+- Cap resolution, frame count, batch count, ControlNet count, and upscalers by preset.
 
 ---
 
-## Background Job Scheduling
+## 5. RTX 4070 8GB Mobile Defaults
 
-Long-running GPU work must go through a scheduler instead of competing directly for VRAM.
+Start conservative. Let advanced users opt up after measurement.
 
-### Job Types
-
-Schedule and prioritize:
-
-- Chat inference.
-- Memory summarization and reflection.
-- Embedding generation and re-indexing.
-- Reranking and retrieval enrichment.
-- Image generation and ComfyUI workflows.
-- Video generation, frame interpolation, and upscaling.
-- LoRA training and validation.
-- Model downloads, conversions, quantization, and cache warming.
-
-### Priority Rules
-
-- User-visible interactive chat and UI actions have highest priority.
-- Background memory, embedding, and reflection tasks must yield to active interaction.
-- Training, batch media generation, and re-indexing should run only when the system is idle or when the user explicitly starts them.
-- Use backpressure: bounded queues, rate limits, and cancellation rather than unlimited task accumulation.
-- Persist job state so the app can resume or explain interrupted work after restart.
-
-### Scheduling Patterns
-
-- Use one GPU-heavy job at a time by default on 8GB systems.
-- Allow CPU-only jobs to continue if they do not degrade UI responsiveness.
-- Split large jobs into resumable chunks.
-- Check memory and thermal/latency signals between chunks.
-- Provide progress, estimated time, pause, resume, and cancel controls for long jobs.
+| Area | Default | Escalate only if |
+|---|---|---|
+| LLM quantization | 4-bit | measured headroom supports 5/6-bit |
+| Context length | 4k-8k for normal chat | user explicitly selects long context |
+| Parallel LLM generations | 1 | batch mode with no active UI expectation |
+| Embedding batch | small fixed batches | CPU/GPU memory remains stable |
+| Reranking | top 20-50 candidates | latency remains acceptable |
+| Image generation | queued, not concurrent with chat | LLM unloaded or enough headroom |
+| Training | explicit user-started job | app warns and enters training mode |
+| Background indexing | idle/low priority | no active generation or media job |
 
 ---
 
-## Context Management
+## 6. KV Cache and Context Management
 
-Long context is valuable, but unbounded context will consume VRAM and degrade latency.
+KV cache is often the hidden reason long-running companion chat slows down or OOMs.
 
-### Conversation Context
+Rules:
 
-- Keep active prompt context bounded by a configurable token budget.
-- Summarize older turns into memory layers instead of expanding the live context indefinitely.
-- Retrieve only the most relevant memories for the current turn.
-- Prefer compact, information-dense memory snippets over raw transcript stuffing.
-- Monitor KV cache size and generation latency as context grows.
+- Treat context length as a memory budget item.
+- Use memory/RAG summaries instead of unbounded transcript stuffing.
+- Cap active conversation window and summarize older turns with provenance.
+- Support context trimming that preserves:
+  1. system/developer prompt,
+  2. character stable identity,
+  3. current user instruction,
+  4. boundaries/promises,
+  5. recent scene state,
+  6. compact long-term memories.
+- Expose long-context mode as a quality/performance tradeoff, not the default.
+- Test long sessions, regeneration, retries, and branch switching for cache cleanup.
 
-### Retrieval Context
+Prompt budget example:
 
-- Cap the number and length of retrieved memories.
-- Deduplicate overlapping memories before insertion.
-- Prefer staged retrieval: cheap lexical/vector search first, rerank only a small candidate set.
-- Run embeddings and reranking in background queues where possible.
-- Use CPU fallback for retrieval models if GPU contention would hurt chat responsiveness.
-
-### ComfyUI and Media Context
-
-- Keep workflow graphs minimal for the requested output.
-- Avoid carrying unnecessary high-resolution tensors between nodes.
-- Use previews and lower-resolution drafts before expensive final renders.
-- Clear workflow caches after completion when they are not needed for immediate iteration.
-
----
-
-## UI Responsiveness
-
-The UI must remain responsive even when GPU jobs are slow.
-
-### Required Patterns
-
-- Never block the UI thread on model loading, inference, training, embedding, or ComfyUI execution.
-- Show explicit loading, queued, running, paused, and cancelling states.
-- Stream chat tokens or progress updates whenever possible.
-- Surface memory-pressure messages in user-friendly language.
-- Allow users to cancel heavy jobs without restarting the app.
-- Keep optimistic UI updates reversible if the backend job fails.
-
-### Latency Expectations
-
-- Prefer immediate acknowledgement over silent waiting.
-- If model loading or generation may take more than a few seconds, show progress or staged status updates.
-- Debounce UI actions that could enqueue duplicate GPU jobs.
-- Disable or explain controls that cannot run under the current memory budget.
+```text
+Normal 8GB chat budget:
+- System/global instructions: fixed, compact
+- Character identity: 400-900 tokens
+- Active scene/recent summary: 300-700 tokens
+- Retrieved memories: 300-900 tokens
+- Recent turns: remaining budget
+- Response allowance: configured max tokens
+```
 
 ---
 
-## Graceful Degradation Patterns
+## 7. Embeddings and Retrieval Jobs
 
-When resources are insufficient, degrade quality or defer work instead of crashing.
+Embeddings should improve memory without making chat feel sluggish.
 
-### Degradation Ladder
+- Queue embedding writes and backfills.
+- Pause or throttle embedding jobs during active generation, media generation, or training.
+- Use bounded batches; never let backlog size dictate batch size.
+- Prefer incremental indexing over full re-indexing.
+- Store index version and embedding model version for migrations.
+- Allow CPU fallback for embeddings if GPU pressure is high.
+- Batch disk writes without risking data loss.
+- Surface indexing status calmly in UI: “Memory indexing is catching up.”
 
-Apply one or more of these steps before failing:
+---
+
+## 8. Background Job Scheduler
+
+Centralize heavyweight work through a scheduler instead of ad hoc threads.
+
+Job classes:
+
+1. **Interactive**: active chat generation, cancellation, streaming.
+2. **Near-interactive**: retrieval, reranking, small embedding writes.
+3. **Idle**: backfills, compaction, summaries, thumbnails.
+4. **Exclusive**: image/video generation, training, large imports/exports.
+
+Rules:
+
+- Interactive jobs preempt idle jobs.
+- Exclusive jobs acquire a resource lock with a user-visible reason.
+- Jobs must be cancelable or checkpointed.
+- Jobs must report progress, phase, estimated memory tier, and safe failure messages.
+- Failed jobs must release models, handles, temp files, and locks.
+
+---
+
+## 9. Graceful Degradation Ladder
+
+Before OOM, degrade in this order:
 
 1. Reduce batch size.
-2. Shorten max generation tokens.
-3. Reduce live context length.
-4. Lower image/video resolution.
-5. Lower image/video step count.
-6. Disable high-cost extensions such as ControlNet, upscalers, video interpolation, or extra LoRAs.
-7. Move embedding/reranking to CPU.
-8. Unload idle models or adapters.
-9. Queue the job until the active model is idle.
-10. Ask the user to choose between quality and speed/memory profiles.
+2. Lower max output tokens or context length for this request.
+3. Drop low-value retrieved memories and raw excerpts.
+4. Disable reranker or move it to CPU.
+5. Pause idle embedding/indexing jobs.
+6. Unload auxiliary models.
+7. Ask user to queue exclusive media/training instead of running concurrently.
+8. Fall back to lower-resolution media preset or smaller model.
+9. Show a clear local-resource message with recovery actions.
 
-### Failure Behavior
+User-facing copy should be calm:
 
-- Catch expected OOM and allocation failures at job boundaries.
-- Clean up partial state after failure.
-- Preserve user input, job configuration, and recoverable intermediate outputs.
-- Explain what was reduced, retried, queued, or skipped.
-- Offer actionable next steps such as lower resolution, shorter context, fewer LoRAs, or retry after another job finishes.
+```text
+Reverie is keeping enough GPU headroom to avoid a crash. I paused memory indexing and switched this response to the balanced context budget. You can resume indexing after the chat finishes.
+```
 
 ---
 
-## Backend Implementation Checklist
+## 10. Training and Adapter Jobs
 
-For backend changes, verify:
+Training is never a hidden background side effect.
 
-- Model load/unload paths are explicit and testable.
-- GPU-heavy functions are cancellable or chunked.
-- Queues have bounded length and clear priority.
-- Memory estimates are checked before starting jobs.
-- OOM handling releases resources and reports a useful error.
-- Metrics/logs include model name, quantization, context size, batch size, and observed memory where available.
-- CPU fallback exists for non-interactive or background work when practical.
-
----
-
-## UI Implementation Checklist
-
-For UI changes, verify:
-
-- Heavy operations are asynchronous.
-- The user can see job status and progress.
-- The user can cancel, pause, or defer long jobs where appropriate.
-- Controls communicate why a high-cost option is disabled or risky.
-- Quality/performance presets are clear and reversible.
-- The UI does not encourage launching multiple conflicting GPU jobs accidentally.
+- Require explicit user approval and a clear “training mode” state.
+- Serialize training against chat/media unless measured safe.
+- Prefer LoRA/adapter training over full fine-tuning.
+- Use small micro-batches, gradient accumulation, checkpointing, and conservative validation.
+- Save checkpoints incrementally and support cancel/resume.
+- Keep datasets inspectable and deletable.
+- Do not train on private, deleted, or disallowed memories.
+- Warn when training may reduce responsiveness or require unloading the chat model.
 
 ---
 
-## Model, Training, and Embedding Checklist
+## 11. UI Performance Rules
 
-For model pipeline changes, verify:
+The desktop UI must stay responsive while the backend is busy.
 
-- Quantization and precision choices fit the 8GB target.
-- Context length, batch size, and cache settings are bounded.
-- Training uses LoRA/QLoRA-style methods unless a larger budget is explicitly available.
-- Embedding and indexing jobs are incremental and resumable.
-- Validation jobs do not secretly double memory use by loading extra models.
-- Artifacts are saved in formats that do not require full reloads for simple inspection.
-
----
-
-## ComfyUI Checklist
-
-For ComfyUI or media generation work, verify:
-
-- Workflows have an 8GB-safe default profile.
-- High-cost nodes are optional and clearly labeled.
-- Resolution, batch count, steps, VAE mode, and adapter count are budgeted.
-- Chat/model-serving workloads are paused, unloaded, or scheduled around heavy media generation.
-- Preview generation is cheaper than final generation.
-- Failed jobs clean up temporary tensors and partial outputs.
+- Avoid main-thread parsing of huge transcripts, memory dumps, or job logs.
+- Virtualize long lists and galleries.
+- Debounce search/filter controls.
+- Stream updates in small patches instead of replacing giant arrays.
+- Use low-motion defaults and respect `prefers-reduced-motion`.
+- Cap previews, thumbnails, and animated effects.
+- Use event streams for job progress; avoid aggressive polling.
 
 ---
 
-## Default Recommendation
+## 12. Telemetry and Diagnostics
 
-When uncertain, choose the safer 8GB profile:
+Keep diagnostics local and useful.
 
-- 4-bit LLM inference.
-- Conservative context length.
-- CPU or idle-time embeddings.
-- One GPU-heavy job at a time.
-- Low-VRAM ComfyUI workflow defaults.
-- LoRA/QLoRA training only when the scheduler can reserve the GPU.
-- Explicit progress, cancellation, and recovery paths.
+Log at job/model boundaries:
 
-A slower but stable app is preferable to a faster app that crashes, freezes, or silently evicts the user's active experience.
+- selected backend/model/quantization/context length,
+- load/unload start/end,
+- estimated and observed VRAM/RAM if available,
+- queue wait time and runtime,
+- batch sizes,
+- fallback decisions,
+- OOM or allocation failure details,
+- cleanup success/failure.
+
+Do not log raw private content by default. Use IDs and aggregate metrics unless the user enables debug capture.
+
+---
+
+## 13. Testing Checklist
+
+- Long chat session does not grow memory without bound.
+- Model unload actually releases GPU memory enough for the next job.
+- Embedding backfill throttles during active generation.
+- Media job does not run concurrently with chat unless resource lock allows it.
+- Cancellation releases locks and temp files.
+- Degraded mode returns a useful response instead of crashing.
+- UI remains responsive with large memory/journal lists.
+- Deleted/private content is not included in training or indexing jobs.
+
+---
+
+## 14. Anti-Patterns
+
+- Loading every helpful model “just in case.”
+- Treating reported free VRAM as guaranteed allocatable memory.
+- Letting long context replace memory design.
+- Running embedding backfills while the user waits for a streamed reply.
+- Hiding OOM behind generic failures.
+- Training adapters without explicit user review.
+- Adding beautiful but expensive UI effects that compete with local inference.

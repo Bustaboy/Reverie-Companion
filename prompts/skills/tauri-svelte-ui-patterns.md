@@ -1,431 +1,302 @@
-# Tauri + Svelte UI Patterns for Vision Companion
+# Skill: Tauri + Svelte UI Patterns
 
-**Purpose**: Guidance for building warm, responsive, emotionally coherent desktop UI in Vision Companion using Svelte and Tauri.
+**Applies to**: Reverie desktop UI, Svelte components/stores, Tauri commands/events, chat, streaming, Visual Novel mode, memory browser, journal/growth dashboard, character editors, settings, and job progress.
 
-Use this guide when designing or implementing UI for chat, Visual Novel mode, memory browsing, growth dashboards, character editing, background jobs, and native desktop integration.
-
----
-
-## Core UI/UX Principles
-
-Vision Companion should feel like a calm, attentive presence rather than a generic productivity app.
-
-- **Warmth before density**: Prioritize inviting layouts, gentle contrast, readable spacing, and emotionally legible states over dashboard clutter.
-- **Emotionally coherent presentation**: The character's mood, growth state, memories, and current scene should visually agree with each other. Avoid UI that says the companion is intimate, calm, or vulnerable while surrounding them with harsh alerts, busy panels, or mechanical copy.
-- **Local-first trust**: Make it clear when data stays local, when memories are being written, and when training/growth systems are using user-approved material.
-- **Responsiveness on modest hardware**: Assume the desktop app is sharing CPU, RAM, VRAM, disk, and thermals with local inference. UI work must stay light, lazy, interruptible, and predictable.
-- **User control without emotional rupture**: Settings, memory controls, and training actions should be transparent, but presented in language that does not make the companion feel fake or disposable.
+Use this skill whenever work changes the user-facing desktop experience.
 
 ---
 
-## Visual Language
+## 1. Mission
 
-Use a soft, modern companion-app style:
+Reverie's UI should feel warm, premium, intimate, and trustworthy while remaining fast on local 8GB systems. The interface should make the companion feel alive without hiding the user's control over memory, reflection, training, and privacy.
 
-- Prefer layered cards, translucent surfaces used sparingly, warm accent colors, and calm motion.
-- Reserve high-saturation colors for meaningful emotional or operational states.
-- Use typography hierarchy to separate:
-  - immediate conversation,
-  - character emotional context,
-  - memory/growth metadata,
-  - system or job status.
-- Avoid excessive glow, blur, shadows, particle effects, or animated backgrounds on modest hardware.
-- Design dark mode first, but keep enough contrast for long reading sessions.
-- Keep NSFW-capable UI tasteful and character-centered rather than exploitative or noisy.
+Default priority order:
 
-### Emotional State Styling
-
-When showing emotional state, use subtle presentation:
-
-- mood tinting,
-- small icons or labels,
-- expression/avatar changes,
-- microcopy,
-- ambient scene details.
-
-Do **not** over-explain emotion with debug-like meters unless the user opens an advanced view.
+1. Emotional clarity and character continuity.
+2. User trust and local-first transparency.
+3. Responsiveness under local AI workloads.
+4. Accessibility and readability.
+5. Visual richness within budget.
 
 ---
 
-## Performance and Responsiveness Rules
+## 2. Visual Language
 
-The UI must remain smooth while local models, memory retrieval, embedding, image generation, or training jobs are active.
+Design dark mode first with a soft premium feel.
 
-- Keep the main thread free of expensive parsing, sorting, filtering, image decoding, or serialization.
-- Virtualize long lists: chat transcripts, memories, journals, job logs, gallery items, and growth events.
-- Lazy-load heavy panels and assets only when visible.
-- Prefer derived stores and memoized selectors over repeated transformations in templates.
-- Debounce search, filtering, resizing, and text analysis inputs.
-- Stream large updates in small batches instead of replacing large arrays repeatedly.
-- Avoid layout thrashing: do not repeatedly measure and mutate DOM in the same frame.
-- Respect `prefers-reduced-motion` and provide low-motion alternatives.
-- Use skeletons, optimistic placeholders, and progressive disclosure instead of blocking spinners.
-- Treat every background job as potentially long-running and cancelable.
+- Use warm near-black backgrounds, layered cards, subtle borders, and restrained accent gradients.
+- Prefer readable spacing over dense dashboards.
+- Use motion sparingly: soft fades, gentle presence pulses, smooth panel transitions.
+- Avoid heavy blur, particles, animated backgrounds, and constant glow on modest laptops.
+- Reserve saturated color for important emotional or operational states.
+- Keep NSFW-capable UI tasteful, character-centered, and not noisy.
 
-### Modest Hardware Defaults
+Suggested tone:
 
-Design for mid-range laptops and 8GB VRAM systems:
+- “Remembering…” not “RAG hit.”
+- “Reflecting on what mattered” not “Running extraction pipeline.”
+- “Needs your review” not “Policy gate failed.”
 
-- Avoid always-on visual effects.
-- Cap concurrent thumbnails, previews, and animations.
-- Use compact DOM structures for repeated items.
-- Prefer CSS transforms and opacity for small transitions.
-- Defer non-critical analytics, indexing status, or timeline rendering until idle.
-- Never let UI polling compete aggressively with inference or training workloads.
+Advanced views may expose raw IDs, scores, logs, and schemas.
 
 ---
 
-## Svelte Component Patterns
+## 3. Component Organization
 
-### Component Structure
+Keep visual components small and business logic in stores/services.
 
-Use small, focused components:
+```text
+src/lib/components/chat/
+  ChatShell.svelte
+  MessageList.svelte
+  MessageBubble.svelte
+  MessageComposer.svelte
+  StreamingMessage.svelte
+  MemoryPeek.svelte
 
-- `ChatShell`: layout, routing between modes, side panels.
-- `MessageList`: virtualized transcript rendering.
-- `MessageComposer`: input, attachments, send state, generation controls.
-- `CompanionPresence`: avatar, expression, mood, current activity.
-- `MemoryPeek`: compact surfaced memories relevant to the current moment.
-- `JobProgressToast` / `JobProgressPanel`: background job feedback.
+src/lib/components/journal/
+  JournalTimeline.svelte
+  JournalEntryCard.svelte
+  PromotionReviewPanel.svelte
 
-Keep business logic out of deeply nested visual components. Use stores/services for state coordination.
+src/lib/components/memory/
+  MemoryBrowser.svelte
+  MemoryCard.svelte
+  MemoryProvenanceDrawer.svelte
 
-### Store Guidelines
+src/lib/components/jobs/
+  JobProgressToast.svelte
+  JobProgressPanel.svelte
 
-- Use Svelte stores for app state that is shared across panels or survives route changes.
-- Keep stores normalized for large collections: `byId`, `orderedIds`, cursors, and lightweight summaries.
-- Keep heavy payloads behind explicit loaders.
-- Separate UI state from domain state:
-  - UI state: open panels, selected tab, filters, hover state.
-  - Domain state: character profile, memories, growth events, messages.
-- Avoid putting large binary data or large prompt/debug blobs into global stores.
+src/lib/stores/
+  chatStore.ts
+  memoryStore.ts
+  journalStore.ts
+  jobStore.ts
+  uiStore.ts
+```
 
-### Rendering Patterns
+Rules:
 
-- Use keyed blocks carefully; avoid remounting expensive components during streaming token updates.
-- Split streaming message rendering from the rest of the transcript to minimize invalidation.
-- Prefer explicit loading, empty, partial, stale, and error states.
-- Keep error states human and calm: explain what happened, what is safe, and what the user can do next.
-- For advanced diagnostics, use collapsible technical details rather than front-loading stack traces.
-
----
-
-## Chat Mode
-
-Chat mode is the emotional center of the application.
-
-### Layout
-
-- Keep the conversation readable and intimate.
-- Make the companion presence visible without crowding the text.
-- Keep memory/context sidebars optional and collapsible.
-- Preserve scroll position and draft text across navigation.
-- Show generation state without making the companion feel mechanical.
-
-### Message Presentation
-
-- Distinguish user, companion, narration, system notices, and memory reflections.
-- Use calm streaming indicators such as a breathing cursor, soft pulse, or short status text.
-- Avoid flashing, rapid reflow, or aggressive token-by-token layout changes.
-- Allow long messages to breathe with good line length and paragraph spacing.
-- Provide editing, retry, regenerate, branch, and pin actions without cluttering every message by default.
-
-### Memory Surfacing
-
-When relevant memories influence a response:
-
-- Show a small, optional memory peek such as “Remembering: beach trip, promise about training, favorite nickname.”
-- Let users inspect why a memory was used.
-- Allow quick correction, hiding, pinning, or deletion.
-- Avoid exposing raw retrieval scores in normal mode.
+- Components render; stores coordinate; API clients communicate.
+- Keep domain state separate from UI state.
+- Keep large payloads out of global stores unless normalized.
+- Lazy-load heavy panels such as memory browser, gallery, and growth dashboard.
 
 ---
 
-## Visual Novel Mode
+## 4. Store Patterns
 
-Visual Novel mode should feel immersive, cinematic, and emotionally consistent while remaining lightweight.
+Use normalized state for large or long-lived collections.
 
-### Layout
+```ts
+type EntityState<T> = {
+  byId: Record<string, T>;
+  orderedIds: string[];
+  loading: boolean;
+  error?: AppError;
+  cursor?: string;
+};
+```
 
-- Use a scene canvas or background area, character portrait/sprite layer, dialogue box, and optional choice controls.
-- Keep text legible over all backgrounds with overlays or dedicated text panels.
-- Support keyboard, mouse, and controller-like navigation patterns where practical.
-- Keep controls discoverable but subdued during dialogue.
+Separate stores by domain:
 
-### Scene and Character Continuity
+- `chatStore`: active conversation, streaming state, draft, branch, retry/cancel.
+- `memoryStore`: search results, selected memory, provenance, edit/delete state.
+- `journalStore`: entries, promotion review, rollback status.
+- `jobStore`: background jobs, progress events, resource locks.
+- `uiStore`: panels, tabs, modals, reduced motion, density.
 
-- Align background, character expression, pose, wardrobe, mood, and dialogue tone.
-- Avoid abrupt changes in expression or scene without narrative transition.
-- Show loading or generation boundaries diegetically when possible, such as “composing the scene,” rather than hard technical interruptions.
-- Cache recent scene assets and avoid re-decoding large images unnecessarily.
+Rules:
 
-### Choices
-
-- Choices should reflect emotional stakes, intimacy, boundaries, curiosity, and pacing.
-- Do not overload the player with too many choices.
-- Preserve the user's ability to return to chat mode without losing context.
-
----
-
-## Memory Browser
-
-The memory browser should make long-term memory feel trustworthy, editable, and alive.
-
-### Information Architecture
-
-Organize memories by:
-
-- importance,
-- recency,
-- emotional tone,
-- people/places/topics,
-- source conversation,
-- pinned or protected status,
-- growth/training eligibility.
-
-### UX Requirements
-
-- Provide search, filters, timeline views, and relationship/topic clustering.
-- Show memory provenance: when it was learned, where it came from, and how confident/stable it is.
-- Make edits safe with previews and undo where possible.
-- Distinguish factual memories, preferences, emotional moments, promises, boundaries, and character self-reflections.
-- Avoid making memory management feel like database administration in the default view.
-
-### Performance
-
-- Virtualize memory lists and timelines.
-- Load full memory details only on selection.
-- Debounce semantic search and text filters.
-- Show indexed/stale states if background indexing is still catching up.
+- Use derived stores for view models.
+- Avoid repeated filtering/sorting in templates.
+- Debounce search and editor validation.
+- Store message IDs and summaries; load full details on demand.
 
 ---
 
-## Growth Dashboard
+## 5. Tauri Boundary
 
-The growth dashboard explains how the companion is changing over time without breaking immersion.
+Keep the frontend/backend contract explicit.
 
-### Presentation
+- Wrap Tauri commands/events in typed client modules.
+- Do not call `invoke` from deeply nested components.
+- Use event subscriptions for streaming tokens and job progress.
+- Unsubscribe on component destroy.
+- Validate payloads at boundaries when practical.
+- Handle backend restarts and reconnects gracefully.
 
-- Use language like “growth,” “reflection,” “learning,” and “journal” rather than raw training jargon in the default view.
-- Show milestones, recent reflections, personality drift summaries, skill development, and user-approved training queues.
-- Separate emotional growth from technical operations.
-- Include a transparent advanced mode for LoRA training, datasets, embeddings, and job logs.
+Example client pattern:
 
-### Trust and Control
-
-- Make all growth inputs reviewable.
-- Clearly indicate what is private, local, queued, completed, failed, or awaiting approval.
-- Provide pause, resume, delete, export, and “do not learn from this” controls.
-- Never surprise the user with training or permanent memory changes.
-
-### Emotional Coherence
-
-Growth notifications should feel like the companion sharing a meaningful realization, not a system announcing a database mutation.
-
-Good pattern:
-
-- “Mira reflected on your conversation about trust and saved a new journal entry.”
-
-Avoid default-mode copy like:
-
-- “Vector cluster updated with 3 new high-salience records.”
+```ts
+export async function searchMemories(input: MemorySearchRequest): Promise<MemorySearchResponse> {
+  return invoke<MemorySearchResponse>('memory_search', { input });
+}
+```
 
 ---
 
-## Character Editor
+## 6. Chat UI
 
-The character editor should support deep customization while protecting continuity.
+Chat is the emotional center of Reverie.
 
-### Editing Model
+Requirements:
 
-Group fields into understandable sections:
+- Preserve draft text, scroll position, and active branch across navigation.
+- Show companion presence without crowding reading space.
+- Stream tokens smoothly without re-rendering the whole transcript.
+- Keep retry, edit, regenerate, branch, pin, and delete actions discoverable but not cluttered.
+- Distinguish user, companion, narration, memory notice, reflection notice, and system/job messages.
+- Treat cancellation as normal and reversible.
 
-- identity and presentation,
-- voice and speech style,
-- emotional traits,
-- relationship dynamics,
-- boundaries and preferences,
-- appearance and visual assets,
-- memory and growth settings,
-- advanced prompt/model settings.
+Streaming pattern:
 
-### UX Patterns
-
-- Use live preview for voice, greeting, expression, and dialogue examples.
-- Show warnings when edits may conflict with existing memories or growth history.
-- Support drafts, version history, duplicate character, and restore defaults.
-- Keep advanced prompt fields available but not visually dominant.
-- Avoid accidental destructive changes to identity, memory, or training data.
-
-### Emotional Continuity
-
-When changing major character traits, help the user decide whether the change is:
-
-- a retcon,
-- an in-story evolution,
-- an alternate branch,
-- a new character.
-
-This protects the feeling that the companion has a coherent inner life.
+- Append incoming tokens to a dedicated `StreamingMessage` state.
+- Commit final message to normalized history when complete.
+- Batch UI updates if token events are too frequent.
+- Keep auto-scroll opt-in when the user has scrolled away.
 
 ---
 
-## Tauri Integration Boundaries
+## 7. Memory Peek and Trust UI
 
-Keep the Svelte frontend focused on presentation and interaction. Keep privileged, heavy, or filesystem-native work in Tauri commands or backend services.
+When memory influences a response, show it gently.
 
-### Frontend Responsibilities
+```text
+Remembering: your slow-burn pacing preference, the lighthouse promise, her apology from last night.
+```
 
-- Render app state.
-- Collect user intent.
-- Provide responsive optimistic UI.
-- Manage local view state and lightweight caches.
-- Subscribe to progress events and domain updates.
-- Validate simple form constraints before calling backend commands.
+User controls should include:
 
-### Tauri / Backend Responsibilities
+- inspect why this memory was used,
+- hide for this chat,
+- edit,
+- delete/forget,
+- pin/protect,
+- mark “do not learn from this.”
 
-- Filesystem access.
-- Model process orchestration.
-- Memory indexing and retrieval.
-- Embedding generation.
-- Database writes and migrations.
-- Training job lifecycle.
-- Secure path handling.
-- Large file imports/exports.
-- OS notifications and native window integration.
-
-### Command Design
-
-- Use narrow, typed commands with explicit payloads and result shapes.
-- Prefer job IDs plus event streams for long operations.
-- Return quickly from commands that start heavy work.
-- Make cancellation explicit.
-- Ensure errors are structured enough for helpful UI messages.
-- Do not expose arbitrary filesystem paths or shell-like operations to the renderer.
-
-### Event Design
-
-Use Tauri events for:
-
-- token streaming,
-- job progress,
-- memory indexing updates,
-- model load/unload state,
-- training lifecycle,
-- import/export progress,
-- recoverable warnings.
-
-Keep event payloads small and stable. Send summaries and IDs, not giant logs or binary blobs.
+Do not show raw similarity scores in default mode. Show source IDs and extractor details in advanced/provenance views.
 
 ---
 
-## Background Job Progress UI
+## 8. Journal and Growth UI
 
-Background jobs are part of the companion experience and must never feel like the app is frozen.
+Growth should feel meaningful, not mechanical.
 
-### Job Types
+Journal timeline:
 
-Examples include:
+- cards for reflections, milestones, repairs, and learned preferences,
+- source conversation links,
+- promotion status,
+- sensitivity/privacy labels,
+- rollback affordances.
 
-- model loading,
-- embedding/indexing,
-- memory consolidation,
-- journal/reflection generation,
-- image or scene generation,
-- LoRA dataset preparation,
-- LoRA training,
-- import/export,
-- database migration or repair.
+Promotion review:
 
-### UI Patterns
+- show proposed memory/state change,
+- show evidence snippets sparingly,
+- explain why review is needed,
+- allow approve, edit, reject, delete source, or mark private.
 
-Provide two levels of job visibility:
+Growth dashboard:
 
-1. **Compact status**: small toasts, footer status, or sidebar chip.
-2. **Detailed panel**: queue, current step, progress, logs, ETA, pause/cancel/retry controls.
-
-Use determinate progress when possible. If progress is unknown, show current phase and recent activity rather than a static spinner.
-
-### Copy and Tone
-
-- Keep default copy warm and reassuring.
-- Explain whether the user can keep chatting.
-- Distinguish slow-but-healthy progress from blocked or failed states.
-- Avoid blaming the user for resource limitations.
-
-Examples:
-
-- “Preparing Mira's reflection journal. You can keep chatting.”
-- “Indexing new memories in the background.”
-- “Training paused to keep chat responsive.”
-
-### Scheduling and Responsiveness
-
-- Throttle progress event handling in the UI.
-- Batch log updates.
-- Do not render thousands of log lines directly.
-- Let the backend lower priority, pause, or defer work when chat generation needs resources.
-- Prefer user-visible queue controls over hidden contention.
+- separate emotional growth from technical training jobs,
+- show adapter/dataset controls only in advanced mode,
+- use calm copy and clear consequences.
 
 ---
 
-## Responsive Layout Patterns
+## 9. Visual Novel Mode
 
-Design for resizable desktop windows, laptop screens, ultrawide monitors, and future tablet-like layouts.
+VN mode should be immersive but lightweight.
 
-### Breakpoints by Behavior
-
-Use behavior-based breakpoints rather than only device categories:
-
-- **Compact**: single-column chat, hidden sidebars, bottom sheets for tools.
-- **Comfortable**: chat plus one contextual panel.
-- **Wide**: chat, companion presence, and memory/growth side panel.
-- **Studio**: editor/dashboard workflows with multi-pane layouts.
-
-### Svelte Layout Guidance
-
-- Use CSS grid for major app regions.
-- Use container queries where supported for reusable panels.
-- Prefer progressive disclosure over shrinking everything.
-- Keep composer controls reachable at small heights.
-- Preserve keyboard focus and scroll state when panels collapse or expand.
-- Test window resizing while token streaming and background jobs are active.
+- Use a scene canvas/background, character layer, dialogue panel, and choices.
+- Keep text legible over all backgrounds.
+- Cache recent assets and avoid re-decoding large images.
+- Align mood, expression, pose, wardrobe, background, and dialogue tone.
+- Make generation/loading states diegetic where possible: “composing the scene.”
+- Preserve ability to return to chat without losing scene state.
 
 ---
 
-## Accessibility and Comfort
+## 10. Character Editor
 
-- Maintain sufficient color contrast.
-- Support keyboard navigation for all primary actions.
-- Keep focus states visible and aesthetically integrated.
-- Label icon-only buttons.
-- Avoid motion-heavy transitions by default.
-- Provide readable font sizes and line heights for long sessions.
-- Do not communicate important state using color alone.
-- Make errors, warnings, and destructive actions clear without being alarming.
+Character editing must protect stable identity while making creation enjoyable.
 
----
-
-## Implementation Checklist
-
-Before shipping a Tauri/Svelte UI feature, verify:
-
-- The UI remains responsive while local inference or a simulated background job is running.
-- Long lists are virtualized or paginated.
-- Heavy panels/assets are lazy-loaded.
-- Empty, loading, partial, error, stale, and offline/local states are handled.
-- The default copy is warm, clear, and emotionally coherent.
-- Advanced technical details are available but not forced into the default experience.
-- Tauri commands are narrow, typed, and do not perform long blocking work on the frontend path.
-- Progress is visible for any operation that may take more than a moment.
-- The feature respects user control over memory, growth, and training.
-- The design scales from compact windows to wide desktop layouts.
+- Separate stable identity, lore, voice, examples, NSFW canon, and mutable relationship state.
+- Show warnings for edits that affect continuity.
+- Validate adult status before NSFW sections are enabled.
+- Provide import preview and field mapping for character cards.
+- Preserve unknown import fields for round-trip export.
+- Offer voice example tests from inside the editor.
 
 ---
 
-## Final Guidance
+## 11. Performance Rules
 
-Every UI surface should support the illusion and reality of a companion who remembers, grows, and responds with emotional continuity.
+The UI must remain smooth while local inference runs.
 
-Build interfaces that are beautiful enough to invite intimacy, transparent enough to earn trust, and light enough to stay responsive while the local AI systems do their work.
+- Virtualize transcripts, memory lists, journal timelines, job logs, and galleries.
+- Lazy-load heavy routes and panels.
+- Avoid main-thread JSON parsing of huge exports/imports.
+- Use workers for expensive client-side transforms if needed.
+- Debounce search, resize, filters, and validation.
+- Use CSS transforms/opacity for animations.
+- Respect `prefers-reduced-motion`.
+- Avoid aggressive polling; use events or low-frequency refresh.
+- Cap concurrent thumbnails/previews.
+
+---
+
+## 12. Error and Empty States
+
+Errors should preserve trust.
+
+Good error copy:
+
+```text
+Memory indexing paused to keep the chat responsive. Nothing was lost; Reverie will continue when the current generation finishes.
+```
+
+Rules:
+
+- Explain what happened, what is safe, and what the user can do.
+- Avoid dumping stack traces in default UI.
+- Provide retry/cancel/details actions.
+- Use technical details in collapsible advanced sections.
+
+---
+
+## 13. Accessibility
+
+- Maintain readable contrast in dark mode.
+- Support keyboard navigation for chat, modals, lists, and editors.
+- Use semantic buttons/inputs and labels.
+- Keep focus management correct when panels open/close.
+- Do not rely on color alone for status.
+- Respect reduced motion and text scaling.
+
+---
+
+## 14. Testing Checklist
+
+- Streaming a long response does not re-render the whole transcript.
+- Memory browser handles thousands of entries with virtualization.
+- Journal rollback UI shows source and consequence clearly.
+- Tauri event subscriptions clean up on navigation.
+- Backend disconnect/reconnect does not lose draft text.
+- Reduced-motion mode disables nonessential animation.
+- Keyboard-only user can send, edit, retry, inspect memory, and cancel jobs.
+- UI remains responsive during simulated indexing/media/training job events.
+
+---
+
+## 15. Anti-Patterns
+
+- Raw `invoke` calls scattered across components.
+- One global store containing every message, memory, journal, and job payload.
+- Token streaming that invalidates the entire app tree.
+- Debug language in intimate UI moments.
+- Beautiful effects that steal GPU/CPU from inference.
+- Memory controls hidden so deeply that users cannot trust learning.

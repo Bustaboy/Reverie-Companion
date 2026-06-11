@@ -1,399 +1,238 @@
-# Futa-Vision Integration Skill
+# Skill: Futa-Vision Integration
 
-**Purpose**: Guide implementation of optional Futa-Vision integrations for Vision Companion while preserving clean boundaries, local-first behavior, and responsive companion interactions.
+**Applies to**: Optional ComfyUI/image/video bridges, scene-to-media requests, media job queues, progress events, asset metadata, availability checks, and future Futa-Vision interoperability.
 
----
-
-## Core Principle
-
-Futa-Vision must remain **optional, decoupled, and non-blocking**.
-
-Vision Companion should never require Futa-Vision to start, chat, render the core UI, update memory, or progress character state. If the Futa-Vision service, queue, models, or ComfyUI worker are unavailable, the application must gracefully continue with text and existing companion features.
+Use this skill when Reverie needs to prepare for or integrate optional visual generation without coupling core chat, memory, or character systems to a specific media backend.
 
 ---
 
-## Integration Goals
+## 1. Mission
 
-- Provide a clean API surface for requesting generated visual scenes without coupling the companion core to ComfyUI internals.
-- Preserve character continuity by sending structured state, relationship context, and scene metadata with every generation request.
-- Keep generation asynchronous so chat, memory, and character growth remain responsive.
-- Support progress updates and result events without requiring the UI or backend to poll aggressively.
-- Make every integration point configurable, observable, and easy to disable.
+Futa-Vision should enhance Reverie's alive companion experience with optional visuals while staying cleanly decoupled from core chat. Media generation must respect character canon, scene continuity, user consent, local-first privacy, and 8GB resource limits.
 
----
+Default priority order:
 
-## Clean API Boundaries
-
-### Boundary Layers
-
-1. **Companion Core**
-   - Owns conversation state, memory retrieval, character state, consent/user preferences, and scene intent.
-   - Emits high-level generation requests only.
-   - Must not depend on ComfyUI graph formats, model filenames, LoRA paths, sampler settings, or video worker internals.
-
-2. **Futa-Vision Adapter**
-   - Translates companion-native requests into Futa-Vision job payloads.
-   - Validates payloads, applies defaults, redacts unnecessary private data, and enforces user settings.
-   - Handles queue submission, status mapping, progress subscriptions, cancellation, retries, and result normalization.
-
-3. **Generation Queue**
-   - Owns job lifecycle, ordering, concurrency, deduplication, persistence, and backpressure.
-   - Exposes stable job status and progress events to the app.
-   - Must be safe to disable or drain without impacting companion state.
-
-4. **ComfyUI Worker**
-   - Owns workflow execution and GPU-heavy rendering.
-   - Accepts normalized jobs from the queue or adapter.
-   - Reports progress, artifacts, errors, and resource pressure through a narrow worker protocol.
-
-### Do Not Leak Internals
-
-Avoid exposing these outside the Futa-Vision adapter/worker boundary:
-
-- ComfyUI node IDs or graph implementation details.
-- Local model path assumptions.
-- Raw workflow JSON as a core application dependency.
-- GPU scheduler implementation details.
-- Worker-specific retry or checkpoint selection logic.
+1. Character and scene continuity.
+2. Local-first privacy and explicit user control.
+3. Decoupled APIs and replaceable backends.
+4. 8GB-safe scheduling.
+5. Visual quality.
 
 ---
 
-## Event Flow
+## 2. Decoupling Rules
 
-Use event-driven integration rather than blocking request/response flows.
+- Core chat must work without Futa-Vision, ComfyUI, or any media backend installed.
+- Media generation is an adapter behind a service interface, not a dependency of memory/chat/domain models.
+- Store media metadata in Reverie-owned schemas; store backend-specific workflow data separately.
+- Use capability checks instead of hard assumptions.
+- Fail softly when unavailable: hide advanced controls or show setup guidance.
+- Never let image/video generation mutate memory, journal, or character canon unless an explicit save action does so.
 
-### Recommended Flow
+Interface shape:
 
-1. **Trigger detected**
-   - A user action, character moment, story beat, or manual command requests visual generation.
-
-2. **Scene intent created**
-   - Companion Core builds a high-level `SceneGenerationIntent` from current conversation, memory, and character state.
-
-3. **Payload assembled**
-   - Futa-Vision Adapter converts intent into a versioned `FutaVisionJobRequest`.
-
-4. **Job enqueued**
-   - Queue returns a `job_id` immediately.
-   - Companion Core stores only the stable job reference and continues normal operation.
-
-5. **Progress events emitted**
-   - Queue/worker publishes status changes such as `queued`, `preparing`, `rendering`, `postprocessing`, `completed`, `failed`, or `cancelled`.
-
-6. **Result normalized**
-   - Adapter converts worker output into stable app-level artifact metadata.
-
-7. **Continuity update considered**
-   - Companion Core may record a memory/event summary after completion, but failed or cancelled jobs must not corrupt character continuity.
-
-### Event Naming
-
-Prefer explicit, versioned event names:
-
-- `futavision.job.requested.v1`
-- `futavision.job.queued.v1`
-- `futavision.job.started.v1`
-- `futavision.job.progress.v1`
-- `futavision.job.completed.v1`
-- `futavision.job.failed.v1`
-- `futavision.job.cancelled.v1`
+```text
+SceneMediaService
+  check_capabilities()
+  create_job(scene_request)
+  cancel_job(job_id)
+  get_job(job_id)
+  list_assets(character_id, conversation_id?)
+```
 
 ---
 
-## Queueing Requirements
+## 3. Scene Request Contract
 
-The generation queue must protect the companion experience from long-running or GPU-intensive work.
-
-### Required Behavior
-
-- Enqueue jobs asynchronously and return a stable `job_id` immediately.
-- Support cancellation for queued and active jobs where the worker permits it.
-- Track lifecycle timestamps: `requested_at`, `queued_at`, `started_at`, `finished_at`.
-- Persist enough job metadata to recover visible status after app restart.
-- Enforce configurable limits for queue depth, concurrent jobs, retries, and artifact retention.
-- Deprioritize or pause generation when core companion performance is at risk.
-- Never block chat response generation, memory writes, or core UI rendering.
-
-### Backpressure
-
-When resources are constrained:
-
-- Reject new jobs with a clear recoverable error, or mark them as deferred.
-- Notify the UI with an actionable status message.
-- Avoid unbounded memory growth from queued prompts, images, or intermediate artifacts.
-- Prefer dropping optional preview work over delaying core companion actions.
-
-### Retry Policy
-
-Retries should be conservative and explicit:
-
-- Retry transient worker connection failures or recoverable queue errors.
-- Do not repeatedly retry deterministic workflow validation failures.
-- Include retry counts and last error summaries in job status.
-- Keep retries non-blocking and cancellable.
-
----
-
-## ComfyUI Worker Expectations
-
-The ComfyUI worker is an external capability provider, not a core dependency.
-
-### Worker Contract
-
-A worker should provide:
-
-- Health checks that report readiness, loaded workflow support, and coarse resource availability.
-- A job submission endpoint or queue consumer that accepts normalized `FutaVisionJobRequest` payloads.
-- Progress callbacks or status polling that can be adapted into app-level progress events.
-- Artifact reporting with stable paths, media types, dimensions, duration, seed, and workflow metadata.
-- Structured errors with machine-readable codes and user-safe messages.
-
-### Resource Expectations
-
-- Respect the target hardware profile and avoid starving the local LLM or companion UI.
-- Make model loading lazy or configurable where possible.
-- Expose resource pressure signals when VRAM, RAM, disk, or worker concurrency is constrained.
-- Clean up intermediate files according to retention policy.
-
-### Failure Expectations
-
-The worker may be missing, offline, busy, incompatible, or out of memory. Each case must be treated as recoverable from the companion app perspective.
-
-Required failure modes:
-
-- `worker_unavailable`
-- `workflow_unsupported`
-- `invalid_payload`
-- `resource_exhausted`
-- `generation_timeout`
-- `artifact_write_failed`
-- `cancelled_by_user`
-
----
-
-## Character State Payloads
-
-Generation requests should carry enough structured character state to preserve identity and continuity without sending unnecessary private data.
-
-### Recommended `character_state` Shape
+Use structured scene requests, not raw prompt strings as the only source of truth.
 
 ```json
 {
-  "schema_version": "1.0",
-  "character_id": "stable-character-id",
-  "display_name": "Character Name",
-  "identity_tags": ["core identity", "visual identity", "personality anchor"],
-  "appearance": {
-    "body_type": "short stable descriptor",
-    "hair": "style/color descriptor",
-    "eyes": "descriptor",
-    "skin": "descriptor",
-    "distinctive_features": ["stable visual detail"]
+  "request_id": "media_req_...",
+  "character_id": "char_...",
+  "conversation_id": "conv_...",
+  "scene_id": "scene_...",
+  "mode": "image",
+  "intent": "illustrate_current_scene",
+  "character_canon": {
+    "name": "",
+    "adult": true,
+    "body_facts": [],
+    "nsfw_body_facts": [],
+    "visual_anchors": []
   },
-  "wardrobe": {
-    "current_outfit": "current outfit descriptor",
-    "persistent_accessories": ["accessory"]
+  "scene_state": {
+    "location": "",
+    "mood": "",
+    "outfit": "",
+    "pose": "",
+    "lighting": "",
+    "continuity_notes": []
   },
-  "personality": {
-    "current_mood": "mood label",
-    "emotional_tone": "tone descriptor",
-    "relationship_stance": "relationship state descriptor"
+  "style": {
+    "preset": "warm_cinematic",
+    "negative_prompt_policy": "default",
+    "reference_asset_ids": []
   },
-  "continuity": {
-    "recent_events_summary": "brief relevant summary",
-    "long_term_anchors": ["important continuity fact"],
-    "do_not_contradict": ["hard continuity constraint"]
-  }
+  "safety": {
+    "adult_content": true,
+    "user_confirmed": true,
+    "privacy": "local_only"
+  },
+  "resource_preset": "balanced_8gb"
 }
 ```
 
-### Payload Rules
+Rules:
 
-- Use stable IDs instead of display names for references.
-- Keep summaries concise and relevant to the requested scene.
-- Separate durable traits from temporary mood, outfit, or scene details.
-- Include negative continuity constraints when needed to prevent contradictions.
-- Avoid dumping raw chat logs into generation payloads.
+- Character adult status must be explicit for NSFW media.
+- Scene state should come from current conversation/VN state, not broad memory dumps.
+- Keep raw prompts generated from structured fields and traceable to the request.
+- Do not include private unrelated memories in media prompts.
 
 ---
 
-## Scene Metadata
+## 4. 8GB Resource Presets
 
-Every request should include scene metadata that is independent of any specific renderer.
+Media generation often conflicts with chat inference. Be conservative.
 
-### Recommended `scene` Shape
+| Preset | Behavior |
+|---|---|
+| `preview_8gb` | lower resolution, single image, no upscaler, fastest cleanup |
+| `balanced_8gb` | moderate resolution, single image or tiny batch, optional lightweight refiner |
+| `quality_manual` | user-confirmed, may unload chat model, longer runtime |
+| `video_experimental` | explicit warning, exclusive lock, checkpoint/progress required |
+
+Rules:
+
+- Queue media jobs through the shared backend scheduler.
+- Acquire an exclusive GPU lock unless measured safe.
+- Pause idle memory indexing during media jobs.
+- Unload the LLM if required and tell the user chat may pause.
+- Release models/temp files after completion or cancellation.
+
+---
+
+## 5. Job Lifecycle and Events
+
+Media jobs should be visible, cancelable, and recoverable.
+
+Lifecycle:
+
+1. `queued`
+2. `checking_capabilities`
+3. `preparing_prompt`
+4. `waiting_for_gpu_lock`
+5. `generating`
+6. `postprocessing`
+7. `saving_asset`
+8. `completed` / `failed` / `cancelled`
+
+Event example:
 
 ```json
 {
-  "schema_version": "1.0",
-  "scene_id": "stable-scene-id",
-  "conversation_id": "conversation-id",
-  "trigger_type": "manual",
-  "intent": "portrait | scene | short_video | memory_recap | expression_update",
-  "time_context": {
-    "in_world_time": "optional story time",
-    "real_requested_at": "ISO-8601 timestamp"
-  },
-  "setting": {
-    "location": "scene location",
-    "lighting": "lighting descriptor",
-    "mood": "visual mood",
-    "weather": "optional weather"
-  },
-  "composition": {
-    "shot_type": "portrait | medium | full_body | cinematic",
-    "camera_angle": "optional angle",
-    "focus_subjects": ["character-id"]
-  },
-  "continuity_refs": {
-    "previous_artifact_ids": ["artifact-id"],
-    "related_memory_ids": ["memory-id"],
-    "active_story_arc_ids": ["arc-id"]
-  }
+  "event": "media.progress",
+  "job_id": "job_...",
+  "phase": "generating",
+  "progress": 0.55,
+  "message": "Composing the scene locally",
+  "preview_asset_id": null
 }
 ```
 
-### Metadata Rules
-
-- Metadata must be renderer-agnostic.
-- Scene IDs should be stable for tracing and memory association.
-- Avoid making generated artifacts authoritative until completion is confirmed.
-- Store enough metadata to explain why a generation was requested later.
+UI copy should be calm and diegetic when appropriate.
 
 ---
 
-## Trigger Types
+## 6. Asset Metadata
 
-Supported triggers should be explicit and user-configurable.
-
-### Recommended Trigger Types
-
-- `manual`: User explicitly requests generation.
-- `scene_transition`: Conversation enters a new location or visual state.
-- `emotion_peak`: Character reaches a meaningful emotional moment.
-- `relationship_milestone`: A durable relationship state changes.
-- `memory_recap`: The app visualizes a remembered event.
-- `idle_ambient`: Optional low-priority background generation.
-- `expression_update`: Lightweight visual update for mood or pose.
-- `developer_test`: Non-user-facing integration or workflow validation.
-
-### Trigger Requirements
-
-- Default to manual triggers unless the user enables automation.
-- Make automated triggers rate-limited and easy to disable.
-- Never let automatic visual generation interrupt or delay chat.
-- Record trigger type with each job for auditability and tuning.
-
----
-
-## Progress Updates
-
-Progress should be useful to the UI while hiding worker complexity.
-
-### Recommended Status Model
+Store generated assets with enough metadata to preserve continuity and auditability.
 
 ```json
 {
-  "job_id": "futavision-job-id",
-  "status": "queued | preparing | rendering | postprocessing | completed | failed | cancelled",
-  "progress_percent": 42,
-  "stage_label": "Rendering frames",
-  "eta_seconds": 120,
-  "preview_artifact_id": "optional-preview-id",
-  "retry_count": 0,
-  "message": "Short user-safe status message"
+  "asset_id": "asset_...",
+  "character_id": "char_...",
+  "conversation_id": "conv_...",
+  "scene_id": "scene_...",
+  "created_at": "2026-06-11T22:00:00Z",
+  "kind": "image",
+  "file_path": "local://assets/...",
+  "thumbnail_path": "local://thumbs/...",
+  "request_id": "media_req_...",
+  "backend": "comfyui",
+  "workflow_version": "futa_vision_bridge.v1",
+  "resource_preset": "balanced_8gb",
+  "canon_snapshot": {
+    "body_facts": [],
+    "visual_anchors": []
+  },
+  "prompt_metadata": {
+    "positive_hash": "...",
+    "negative_hash": "...",
+    "seed": 12345
+  },
+  "privacy": "local_only"
 }
 ```
 
-### Progress Rules
-
-- Treat progress as best-effort; do not require exact percentages.
-- Prefer stage labels when exact progress is unknown.
-- Debounce noisy worker updates before sending them to the UI.
-- Include user-safe error messages and machine-readable error codes on failure.
-- Keep progress subscriptions optional so clients can reconnect and fetch latest status.
+Do not store full sensitive prompts in normal logs unless the user enables debug capture.
 
 ---
 
-## Continuity Requirements
+## 7. Character and NSFW Continuity
 
-Futa-Vision outputs must support character continuity instead of overriding it.
+For adult visual scenes:
 
-### Required Continuity Behavior
+- Preserve character adult status, anatomy, pronouns, body canon, and visual anchors.
+- Preserve current outfit, pose, location, lighting, expression, and emotional tone when requested.
+- Track temporary transformations or slime/futa-specific details as scene state unless explicitly saved to canon.
+- Do not let generated media establish new canon automatically.
+- If the model output conflicts with canon, mark the asset as non-canonical or let the user discard/regenerate.
 
-- Character memory and relationship state remain authoritative over generated artifacts.
-- Generation prompts should be derived from current character state, not the other way around.
-- Completed artifacts may become memory references only after validation or user acceptance when appropriate.
-- Failed, cancelled, or partial generations should not create durable story facts.
-- If a generated image or video contradicts established continuity, preserve the established continuity and mark the artifact as non-canonical or regenerate.
-
-### Canonical vs. Non-Canonical Artifacts
-
-Track artifact continuity status:
-
-- `pending_review`: Generated but not yet accepted as part of continuity.
-- `canonical`: Accepted and safe to reference in memory or future scenes.
-- `non_canonical`: Kept as media but ignored for continuity.
-- `discarded`: Removed or hidden according to retention settings.
+Prompt-building should prioritize canonical body facts over generic tags.
 
 ---
 
-## Optional Configuration
+## 8. Availability and Setup
 
-All Futa-Vision integration should be gated behind configuration.
+Capability checks should be cheap and explicit.
 
-Recommended settings:
+Report:
 
-- `futavision.enabled`
-- `futavision.worker_url`
-- `futavision.auto_triggers_enabled`
-- `futavision.max_queue_depth`
-- `futavision.max_concurrent_jobs`
-- `futavision.default_timeout_seconds`
-- `futavision.artifact_retention_days`
-- `futavision.allow_background_generation`
-- `futavision.pause_when_llm_busy`
+- backend installed/reachable,
+- supported modes: image/video/upscale/reference,
+- available workflows/models,
+- estimated resource tier,
+- last error,
+- version compatibility.
 
-Defaults should favor safety and responsiveness:
+If unavailable, the UI should say:
 
-- Disabled unless configured or explicitly enabled.
-- Manual triggers only.
-- Low concurrency.
-- Conservative timeouts.
-- No required startup dependency on worker health.
+```text
+Visual generation is optional and not currently connected. Chat, memory, and growth still work normally. Connect a local Futa-Vision/ComfyUI backend in Settings when you want scene images.
+```
 
 ---
 
-## Implementation Checklist
+## 9. Testing Checklist
 
-Before merging Futa-Vision integration code, verify that:
-
-- The app runs normally with Futa-Vision disabled.
-- The app runs normally when the worker URL is missing or unreachable.
-- Chat, memory writes, and UI updates continue while jobs are queued or rendering.
-- Queue limits prevent unbounded resource usage.
-- Job status can be recovered after restart.
-- Progress and failure messages are user-safe.
-- Payload schemas are versioned and validated.
-- Character state is summarized rather than copied from raw chat logs.
-- Generated artifacts do not automatically rewrite canonical memory.
-- Automated triggers are opt-in, rate-limited, and cancellable.
+- Reverie starts and chats normally with no media backend installed.
+- Capability checks do not block startup.
+- Media job queues, cancels, and releases GPU locks.
+- Chat model is not forced to coexist with diffusion models under 8GB pressure.
+- Asset metadata links to character/conversation/scene without mutating canon.
+- NSFW media requests require adult character status and explicit user action.
+- Failed backend connection returns a typed, user-safe error.
+- Deleted/private conversations do not leak into media prompts or metadata.
 
 ---
 
-## Anti-Patterns to Avoid
+## 10. Anti-Patterns
 
-- Blocking a chat response while waiting for video generation.
-- Importing ComfyUI-specific modules into Companion Core.
-- Treating Futa-Vision as a required backend service.
-- Storing raw workflow graphs as character memory.
-- Allowing generated artifacts to silently override character identity.
-- Retrying failed jobs indefinitely.
-- Letting background generation consume resources needed by the LLM.
-- Requiring cloud services for generation, queueing, or artifact storage.
-
----
-
-## Summary
-
-Futa-Vision should enhance immersion without weakening the companion architecture. Keep it behind stable interfaces, process work asynchronously, protect local resources, and preserve character continuity. The companion must remain fully usable when visual generation is disabled, unavailable, or busy.
+- Importing ComfyUI-specific objects into core chat or character modules.
+- Treating generated images as canonical memories automatically.
+- Running media generation concurrently with chat and hoping 8GB is enough.
+- Storing raw sensitive prompts in logs by default.
+- Blocking the entire app because optional media backend is unavailable.
+- Building a prompt from all memories instead of current scene/canon.
