@@ -14,6 +14,7 @@ import {
 
 const PLACEHOLDER_PREFIX = 'placeholder://';
 const SPRITE_CACHE_LIMIT = 8;
+const CORE_LAYER_ORDER: VisualAssetLayer[] = ['base', 'expression', 'clothing'];
 
 const expressionPlaceholders = Object.fromEntries(
   VISUAL_EXPRESSIONS.map((expression) => [expression, `${PLACEHOLDER_PREFIX}expression/${expression}`])
@@ -187,16 +188,15 @@ const resolveCharacterLayers = (
 };
 
 const ensureCoreLayers = (layers: VisualAssetLayer[]): VisualAssetLayer[] => {
-  const orderedLayers = layers.length ? [...layers] : ['base', 'expression'];
+  const requestedLayers = layers.length ? layers : ['base', 'expression'];
+  const uniqueLayers = Array.from(new Set(requestedLayers));
 
-  if (!orderedLayers.includes('base')) {
-    orderedLayers.unshift('base');
-  }
+  // Core VN layers are composited in a stable order even when a manifest is
+  // authored out of order. Custom future layers remain supported after core.
+  const coreLayers = CORE_LAYER_ORDER.filter(
+    (layer) => layer === 'base' || layer === 'expression' || uniqueLayers.includes(layer)
+  );
+  const customLayers = uniqueLayers.filter((layer) => !CORE_LAYER_ORDER.includes(layer));
 
-  if (!orderedLayers.includes('expression')) {
-    const baseIndex = orderedLayers.indexOf('base');
-    orderedLayers.splice(baseIndex + 1, 0, 'expression');
-  }
-
-  return orderedLayers;
+  return [...coreLayers, ...customLayers];
 };

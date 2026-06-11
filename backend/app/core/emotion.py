@@ -29,6 +29,7 @@ class WeightedTextSignal:
     text: str
     weight: float
     priority: "SignalPriority"
+    priority_boost: float = 0.0
 
 
 class SignalPriority(IntEnum):
@@ -45,34 +46,49 @@ class SignalPriority(IntEnum):
 
 @dataclass
 class ExpressionScore:
-    """Accumulated score and strongest signal priority for one expression."""
+    """Accumulated bounded score and deterministic boost for one expression."""
 
     score: float = 0.0
     priority: SignalPriority = SignalPriority.NONE
+    priority_boost: float = 0.0
     sources: list[str] | None = None
 
-    def add(self, amount: float, priority: SignalPriority, source: str) -> None:
+    @property
+    def ranking_score(self) -> float:
+        return self.score + self.priority_boost
+
+    def add(
+        self,
+        amount: float,
+        priority: SignalPriority,
+        source: str,
+        *,
+        priority_boost: float = 0.0,
+        source_aliases: Iterable[str] = (),
+    ) -> None:
         self.score += amount
         self.priority = max(self.priority, priority)
+        self.priority_boost = max(self.priority_boost, priority_boost)
         if self.sources is None:
             self.sources = []
-        if source not in self.sources:
-            self.sources.append(source)
+        for source_name in (source, *source_aliases):
+            if source_name not in self.sources:
+                self.sources.append(source_name)
 
 
 class EmotionInferenceEngine:
     """Infer VN expression, pose, and background from bounded local signals."""
 
-    # Priority order is explicit and deterministic:
-    # growth cue > strong memory tag > memory tag > reflection theme >
-    # latest user tone > assistant response tone > neutral fallback.
-    # We still keep weights because multiple hits within the same tier should
-    # affect intensity/confidence and stable tie-breaking.
-    _LATEST_USER_WEIGHT = 1.25
-    _ASSISTANT_WEIGHT = 1.0
-    _REFLECTION_THEME_WEIGHT = 1.45
-    _MEMORY_TAG_WEIGHT = 1.9
-    _GROWTH_CUE_WEIGHT = 2.6
+    # Approved V1 blend: latest message 30%, assistant tone 25%, memory tags
+    # 20%, reflection themes 15%, and growth cues 10%. Priority boosts affect
+    # ranking only; they do not mutate the documented raw weighted score.
+    _LATEST_USER_WEIGHT = 0.30
+    _ASSISTANT_WEIGHT = 0.25
+    _MEMORY_TAG_WEIGHT = 0.20
+    _REFLECTION_THEME_WEIGHT = 0.15
+    _GROWTH_CUE_WEIGHT = 0.10
+    _GROWTH_PRIORITY_BOOST = 0.35
+    _STRONG_MEMORY_PRIORITY_BOOST = 0.16
 
     _KEYWORDS: dict[VisualExpression, tuple[str, ...]] = {
         "happy": (
@@ -263,9 +279,16 @@ class EmotionInferenceEngine:
             expression=expression,
             pose=self._POSE_BY_EXPRESSION[expression],
             background=self._select_background(signals),
-            intensity=self._intensity(expression_score.score, expression_score.priority),
+            intensity=self._intensity(
+                expression_score.score,
+                expression_score.priority,
+                expression_score.priority_boost,
+            ),
             confidence=self._confidence(
-                expression_score.score, expression_score.priority, sources
+                expression_score.score,
+                expression_score.priority,
+                expression_score.priority_boost,
+                sources,
             ),
             sources=sources[:8],
             growth_cue=growth_cue,
@@ -329,6 +352,7 @@ class EmotionInferenceEngine:
                     growth_text,
                     self._GROWTH_CUE_WEIGHT,
                     SignalPriority.GROWTH_CUE,
+                    priority_boost=self._GROWTH_PRIORITY_BOOST,
                 )
             )
         return signals
@@ -337,28 +361,29 @@ class EmotionInferenceEngine:
         self, signal: WeightedTextSignal, scores: dict[VisualExpression, ExpressionScore]
     ) -> None:
         text = self._normalize(signal.text)
-        for expression, keywords in self._KEYWORDS.items():
-            for keyword in keywords:
-                if keyword in text:
-                    self._add_score(
-                        scores,
-                        expression,
-                        signal.weight,
-                        signal.priority,
-                        signal.source,
-                    )
+        matched_expressions = set(self._matching_expressions(text, self._KEYWORDS))
+        for expression in matched_expressions:
+            self._add_score(
+                scores,
+                expression,
+                signal.weight,
+                signal.priority,
+                signal.source,
+                priority_boost=signal.priority_boost,
+            )
 
         if signal.source == "memory_tags":
-            for expression, tags in self._STRONG_MEMORY_TAGS.items():
-                for tag in tags:
-                    if tag in text:
-                        self._add_score(
-                            scores,
-                            expression,
-                            signal.weight * 1.15,
-                            SignalPriority.STRONG_MEMORY_TAGS,
-                            "strong_memory_tags",
-                        )
+            for expression in self._matching_expressions(text, self._STRONG_MEMORY_TAGS):
+                amount = 0.0 if expression in matched_expressions else signal.weight
+                self._add_score(
+                    scores,
+                    expression,
+                    amount,
+                    SignalPriority.STRONG_MEMORY_TAGS,
+                    "strong_memory_tags",
+                    priority_boost=self._STRONG_MEMORY_PRIORITY_BOOST,
+                    source_aliases=("memory_tags",),
+                )
 
     def _add_score(
         self,
@@ -367,10 +392,19 @@ class EmotionInferenceEngine:
         amount: float,
         priority: SignalPriority,
         source: str,
+        *,
+        priority_boost: float = 0.0,
+        source_aliases: Iterable[str] = (),
     ) -> None:
         if expression not in scores:
             scores[expression] = ExpressionScore()
-        scores[expression].add(amount, priority, source)
+        scores[expression].add(
+            amount,
+            priority,
+            source,
+            priority_boost=priority_boost,
+            source_aliases=source_aliases,
+        )
 
     def _select_expression(
         self, scores: dict[VisualExpression, ExpressionScore]
@@ -380,6 +414,7 @@ class EmotionInferenceEngine:
         expression, score = max(
             scores.items(),
             key=lambda item: (
+                item[1].ranking_score,
                 item[1].priority,
                 item[1].score,
                 self._tie_break_rank(item[0]),
@@ -461,7 +496,18 @@ class EmotionInferenceEngine:
         ]
         return len(priority) - priority.index(expression)
 
-    def _intensity(self, score: float, priority: SignalPriority) -> float:
+    def _matching_expressions(
+        self,
+        text: str,
+        keyword_map: Mapping[VisualExpression, tuple[str, ...]],
+    ) -> Iterable[VisualExpression]:
+        for expression, keywords in keyword_map.items():
+            if any(keyword in text for keyword in keywords):
+                yield expression
+
+    def _intensity(
+        self, score: float, priority: SignalPriority, priority_boost: float
+    ) -> float:
         if score <= 0:
             return 0.15
         priority_floor = {
@@ -470,17 +516,33 @@ class EmotionInferenceEngine:
             SignalPriority.MEMORY_TAGS: 0.42,
             SignalPriority.REFLECTION_THEMES: 0.36,
         }.get(priority, 0.2)
-        return round(min(1.0, max(priority_floor, score / 5.4)), 3)
+        return round(min(1.0, max(priority_floor, score + priority_boost)), 3)
 
     def _confidence(
-        self, score: float, priority: SignalPriority, sources: list[str]
+        self,
+        score: float,
+        priority: SignalPriority,
+        priority_boost: float,
+        sources: list[str],
     ) -> float:
         if score <= 0:
             return 0.25
-        source_bonus = min(0.18, len(sources) * 0.035)
-        priority_bonus = min(0.14, int(priority) / 500)
+        source_bonus = min(0.16, len(sources) * 0.035)
+        priority_bonus = {
+            SignalPriority.GROWTH_CUE: 0.12,
+            SignalPriority.STRONG_MEMORY_TAGS: 0.09,
+            SignalPriority.MEMORY_TAGS: 0.06,
+            SignalPriority.REFLECTION_THEMES: 0.04,
+        }.get(priority, 0.0)
         return round(
-            min(0.95, 0.36 + (score / 10.0) + source_bonus + priority_bonus), 3
+            min(
+                0.95,
+                0.34
+                + ((score + priority_boost) * 0.45)
+                + source_bonus
+                + priority_bonus,
+            ),
+            3,
         )
 
     def _ordered_sources(self, sources: Iterable[str]) -> list[str]:

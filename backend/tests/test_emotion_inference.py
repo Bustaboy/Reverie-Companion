@@ -92,13 +92,42 @@ class EmotionInferenceEngineTests(unittest.TestCase):
                     ChatMessage(role="user", content="Can we pick this up again?")
                 ],
             ),
-            memory_context="strong trust promise reassurance milestone",
+            memory_context="strong trust promise reassurance slow-burn",
         )
 
         self.assertEqual(state.expression, "tender")
         self.assertEqual(state.pose, "close")
         self.assertEqual(state.sources, ["strong_memory_tags", "memory_tags"])
         self.assertGreaterEqual(state.confidence, 0.6)
+
+    def test_growth_priority_boost_is_bounded_by_weighted_chat_tone(self) -> None:
+        engine = EmotionInferenceEngine()
+        growth_notification = GrowthNotification(
+            id="growth_confidence",
+            journal_entry_id="journal_confidence",
+            created_at="2026-06-11T00:00:00Z",
+            message="Reverie seems more confident lately.",
+            why="A reflection noticed her steadier self-trust.",
+            theme="confidence",
+        )
+
+        state = engine.infer_visual_state(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="I am angry and frustrated.")
+                ],
+            ),
+            assistant_text="I answer with a hurt, frustrated edge.",
+            growth_notification=growth_notification,
+        )
+
+        self.assertEqual(state.expression, "angry")
+        self.assertEqual(state.pose, "guarded")
+        self.assertEqual(state.growth_cue, "confidence")
+        self.assertIn("growth_cue", state.sources)
+        self.assertIn("latest_message_tone", state.sources)
+        self.assertIn("assistant_response_tone", state.sources)
 
     def test_strong_memory_tags_beat_conflicting_latest_message(self) -> None:
         engine = EmotionInferenceEngine()

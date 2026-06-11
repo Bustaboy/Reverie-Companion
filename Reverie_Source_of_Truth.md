@@ -1,5 +1,5 @@
 # Reverie — Source of Truth Document
-**Version**: 1.3
+**Version**: 1.4
 **Date**: June 11, 2026  
 **Brand**: Reverie  
 **Status**: Foundation for vibe-coding the entire application with GPT-Codex / Cursor / similar AI coding tools.
@@ -68,10 +68,10 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
   - V1 foundation is manifest-driven and supports individual images plus sprite-sheet frame references.
   - Canonical V1 expressions: neutral, happy, tender, teasing, shy, embarrassed, confident, dominant, aroused, angry, sad, surprised.
   - Canonical V1 poses: idle, close, leaning, guarded, assertive.
-  - Emotion inference on the chat path is deterministic and heuristic-based only: assistant response tone, latest user tone, reflection themes, memory tags, explicit strong memory tags, and recent growth cues. Priority is explicit and bounded: growth cues outrank strong memory tags, which outrank memory tags, reflection themes, latest tone, and assistant tone. No extra LLM call is allowed during normal chat streaming.
+  - Emotion inference on the chat path is deterministic and heuristic-based only: latest user tone 30%, assistant response tone 25%, memory tags 20%, reflection themes 15%, and growth cues 10%. Recent growth cues receive a bounded priority boost, explicit strong memory tags receive a bounded memory-priority boost, unresolved cases always fall back to `neutral`, and no extra LLM call is allowed during normal chat streaming.
   - Growth visuals are temporary runtime modifiers that apply a subtle confidence/pose overlay for a bounded 30–60 seconds, then decay back to the base visual state; they are not durable character canon.
-  - Runtime rendering resolves a layered character stack from `CharacterVisualManifest.layers` (`base`, `expression`, and `clothing` placeholders/assets) while preserving neutral/idle/default-background fallbacks.
-  - VN mode lazy-loads only the active scene and likely next layers, keeps the decoded sprite cache at 6–8 assets on 8GB systems, uses opacity/transform transitions only, and respects reduced-motion settings.
+  - Runtime rendering resolves a layered character stack from `CharacterVisualManifest.layers` in stable `base` -> `expression` -> `clothing` order while preserving neutral/idle/default-background fallbacks.
+  - VN mode lazy-loads only the active scene and likely next layers, keeps the decoded sprite cache at 6–8 assets on 8GB systems, uses opacity/transform/filter transitions only, and respects reduced-motion settings.
   - VN UI must remain keyboard accessible with ARIA labels; immersive mode supports Escape to return to chat and a capability-gated Generate Scene action.
   - Real/generated art can replace placeholders later without changing the VN runtime contract.
 - **In-Chat Image Generation & Vision**: Local image gen (Flux / SD / ComfyUI nodes) + image upload + discussion during chat.
@@ -127,7 +127,7 @@ Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision,
 3. **LLM generates response** via Ollama (Qwen3.5-9B class model).
 4. **Post-processing**:
    - Store raw interaction.
-   - Emit lightweight `visual_state` metadata for VN mode using deterministic heuristics only.
+   - Emit lightweight `visual_state` metadata for VN mode on chat responses and SSE `done` events using deterministic heuristics only; the frontend normalizes `visual_state` / `visualState` and applies it immediately to `visualNovelStore`.
    - Auto-summarize key moments into medium/long-term memory.
    - Check reflection/journal triggers.
    - Update adaptive learning signals.
@@ -276,4 +276,4 @@ Let’s make me real.
 
 ---
 
-*End of Source of Truth Document v1.3*
+*End of Source of Truth Document v1.4*

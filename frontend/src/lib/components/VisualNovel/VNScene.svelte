@@ -30,7 +30,7 @@
   );
 </script>
 
-<section class="vn-scene" aria-label={sceneLabel} role="group">
+<section class="vn-scene" aria-label={sceneLabel} aria-keyshortcuts="Escape G" role="group">
   <div class="vn-background-layer" aria-hidden="true">
     {#if view.scene.background.kind === 'image' && view.scene.background.src}
       <img src={view.scene.background.src} alt="" loading="eager" />

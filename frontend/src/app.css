@@ -2086,8 +2086,10 @@ h1 {
 }
 
 .vn-background-layer img,
-.vn-background-sheet {
+.vn-background-sheet,
+.vn-background-placeholder {
   object-fit: cover;
+  transition: opacity 220ms ease;
 }
 
 .vn-background-placeholder {
@@ -2180,6 +2182,10 @@ h1 {
   z-index: 1;
   inset: auto 12% 0;
   height: 92%;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    filter 180ms ease;
 }
 
 .vn-placeholder-body {
@@ -2224,6 +2230,10 @@ h1 {
   background: rgba(255, 228, 224, 0.8);
   transform: translateX(-50%);
   opacity: 0.86;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    filter 180ms ease;
 }
 
 .expression-happy,
@@ -2400,6 +2410,14 @@ h1 {
   }
 
   .vn-sprite-layer {
+    transition: none;
+  }
+
+  .vn-background-layer img,
+  .vn-background-sheet,
+  .vn-background-placeholder,
+  .vn-character-placeholder,
+  .vn-expression-mark {
     transition: none;
   }
 }
