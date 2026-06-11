@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
-import type { ChatMessage } from '$lib/types/chat';
+import type { ChatMessage, MemoryContext } from '$lib/types/chat';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
 
@@ -52,6 +52,14 @@ const appendToMessage = (messages: ChatMessage[], messageId: string, content: st
 const updateMessage = (messages: ChatMessage[], messageId: string, patch: Partial<ChatMessage>): ChatMessage[] =>
   messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message));
 
+const applyMemoryContext = (messages: ChatMessage[], messageId: string, memoryContext?: MemoryContext): ChatMessage[] => {
+  if (!memoryContext || !memoryContext.used) {
+    return messages;
+  }
+
+  return updateMessage(messages, messageId, { memoryContext });
+};
+
 const getAssistantFailureContent = (message: ChatMessage | undefined): string =>
   message?.content.trim() || OFFLINE_ASSISTANT_FALLBACK;
 
@@ -69,11 +77,15 @@ function createChatStore() {
 
   const hasActiveSend = () => activeController !== null;
 
-  const finishAssistantMessage = (assistantMessageId: string) => {
+  const finishAssistantMessage = (assistantMessageId: string, memoryContext?: MemoryContext) => {
     store.update((state) => ({
       ...state,
       generationState: 'idle',
-      messages: updateMessage(state.messages, assistantMessageId, { status: 'complete' })
+      messages: applyMemoryContext(
+        updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+        assistantMessageId,
+        memoryContext
+      )
     }));
   };
 
@@ -126,14 +138,27 @@ function createChatStore() {
       try {
         for await (const event of chatService.sendMessageStream(trimmedContent, history, { signal: controller.signal })) {
           if (event.event === 'message') {
-            if (!event.content) continue;
+            if (!event.content && !event.memoryContext?.used) continue;
 
             // Append token chunks in-place by message id so Svelte only needs to
-            // refresh the active assistant bubble during a stream.
+            // refresh the active assistant bubble during a stream. Memory metadata
+            // may arrive beside a chunk or as its own event, so keep both paths light.
             store.update((state) => ({
               ...state,
-              generationState: 'streaming',
-              messages: appendToMessage(state.messages, assistantMessage.id, event.content)
+              generationState: event.content ? 'streaming' : state.generationState,
+              messages: applyMemoryContext(
+                event.content ? appendToMessage(state.messages, assistantMessage.id, event.content) : state.messages,
+                assistantMessage.id,
+                event.memoryContext
+              )
+            }));
+            continue;
+          }
+
+          if (event.event === 'memory') {
+            store.update((state) => ({
+              ...state,
+              messages: applyMemoryContext(state.messages, assistantMessage.id, event.memoryContext)
             }));
             continue;
           }
@@ -142,7 +167,7 @@ function createChatStore() {
             throw new ChatServiceError(event.error, { requestId: event.requestId, details: event.details });
           }
 
-          finishAssistantMessage(assistantMessage.id);
+          finishAssistantMessage(assistantMessage.id, event.memoryContext);
         }
       } catch (error) {
         failAssistantMessage(assistantMessage.id, toFriendlyErrorMessage(error));

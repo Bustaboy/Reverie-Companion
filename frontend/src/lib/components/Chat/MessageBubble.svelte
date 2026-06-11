@@ -8,6 +8,15 @@
   }
 
   let { message }: Props = $props();
+
+  const memoryHint = $derived.by(() => {
+    if (message.role !== 'assistant' || !message.memoryContext?.used) {
+      return null;
+    }
+
+    const firstMemory = message.memoryContext.items?.[0]?.label;
+    return firstMemory ? `Remembering ${firstMemory}` : 'Remembering what matters';
+  });
 </script>
 
 <article
@@ -37,6 +46,10 @@
 
         {#if message.status === 'streaming' && message.content}
           <span class="stream-cursor" aria-hidden="true"></span>
+        {/if}
+
+        {#if memoryHint}
+          <p class="memory-whisper" aria-label="Reverie used a relevant memory">{memoryHint}</p>
         {/if}
 
         {#if message.status === 'error' && message.error}

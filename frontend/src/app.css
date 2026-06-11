@@ -418,6 +418,31 @@ h1 {
   animation: reverie-cursor-pulse 1.1s ease-in-out infinite;
 }
 
+.memory-whisper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.75rem !important;
+  padding: 0.32rem 0.52rem;
+  color: #e8c4c8;
+  border: 1px solid rgba(240, 154, 159, 0.14);
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.065);
+  font-size: 0.76rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.memory-whisper::before {
+  content: '✦';
+  color: var(--accent-strong);
+  font-size: 0.7rem;
+  opacity: 0.82;
+}
+
 .message-error {
   margin-top: 0.7rem !important;
   padding: 0.55rem 0.65rem;
