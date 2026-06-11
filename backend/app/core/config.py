@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     memory_context_max_chars: int = Field(default=4000, gt=500, le=20000)
     memory_mem0_enabled: bool = True
 
+    # Reflection/journaling stays lightweight by default: chat can read compact
+    # recent journal insights, while new reflections run as throttled background
+    # work so local LLM responsiveness remains the priority on 8GB systems.
+    reflection_enabled: bool = True
+    reflection_user_message_interval: int = Field(default=6, gt=0, le=100)
+    reflection_min_interval_seconds: float = Field(default=180.0, ge=0.0)
+    reflection_history_message_limit: int = Field(default=12, gt=0, le=50)
+    reflection_context_entry_limit: int = Field(default=5, gt=0, le=20)
+    reflection_context_max_chars: int = Field(default=1600, gt=200, le=8000)
+
 
 @lru_cache
 def get_settings() -> Settings:
