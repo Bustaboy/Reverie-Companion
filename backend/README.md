@@ -4,20 +4,50 @@ FastAPI backend foundation for Reverie, a local-first AI companion powered by Ol
 
 The current backend is intentionally small and modular so future systems can be layered in cleanly:
 
-- memory and retrieval
+- memory and retrieval (mem0 + embedded LanceDB)
 - character and prompt orchestration
 - reflection, journaling, and growth workflows
 - future local media/video integrations
 
 ## Long-Term Memory Foundation
 
-`app.core.memory.MemoryManager` provides the backend-only foundation for persistent companion memory. It stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local embeddings with Ollama, and writes through mem0 when the optional SDK path is available so future adaptive extraction, reflection, and growth features can be layered in without changing route handlers.
+`app.core.memory.MemoryManager` provides the backend-only foundation for persistent companion memory. It stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local embeddings with Ollama, and writes through mem0 when the optional SDK path is available so future adaptive extraction, reflection, journaling, pruning, and growth features can be layered in without changing route handlers.
 
-Default settings are intentionally 8GB-friendly: no hosted services, one embedding request per memory/search operation, capped memory text size, small context retrieval limits, and no reranker in the hot path. Pull the default local embedding model before using memory:
+The memory manager is not wired into API routes yet. Future chat orchestration or prompt-building services can use it like this:
+
+```python
+from app.core.memory import MemoryManager
+
+memory = MemoryManager()
+memory.add_memory(
+    "The user prefers emotionally warm, detailed companion responses.",
+    {"memory_type": "semantic", "source": "chat"},
+)
+context = memory.get_relevant_context("How should I respond to the user?")
+```
+
+Default settings are intentionally 8GB-friendly:
+
+- no hosted services or mandatory cloud calls
+- embedded LanceDB on local disk for restart-safe vector persistence
+- one local Ollama embedding request per memory write/search
+- best-effort mem0 extraction, with direct LanceDB recall remaining available if mem0 fails
+- capped memory text, retrieval count, and context character budgets
+- no reranker or resident Python embedding model in the hot path
+
+Pull the default local embedding model before using memory:
 
 ```bash
 ollama pull nomic-embed-text
 ```
+
+Key memory settings in `.env`:
+
+- `REVERIE_MEMORY_ENABLED`: disables retrieval/write attempts when set to `false`
+- `REVERIE_MEMORY_DB_PATH`: local directory for LanceDB plus mem0 history data
+- `REVERIE_MEMORY_EMBEDDING_MODEL`: local Ollama embedding model
+- `REVERIE_MEMORY_MAX_CONTEXT_MEMORIES` and `REVERIE_MEMORY_CONTEXT_MAX_CHARS`: prompt-context budget controls
+- `REVERIE_MEMORY_MEM0_ENABLED`: toggles best-effort mem0 write-through while preserving direct LanceDB storage
 
 ## Requirements
 
@@ -37,9 +67,10 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+ollama pull nomic-embed-text
 ```
 
-Edit `.env` if you want to use a different Ollama host, chat model, embedding model, memory storage path, generation defaults, CORS origins, or log level.
+Edit `.env` if you want to use a different Ollama host, chat model, embedding model, memory storage path, generation defaults, CORS origins, log level, or memory context budget.
 
 ## Run
 
