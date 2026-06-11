@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { navigationItems } from '$lib/config/navigation';
+  import { navigationItems, type NavigationItemId } from '$lib/config/navigation';
+
+  interface Props {
+    activeSection: NavigationItemId;
+    onNavigate: (section: NavigationItemId) => void;
+  }
+
+  let { activeSection, onNavigate }: Props = $props();
 </script>
 
 <aside class="sidebar" aria-label="Reverie workspace navigation">
@@ -13,7 +20,13 @@
 
   <nav class="nav-list" aria-label="Primary navigation">
     {#each navigationItems as item}
-      <button class:active={item.active} type="button" disabled={!item.active}>
+      <button
+        class:active={item.id === activeSection}
+        type="button"
+        disabled={!item.enabled}
+        aria-current={item.id === activeSection ? 'page' : undefined}
+        onclick={() => item.enabled && onNavigate(item.id)}
+      >
         <span>{item.label}</span>
         <small>{item.hint}</small>
       </button>
@@ -21,7 +34,7 @@
   </nav>
 
   <div class="sidebar-card">
-    <p>Foundation ready</p>
-    <span>Character panels, memories, and settings can slot into this sidebar without changing the chat shell.</span>
+    <p>Growth stays local</p>
+    <span>Journal entries are private reflection artifacts you can inspect before future memory or training controls use them.</span>
   </div>
 </aside>
