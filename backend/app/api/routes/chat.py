@@ -8,28 +8,42 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import Settings, get_settings
+from app.core.memory import MemoryManager, get_memory_manager
 from app.core.ollama_client import OllamaClient, OllamaClientError
 from app.models.chat import ChatRequest, ChatResponse
+from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
-def get_ollama_client(settings: Annotated[Settings, Depends(get_settings)]) -> OllamaClient:
-    """Provide an Ollama client for request handlers.
-
-    Keeping this as a dependency makes it easy to swap in a richer chat service
-    later when memory, character state, and growth logic are introduced.
-    """
+def get_ollama_client(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OllamaClient:
+    """Provide an Ollama client for request handlers."""
 
     return OllamaClient(settings)
+
+
+def get_chat_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
+    memory_manager: Annotated[MemoryManager, Depends(get_memory_manager)],
+) -> ChatService:
+    """Provide the service that assembles chat prompts and calls Ollama."""
+
+    return ChatService(
+        settings=settings,
+        ollama_client=ollama_client,
+        memory_manager=memory_manager,
+    )
 
 
 @router.post("/chat", response_model=None)
 async def chat(
     request: ChatRequest,
     settings: Annotated[Settings, Depends(get_settings)],
-    ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
+    chat_service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ChatResponse | StreamingResponse:
     """Generate a chat response, streaming by default.
 
@@ -52,7 +66,7 @@ async def chat(
 
     if not request.stream:
         try:
-            return await ollama_client.chat(request, request_id=request_id)
+            return await chat_service.chat(request, request_id=request_id)
         except OllamaClientError as exc:
             logger.warning(
                 "Chat request failed",
@@ -60,7 +74,11 @@ async def chat(
             )
             raise HTTPException(
                 status_code=exc.status_code,
-                detail={"error": exc.message, "details": exc.details, "request_id": request_id},
+                detail={
+                    "error": exc.message,
+                    "details": exc.details,
+                    "request_id": request_id,
+                },
             ) from exc
         except Exception as exc:  # pragma: no cover - unexpected defensive path.
             logger.exception(
@@ -69,11 +87,14 @@ async def chat(
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"error": "Unexpected chat service error.", "request_id": request_id},
+                detail={
+                    "error": "Unexpected chat service error.",
+                    "request_id": request_id,
+                },
             ) from exc
 
     return StreamingResponse(
-        ollama_client.stream_chat(request, request_id=request_id),
+        await chat_service.stream_chat(request, request_id=request_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
