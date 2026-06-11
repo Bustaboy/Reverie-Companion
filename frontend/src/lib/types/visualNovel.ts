@@ -62,6 +62,8 @@ export interface GrowthVisualModifier {
   cue: string;
   confidenceBoost: number;
   poseShift: VisualPose;
+  startedAt: number;
+  durationMs: number;
   expiresAt: number;
 }
 

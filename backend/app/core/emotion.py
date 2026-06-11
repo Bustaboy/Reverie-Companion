@@ -357,7 +357,7 @@ class EmotionInferenceEngine:
                             expression,
                             signal.weight * 1.15,
                             SignalPriority.STRONG_MEMORY_TAGS,
-                            signal.source,
+                            "strong_memory_tags",
                         )
 
     def _add_score(
@@ -486,6 +486,7 @@ class EmotionInferenceEngine:
     def _ordered_sources(self, sources: Iterable[str]) -> list[str]:
         priority = [
             "growth_cue",
+            "strong_memory_tags",
             "memory_tags",
             "reflection_themes",
             "latest_message_tone",

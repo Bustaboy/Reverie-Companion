@@ -59,6 +59,7 @@ class EmotionInferenceEngineTests(unittest.TestCase):
         self.assertEqual(state.pose, "assertive")
         self.assertEqual(state.growth_cue, "confidence")
         self.assertIn("growth_cue", state.sources)
+        self.assertIn("strong_memory_tags", state.sources)
         self.assertIn("memory_tags", state.sources)
         self.assertGreaterEqual(state.intensity, 0.55)
 
@@ -96,8 +97,29 @@ class EmotionInferenceEngineTests(unittest.TestCase):
 
         self.assertEqual(state.expression, "tender")
         self.assertEqual(state.pose, "close")
-        self.assertEqual(state.sources, ["memory_tags"])
+        self.assertEqual(state.sources, ["strong_memory_tags", "memory_tags"])
         self.assertGreaterEqual(state.confidence, 0.6)
+
+    def test_strong_memory_tags_beat_conflicting_latest_message(self) -> None:
+        engine = EmotionInferenceEngine()
+
+        state = engine.infer_visual_state(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(
+                        role="user",
+                        content="I am angry right now, but remember what mattered.",
+                    )
+                ],
+            ),
+            assistant_text="I keep my voice calm.",
+            memory_context="protected trust promise reassurance",
+        )
+
+        self.assertEqual(state.expression, "tender")
+        self.assertEqual(state.pose, "close")
+        self.assertEqual(state.sources, ["strong_memory_tags", "memory_tags"])
 
     def test_reflection_themes_shape_visuals_without_memory(self) -> None:
         engine = EmotionInferenceEngine()

@@ -37,6 +37,9 @@ export const defaultVisualManifest: CharacterVisualManifest = {
     'garden-night': `${PLACEHOLDER_PREFIX}background/garden-night`,
     studio: `${PLACEHOLDER_PREFIX}background/studio`
   },
+  layerAssets: {
+    clothing: `${PLACEHOLDER_PREFIX}layer/clothing`
+  },
   layers: ['base', 'expression', 'clothing']
 };
 
@@ -166,14 +169,14 @@ const resolveCharacterLayers = (
       continue;
     }
 
-    const customLayerRef = manifest.layerAssets?.[layer];
-    if (!customLayerRef) {
-      continue;
-    }
-
     layers.push({
       layer,
-      asset: resolveAsset(customLayerRef, `layer:${layer}`, `${layer} layer`, false)
+      asset: resolveAsset(
+        manifest.layerAssets?.[layer] ?? `${PLACEHOLDER_PREFIX}layer/${layer}`,
+        `layer:${layer}`,
+        `${layer} layer`,
+        !manifest.layerAssets?.[layer]
+      )
     });
   }
 

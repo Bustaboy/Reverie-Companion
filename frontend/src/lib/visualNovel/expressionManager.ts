@@ -1,6 +1,8 @@
 import type { GrowthVisualModifier, VisualExpression, VisualPose, VisualState } from '$lib/types/visualNovel';
 
+export const GROWTH_MODIFIER_MIN_DURATION_MS = 30_000;
 export const GROWTH_MODIFIER_DURATION_MS = 45_000;
+export const GROWTH_MODIFIER_MAX_DURATION_MS = 60_000;
 
 export const DEFAULT_VISUAL_STATE: VisualState = {
   characterId: 'reverie',
@@ -26,16 +28,23 @@ export class ExpressionManager {
     };
   }
 
-  createGrowthModifier(visualState: VisualState, now = Date.now()): GrowthVisualModifier | null {
+  createGrowthModifier(
+    visualState: VisualState,
+    now = Date.now(),
+    durationMs = GROWTH_MODIFIER_DURATION_MS
+  ): GrowthVisualModifier | null {
     if (!visualState.growthCue) {
       return null;
     }
 
+    const boundedDurationMs = this.clampDuration(durationMs);
     return {
       cue: visualState.growthCue,
       confidenceBoost: 0.1,
       poseShift: this.poseShiftForGrowth(visualState.expression),
-      expiresAt: now + GROWTH_MODIFIER_DURATION_MS
+      startedAt: now,
+      durationMs: boundedDurationMs,
+      expiresAt: now + boundedDurationMs
     };
   }
 
@@ -99,6 +108,14 @@ export class ExpressionManager {
 
   private clamp01(value: number): number {
     return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+  }
+
+  private clampDuration(value: number): number {
+    if (!Number.isFinite(value)) {
+      return GROWTH_MODIFIER_DURATION_MS;
+    }
+
+    return Math.min(GROWTH_MODIFIER_MAX_DURATION_MS, Math.max(GROWTH_MODIFIER_MIN_DURATION_MS, value));
   }
 }
 
