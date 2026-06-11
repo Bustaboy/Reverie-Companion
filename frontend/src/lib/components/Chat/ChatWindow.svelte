@@ -7,6 +7,10 @@
     void chatStore.sendMessage(content);
   };
 
+  const statusLabel = $derived(
+    $chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'
+  );
+
   const dismissError = () => {
     chatStore.clearError();
   };
@@ -22,7 +26,7 @@
 
     <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
       <span></span>
-      {$chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'}
+      {statusLabel}
     </div>
   </header>
 
@@ -31,10 +35,10 @@
   {#if $chatStore.error}
     <div class="chat-error-banner" role="status" aria-live="polite">
       <div>
-        <strong>Connection softened, not lost.</strong>
+        <strong>Reverie paused for a moment.</strong>
         <span>{$chatStore.error}</span>
       </div>
-      <button type="button" aria-label="Dismiss connection message" onclick={dismissError}>Dismiss</button>
+      <button type="button" aria-label="Dismiss connection message" onclick={dismissError}>Close</button>
     </div>
   {/if}
 

@@ -22,8 +22,9 @@ const createAssistantPlaceholder = (): ChatMessage => ({
   status: 'streaming'
 });
 
-const LOCAL_BACKEND_HELP =
+const OFFLINE_ASSISTANT_FALLBACK =
   "I'm still here, but I couldn't reach the local companion service. Start the backend when you're ready and we can continue.";
+const GENERIC_RESPONSE_ERROR = 'Something went wrong while Reverie was responding. Please try again.';
 
 const toServiceHistory = (messages: ChatMessage[]): Message[] =>
   messages
@@ -51,17 +52,22 @@ const appendToMessage = (messages: ChatMessage[], messageId: string, content: st
 const updateMessage = (messages: ChatMessage[], messageId: string, patch: Partial<ChatMessage>): ChatMessage[] =>
   messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message));
 
+const getAssistantFailureContent = (message: ChatMessage | undefined): string =>
+  message?.content.trim() || OFFLINE_ASSISTANT_FALLBACK;
+
 const toFriendlyErrorMessage = (error: unknown): string => {
   if (error instanceof ChatServiceError) {
     return error.message;
   }
 
-  return 'Something went wrong while Reverie was responding. Please try again.';
+  return GENERIC_RESPONSE_ERROR;
 };
 
 function createChatStore() {
   const store = writable<ChatState>(INITIAL_STATE);
   let activeController: AbortController | null = null;
+
+  const hasActiveSend = () => activeController !== null;
 
   const finishAssistantMessage = (assistantMessageId: string) => {
     store.update((state) => ({
@@ -74,7 +80,7 @@ function createChatStore() {
   const failAssistantMessage = (assistantMessageId: string, errorMessage: string) => {
     store.update((state) => {
       const assistantMessage = state.messages.find((message) => message.id === assistantMessageId);
-      const fallbackContent = assistantMessage?.content.trim() || LOCAL_BACKEND_HELP;
+      const fallbackContent = getAssistantFailureContent(assistantMessage);
 
       return {
         ...state,
@@ -95,10 +101,13 @@ function createChatStore() {
       const trimmedContent = content.trim();
       const currentState = get(store);
 
-      if (!trimmedContent || currentState.generationState !== 'idle') {
+      if (!trimmedContent || currentState.generationState !== 'idle' || hasActiveSend()) {
         return;
       }
 
+      // The empty assistant message is intentionally created before the request:
+      // it anchors the thinking/streaming UI and gives incoming chunks a stable
+      // id to update without remounting the whole transcript.
       // Capture history before appending the optimistic messages so the backend
       // receives exactly the conversation the user saw before pressing Send.
       const history = toServiceHistory(currentState.messages);
