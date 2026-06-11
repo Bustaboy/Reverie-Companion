@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChatWindow } from '$lib/components/Chat';
   import { JournalPanel } from '$lib/components/Journal';
+  import { MemoryReflectionSettings } from '$lib/components/Settings';
   import type { NavigationItemId } from '$lib/config/navigation';
   import Sidebar from './Sidebar.svelte';
 
@@ -16,6 +17,8 @@
   <main class="main-panel">
     {#if activeSection === 'journal'}
       <JournalPanel />
+    {:else if activeSection === 'settings'}
+      <MemoryReflectionSettings />
     {:else}
       <ChatWindow />
     {/if}

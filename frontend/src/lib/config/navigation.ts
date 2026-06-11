@@ -15,5 +15,5 @@ export const navigationItems: NavigationItem[] = [
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
   { id: 'memory', label: 'Memory', hint: 'Long-term recall', enabled: false },
   { id: 'visual-novel', label: 'Visual Novel', hint: 'Future mode', enabled: false },
-  { id: 'settings', label: 'Settings', hint: 'Privacy & models', enabled: false }
+  { id: 'settings', label: 'Settings', hint: 'Memory controls', enabled: true }
 ];

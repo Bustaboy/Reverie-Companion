@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
+import { DEFAULT_MEMORY_REFLECTION_SETTINGS, settingsStore, type MemoryReflectionSettings } from './settingsStore';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
 
@@ -13,12 +14,18 @@ export interface ChatState {
   growthNotificationsEnabled: boolean;
 }
 
+let memoryReflectionSettings: MemoryReflectionSettings = DEFAULT_MEMORY_REFLECTION_SETTINGS;
+
+settingsStore.subscribe((settings) => {
+  memoryReflectionSettings = settings;
+});
+
 const INITIAL_STATE: ChatState = {
   messages: createInitialMessages(),
   generationState: 'idle',
   error: null,
   growthNotification: null,
-  growthNotificationsEnabled: true
+  growthNotificationsEnabled: memoryReflectionSettings.growthNotificationsEnabled
 };
 
 const createAssistantPlaceholder = (): ChatMessage => ({
@@ -66,7 +73,7 @@ const applyMemoryContext = (messages: ChatMessage[], messageId: string, memoryCo
 
 
 const applyGrowthNotification = (state: ChatState, growthNotification?: GrowthNotification): ChatState => {
-  if (!growthNotification || !state.growthNotificationsEnabled) {
+  if (!growthNotification || !memoryReflectionSettings.growthNotificationsEnabled) {
     return state;
   }
 
@@ -217,6 +224,7 @@ function createChatStore() {
       store.update((state) => ({ ...state, growthNotification: null }));
     },
     disableGrowthNotifications() {
+      settingsStore.setGrowthNotificationsEnabled(false);
       store.update((state) => ({
         ...state,
         growthNotification: null,
