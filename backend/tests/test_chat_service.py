@@ -126,6 +126,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertIn("Long-term memory context", prepared_messages[1].content)
         self.assertIn("User prefers gentle reassurance", prepared_messages[1].content)
         self.assertIn("Private reflection journal context", prepared_messages[2].content)
+        self.assertIn("tentative, lower-priority", prepared_messages[2].content)
+        self.assertIn("not canon rewrites", prepared_messages[2].content)
         self.assertIn("reassurance helps the user", prepared_messages[2].content)
         self.assertEqual(prepared_messages[3].role, "user")
         self.assertEqual(len(reflection.triggered_histories), 1)
