@@ -99,6 +99,20 @@ class Settings(BaseSettings):
     growth_notification_min_evidence_count: int = Field(default=2, gt=0, le=20)
     growth_notification_style: str = "whisper"
 
+    # Personal LoRA is an explicit, local-only advanced growth feature. The
+    # foundation stores reviewable examples and training manifests, but keeps
+    # collection and training disabled until the user opts in. Defaults are
+    # intentionally conservative for 8GB GPUs: rank 8, batch size 1, short
+    # sequence length, and one low-priority background job at a time.
+    personal_lora_enabled: bool = True
+    personal_lora_data_path: str = "./data/personal_lora"
+    personal_lora_rank: int = Field(default=8, ge=8, le=16)
+    personal_lora_max_rank: int = Field(default=16, ge=8, le=16)
+    personal_lora_min_confidence: float = Field(default=0.68, ge=0.0, le=1.0)
+    personal_lora_min_evidence_count: int = Field(default=2, gt=0, le=20)
+    personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
+    personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
+
 
 @lru_cache
 def get_settings() -> Settings:
