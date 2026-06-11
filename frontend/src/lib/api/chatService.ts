@@ -1,5 +1,12 @@
 import { dev } from '$app/environment';
 import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import {
+  VISUAL_EXPRESSIONS,
+  VISUAL_POSES,
+  type VisualExpression,
+  type VisualPose,
+  type VisualState
+} from '$lib/types/visualNovel';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -45,6 +52,8 @@ export interface ChatResponse {
   memoryContext?: MemoryContext;
   /** Optional subtle note that a journaled growth signal is available. */
   growthNotification?: GrowthNotification;
+  /** Deterministic visual metadata for the current assistant turn. */
+  visualState?: VisualState;
 }
 
 export interface ChatStreamOptions {
@@ -59,6 +68,7 @@ export interface ChatStreamMessageEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  visualState?: VisualState;
 }
 
 export interface ChatStreamMemoryEvent {
@@ -80,6 +90,7 @@ export interface ChatStreamDoneEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  visualState?: VisualState;
 }
 
 export type ChatStreamEvent =
@@ -110,7 +121,12 @@ interface RawSseEvent {
   data: string;
 }
 
-interface BackendGrowthNotificationBody {
+interface BackendVisualStateBody {
+  visual_state?: unknown;
+  visualState?: unknown;
+}
+
+interface BackendGrowthNotificationBody extends BackendVisualStateBody {
   growth_notification?: unknown;
   growthNotification?: unknown;
 }
@@ -363,7 +379,8 @@ export class ChatService {
     return {
       ...body,
       memoryContext: this.extractMemoryContext(body),
-      growthNotification: this.extractGrowthNotification(body)
+      growthNotification: this.extractGrowthNotification(body),
+      visualState: this.extractVisualState(body)
     };
   }
 
@@ -467,7 +484,8 @@ export class ChatService {
         model: typeof body.model === 'string' ? body.model : undefined,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body)
       };
     }
 
@@ -492,7 +510,8 @@ export class ChatService {
         done: typeof body.done === 'boolean' ? body.done : true,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body)
       };
     }
 
@@ -532,6 +551,34 @@ export class ChatService {
       theme: this.normalizeText(raw.theme),
       style: this.normalizeText(raw.style),
       controls: Array.isArray(raw.controls) ? raw.controls.filter((item): item is string => typeof item === 'string') : undefined
+    };
+  }
+
+  private extractVisualState(body: BackendVisualStateBody | Record<string, unknown>): VisualState | undefined {
+    const raw = body.visual_state ?? body.visualState;
+    if (!this.isRecord(raw)) {
+      return undefined;
+    }
+
+    const characterId = this.normalizeText(raw.character_id ?? raw.characterId) ?? 'reverie';
+    const expression = this.normalizeVisualExpression(raw.expression);
+    const emotion = this.normalizeVisualExpression(raw.emotion ?? raw.expression);
+    const pose = this.normalizeVisualPose(raw.pose);
+    const background = this.normalizeText(raw.background) ?? 'default';
+    const sources = Array.isArray(raw.sources)
+      ? raw.sources.filter((item): item is string => typeof item === 'string').slice(0, 8)
+      : ['fallback_neutral'];
+
+    return {
+      characterId,
+      emotion,
+      expression,
+      pose,
+      background,
+      intensity: this.clampNumber(this.normalizeNumber(raw.intensity), 0, 1, 0.15),
+      confidence: this.clampNumber(this.normalizeNumber(raw.confidence), 0, 1, 0.25),
+      sources,
+      growthCue: this.normalizeText(raw.growth_cue ?? raw.growthCue)
     };
   }
 
@@ -719,6 +766,28 @@ export class ChatService {
     return knownStatuses.includes(normalized as MemoryContext['status'])
       ? (normalized as MemoryContext['status'])
       : undefined;
+  }
+
+  private normalizeVisualExpression(value: unknown): VisualExpression {
+    return typeof value === 'string' && VISUAL_EXPRESSIONS.includes(value as VisualExpression)
+      ? (value as VisualExpression)
+      : 'neutral';
+  }
+
+  private normalizeVisualPose(value: unknown): VisualPose {
+    return typeof value === 'string' && VISUAL_POSES.includes(value as VisualPose) ? (value as VisualPose) : 'idle';
+  }
+
+  private normalizeNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private clampNumber(value: number | undefined, min: number, max: number, fallback: number): number {
+    if (value === undefined) {
+      return fallback;
+    }
+
+    return Math.min(max, Math.max(min, value));
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

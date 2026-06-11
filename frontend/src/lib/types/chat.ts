@@ -1,3 +1,5 @@
+import type { VisualState } from '$lib/types/visualNovel';
+
 export type ChatRole = 'user' | 'assistant';
 
 export type ChatMessageStatus = 'complete' | 'streaming' | 'error';
@@ -41,4 +43,5 @@ export interface ChatMessage {
   status?: ChatMessageStatus;
   error?: string;
   memoryContext?: MemoryContext;
+  visualState?: VisualState;
 }

@@ -1,6 +1,6 @@
 # Reverie — Source of Truth Document
-**Version**: 1.0  
-**Date**: June 09, 2026  
+**Version**: 1.1  
+**Date**: June 11, 2026  
 **Brand**: Reverie  
 **Status**: Foundation for vibe-coding the entire application with GPT-Codex / Cursor / similar AI coding tools.
 
@@ -65,6 +65,12 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
 
 ### 2.3 Immersion & Media Features
 - **Visual Novel Mode**: Sprite/expression system with dynamic poses, backgrounds, and emotion-based changes.
+  - V1 foundation is manifest-driven and supports individual images plus sprite-sheet frame references.
+  - Canonical V1 expressions: neutral, happy, tender, teasing, shy, embarrassed, confident, dominant, aroused, angry, sad, surprised.
+  - Canonical V1 poses: idle, close, leaning, guarded, assertive.
+  - Emotion inference on the chat path is deterministic and heuristic-based only: latest tone, assistant response tone, strong memory tags, reflection themes, and recent growth cues. No extra LLM call is allowed during normal chat streaming.
+  - Growth visuals are temporary runtime modifiers that decay back to base state; they are not durable character canon.
+  - Real/generated art can replace placeholders later without changing the VN runtime contract.
 - **In-Chat Image Generation & Vision**: Local image gen (Flux / SD / ComfyUI nodes) + image upload + discussion during chat.
 - **TTS / Voice Mode**: Emotional Text-to-Speech + optional Speech-to-Text for voice conversations.
 - Rich media support (image attachments, voice messages, future video clip playback).
@@ -101,7 +107,7 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
 | Memory & RAG | mem0 (primary adaptive memory) + Cognee (knowledge graph) + LanceDB (embedded vector store) | True long-term recall + relationship/timeline awareness |
 | Self-Learning / LoRA Training | Unsloth | Fastest and most VRAM-efficient LoRA trainer available in 2026. Runs comfortably in background on 8GB |
 | Database | SQLite + LanceDB | Zero-config, fully local, fast queries for characters, journals, memories |
-| Image / VN Mode | ComfyUI nodes or Flux/SD via local API | Direct future compatibility with Futa-Vision pipeline |
+| Image / VN Mode | Manifest-driven custom sprites first; optional ComfyUI/Flux/SD via local API | 8GB-safe VN foundation now, direct future compatibility with Futa-Vision pipeline |
 | TTS | Piper TTS or Coqui TTS (emotional) | High-quality offline voice |
 
 **Why not full Rust backend?**  
@@ -118,6 +124,7 @@ Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision,
 3. **LLM generates response** via Ollama (Qwen3.5-9B class model).
 4. **Post-processing**:
    - Store raw interaction.
+   - Emit lightweight `visual_state` metadata for VN mode using deterministic heuristics only.
    - Auto-summarize key moments into medium/long-term memory.
    - Check reflection/journal triggers.
    - Update adaptive learning signals.
@@ -137,6 +144,7 @@ This flow ensures the character both **grows personally** and **contributes to t
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
+- Current VN scene state exposes a typed, capability-gated media hook for "generate current scene" actions, but image/video generation is optional and queued separately from chat.
 - Later: Reactive video sprites/clips that play inside Visual Novel mode or chat, driven by the companion’s emotional state and physics LoRAs.
 - The companion becomes the director’s intelligent brain.
 

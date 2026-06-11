@@ -9,7 +9,8 @@ import time
 from collections.abc import AsyncIterator, Iterable
 
 from app.core.config import Settings
-from app.core.growth import GrowthOrchestrator
+from app.core.emotion import EmotionInferenceEngine
+from app.core.growth import GrowthContext, GrowthOrchestrator
 from app.core.lora import get_personal_lora_trainer
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
@@ -20,6 +21,7 @@ from app.models.chat import (
     ChatRequest,
     ChatResponse,
     GrowthNotification,
+    VisualState,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,7 @@ class ChatService:
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
         growth_orchestrator: GrowthOrchestrator | None = None,
+        emotion_inference_engine: EmotionInferenceEngine | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
@@ -86,30 +89,45 @@ class ChatService:
                 get_personal_lora_trainer() if settings.personal_lora_enabled else None
             ),
         )
+        self._emotion_inference_engine = (
+            emotion_inference_engine or EmotionInferenceEngine()
+        )
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
     ) -> ChatResponse:
         """Run a non-streaming chat completion with optional continuity context."""
 
-        prepared_request, growth_notification = await self._prepare_request_with_growth(
+        prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
         response = await self._ollama_client.chat(
             prepared_request, request_id=request_id
         )
-        return self._attach_growth_notification(response, growth_notification)
+        return self._attach_response_metadata(
+            response,
+            original_request=request,
+            growth_context=growth_context,
+        )
 
-    def _attach_growth_notification(
+    def _attach_response_metadata(
         self,
         response: ChatResponse,
-        growth_notification: GrowthNotification | None,
+        *,
+        original_request: ChatRequest,
+        growth_context: GrowthContext,
     ) -> ChatResponse:
-        """Attach optional growth metadata without changing response shape elsewhere."""
+        """Attach visual and growth metadata without changing model text."""
 
-        if growth_notification is None:
-            return response
-        return response.model_copy(update={"growth_notification": growth_notification})
+        visual_state = self._infer_visual_state(
+            original_request,
+            assistant_text=response.message.content,
+            growth_context=growth_context,
+        )
+        update: dict[str, object] = {"visual_state": visual_state}
+        if growth_context.growth_notification is not None:
+            update["growth_notification"] = growth_context.growth_notification
+        return response.model_copy(update=update)
 
     async def stream_chat(
         self,
@@ -119,12 +137,13 @@ class ChatService:
     ) -> AsyncIterator[str]:
         """Return an Ollama SSE stream with optional continuity context injected."""
 
-        prepared_request, growth_notification = await self._prepare_request_with_growth(
+        prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
-        return self._stream_with_growth_notification(
-            prepared_request,
-            growth_notification=growth_notification,
+        return self._stream_with_visual_metadata(
+            original_request=request,
+            prepared_request=prepared_request,
+            growth_context=growth_context,
             request_id=request_id,
         )
 
@@ -136,7 +155,7 @@ class ChatService:
     ) -> ChatRequest:
         """Build the model-facing request while keeping route handlers thin."""
 
-        prepared_request, _growth_notification = (
+        prepared_request, _growth_context = (
             await self._prepare_request_with_growth(request, request_id=request_id)
         )
         return prepared_request
@@ -146,8 +165,8 @@ class ChatService:
         request: ChatRequest,
         *,
         request_id: str | None,
-    ) -> tuple[ChatRequest, GrowthNotification | None]:
-        """Build a model request and choose at most one optional growth notice."""
+    ) -> tuple[ChatRequest, GrowthContext]:
+        """Build a model request and collect bounded growth/visual signals."""
 
         # The orchestrator ties together existing memory, reflection journals,
         # growth notices, and optional LoRA collection. It only uses already
@@ -183,7 +202,7 @@ class ChatService:
             )
 
         if not context_messages:
-            return request, growth_notification
+            return request, growth_context
 
         enriched_messages = self._inject_context_after_system_messages(
             request.messages, context_messages
@@ -200,7 +219,7 @@ class ChatService:
         )
         return (
             request.model_copy(update={"messages": enriched_messages}),
-            growth_notification,
+            growth_context,
         )
 
     async def _retrieve_memory_context(
@@ -481,26 +500,64 @@ class ChatService:
             },
         )
 
-    async def _stream_with_growth_notification(
+    async def _stream_with_visual_metadata(
+        self,
+        *,
+        original_request: ChatRequest,
+        prepared_request: ChatRequest,
+        growth_context: GrowthContext,
+        request_id: str | None,
+    ) -> AsyncIterator[str]:
+        """Pass through Ollama SSE frames, adding visual/growth metadata to done."""
+
+        assistant_chunks: list[str] = []
+        async for frame in self._ollama_client.stream_chat(
+            prepared_request, request_id=request_id
+        ):
+            chunk = self._stream_message_content(frame)
+            if chunk:
+                assistant_chunks.append(chunk)
+
+            if self._sse_event_name(frame) != "done":
+                yield frame
+                continue
+
+            visual_state = self._infer_visual_state(
+                original_request,
+                assistant_text="".join(assistant_chunks),
+                growth_context=growth_context,
+            )
+            yield self._inject_done_metadata(
+                frame,
+                growth_notification=growth_context.growth_notification,
+                visual_state=visual_state,
+            )
+
+    def _infer_visual_state(
         self,
         request: ChatRequest,
         *,
+        assistant_text: str,
+        growth_context: GrowthContext,
+    ) -> VisualState:
+        """Infer lightweight VN metadata from bounded chat/growth signals."""
+
+        return self._emotion_inference_engine.infer_visual_state(
+            request,
+            assistant_text=assistant_text,
+            memory_context=growth_context.memory_context,
+            reflection_entries=growth_context.reflection_entries,
+            growth_notification=growth_context.growth_notification,
+        )
+
+    def _inject_done_metadata(
+        self,
+        frame: str,
+        *,
         growth_notification: GrowthNotification | None,
-        request_id: str | None,
-    ) -> AsyncIterator[str]:
-        """Pass through Ollama SSE frames, adding growth metadata to done."""
-
-        async for frame in self._ollama_client.stream_chat(
-            request, request_id=request_id
-        ):
-            yield self._growth_orchestrator.inject_growth_notification_into_done_sse(
-                frame, growth_notification
-            )
-
-    def _inject_growth_notification_into_done_sse(
-        self, frame: str, growth_notification: GrowthNotification | None
+        visual_state: VisualState,
     ) -> str:
-        if growth_notification is None or "event: done" not in frame:
+        if self._sse_event_name(frame) != "done":
             return frame
 
         data_lines: list[str] = []
@@ -518,8 +575,35 @@ class ChatService:
 
         if not isinstance(payload, dict):
             payload = {"done": True}
-        payload["growth_notification"] = growth_notification.model_dump()
+        if growth_notification is not None:
+            payload["growth_notification"] = growth_notification.model_dump()
+        payload["visual_state"] = visual_state.model_dump()
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
+
+    def _stream_message_content(self, frame: str) -> str:
+        if self._sse_event_name(frame) != "message":
+            return ""
+        payload = self._sse_payload(frame)
+        content = payload.get("content")
+        return content if isinstance(content, str) else ""
+
+    def _sse_event_name(self, frame: str) -> str:
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                return line.removeprefix("event:").strip() or "message"
+        return "message"
+
+    def _sse_payload(self, frame: str) -> dict[str, object]:
+        data_lines = [
+            line.removeprefix("data:").strip()
+            for line in frame.splitlines()
+            if line.startswith("data:")
+        ]
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def _select_growth_notification(
         self,

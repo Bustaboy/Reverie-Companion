@@ -21,6 +21,7 @@
     "@sveltejs/kit": "^2.21.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tauri-apps/cli": "^2.5.0",
+    "@types/node": "^22.15.18",
     "svelte-check": "^4.1.6",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"

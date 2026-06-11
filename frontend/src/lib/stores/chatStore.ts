@@ -2,7 +2,9 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import { settingsStore } from '$lib/stores/settingsStore';
+import { visualNovelStore } from '$lib/stores/visualNovelStore';
 import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
+import type { VisualState } from '$lib/types/visualNovel';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
 
@@ -76,6 +78,14 @@ const applyGrowthNotification = (state: ChatState, growthNotification?: GrowthNo
   };
 };
 
+const applyVisualState = (messages: ChatMessage[], messageId: string, visualState?: VisualState): ChatMessage[] => {
+  if (!visualState) {
+    return messages;
+  }
+
+  return updateMessage(messages, messageId, { visualState });
+};
+
 const getAssistantFailureContent = (message: ChatMessage | undefined): string =>
   message?.content.trim() || OFFLINE_ASSISTANT_FALLBACK;
 
@@ -105,22 +115,31 @@ function createChatStore() {
   const finishAssistantMessage = (
     assistantMessageId: string,
     memoryContext?: MemoryContext,
-    growthNotification?: GrowthNotification
+    growthNotification?: GrowthNotification,
+    visualState?: VisualState
   ) => {
     store.update((state) =>
       applyGrowthNotification(
         {
           ...state,
           generationState: 'idle',
-          messages: applyMemoryContext(
-            updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+          messages: applyVisualState(
+            applyMemoryContext(
+              updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+              assistantMessageId,
+              memoryContext
+            ),
             assistantMessageId,
-            memoryContext
+            visualState
           )
         },
         growthNotification
       )
     );
+
+    if (visualState) {
+      visualNovelStore.applyVisualState(visualState, { id: assistantMessageId });
+    }
   };
 
   const failAssistantMessage = (assistantMessageId: string, errorMessage: string) => {
@@ -206,7 +225,7 @@ function createChatStore() {
             throw new ChatServiceError(event.error, { requestId: event.requestId, details: event.details });
           }
 
-          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification);
+          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification, event.visualState);
         }
       } catch (error) {
         failAssistantMessage(assistantMessage.id, toFriendlyErrorMessage(error));

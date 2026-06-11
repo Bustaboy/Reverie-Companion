@@ -5,6 +5,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MessageRole = Literal["system", "user", "assistant"]
+VisualExpression = Literal[
+    "neutral",
+    "happy",
+    "tender",
+    "teasing",
+    "shy",
+    "embarrassed",
+    "confident",
+    "dominant",
+    "aroused",
+    "angry",
+    "sad",
+    "surprised",
+]
+VisualPose = Literal["idle", "close", "leaning", "guarded", "assertive"]
 MAX_MESSAGE_LENGTH = 8_000
 MAX_MODEL_NAME_LENGTH = 128
 
@@ -90,6 +105,24 @@ class GrowthNotification(BaseModel):
     )
 
 
+class VisualState(BaseModel):
+    """Deterministic VN visual metadata for one assistant turn.
+
+    This is runtime scene state only. It must not be treated as durable growth,
+    character canon, or evidence for training without a separate journal path.
+    """
+
+    character_id: str = Field(default="reverie", min_length=1, max_length=128)
+    emotion: VisualExpression = "neutral"
+    expression: VisualExpression = "neutral"
+    pose: VisualPose = "idle"
+    background: str = Field(default="default", min_length=1, max_length=128)
+    intensity: float = Field(default=0.15, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.25, ge=0.0, le=1.0)
+    sources: list[str] = Field(default_factory=lambda: ["fallback_neutral"], max_length=8)
+    growth_cue: str | None = Field(default=None, max_length=128)
+
+
 class ChatResponse(BaseModel):
     """Non-streaming chat completion response."""
 
@@ -97,3 +130,4 @@ class ChatResponse(BaseModel):
     message: ChatMessage
     done: bool = True
     growth_notification: GrowthNotification | None = None
+    visual_state: VisualState | None = None

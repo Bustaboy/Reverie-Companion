@@ -13,6 +13,15 @@ export {
 } from './chatService';
 
 export type { MemoryContext, MemoryContextItem, MemoryContextStatus } from '$lib/types/chat';
+export type {
+  CharacterVisualManifest,
+  GrowthVisualModifier,
+  ResolvedVisualScene,
+  SceneMediaCapabilities,
+  VisualExpression,
+  VisualPose,
+  VisualState
+} from '$lib/types/visualNovel';
 
 export { JournalService, JournalServiceError, journalService, type JournalServiceOptions } from './journalService';
 export type { JournalEntriesResponse, JournalEntry, JournalEntryMetadata, ReflectionInsight } from '$lib/types/journal';

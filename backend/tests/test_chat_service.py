@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from typing import Any
 
@@ -23,6 +24,13 @@ class FakeOllamaClient:
             model="fake-model",
             message=ChatMessage(role="assistant", content="I hear you."),
         )
+
+    async def stream_chat(
+        self, request: ChatRequest, *, request_id: str | None = None
+    ):
+        self.requests.append(request)
+        yield "event: message\ndata: {\"content\": \"I smirk and keep my voice playful.\", \"request_id\": \"req-stream\"}\n\n"
+        yield "event: done\ndata: {\"done\": true, \"request_id\": \"req-stream\"}\n\n"
 
 
 class FakeMemoryManager:
@@ -348,6 +356,40 @@ class ChatServiceReflectionTests(unittest.TestCase):
             request, request_id="req-growth-disabled"
         )
         self.assertIsNone(disabled.growth_notification)
+
+    def test_stream_chat_injects_visual_state_into_done_frame(self) -> None:
+        asyncio.run(self._assert_stream_chat_injects_visual_state())
+
+    async def _assert_stream_chat_injects_visual_state(self) -> None:
+        service = ChatService(
+            settings=Settings(memory_enabled=False, reflection_enabled=False),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+        )
+        stream = await service.stream_chat(
+            ChatRequest(
+                stream=True,
+                messages=[
+                    ChatMessage(
+                        role="user",
+                        content="Give me that playful teasing look.",
+                    )
+                ],
+            ),
+            request_id="req-stream",
+        )
+
+        frames = [frame async for frame in stream]
+        done_frame = next(frame for frame in frames if "event: done" in frame)
+        data_line = next(
+            line.removeprefix("data:").strip()
+            for line in done_frame.splitlines()
+            if line.startswith("data:")
+        )
+        payload = json.loads(data_line)
+
+        self.assertEqual(payload["visual_state"]["expression"], "teasing")
+        self.assertEqual(payload["visual_state"]["pose"], "leaning")
+        self.assertIn("latest_message_tone", payload["visual_state"]["sources"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+.tmp_pytest/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+backend/data/

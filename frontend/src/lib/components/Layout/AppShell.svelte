@@ -3,6 +3,7 @@
   import { JournalPanel } from '$lib/components/Journal';
   import { PersonalLoRAPanel } from '$lib/components/Growth';
   import { SettingsPanel } from '$lib/components/Settings';
+  import { VisualNovelPanel } from '$lib/components/VisualNovel';
   import type { NavigationItemId } from '$lib/config/navigation';
   import Sidebar from './Sidebar.svelte';
 
@@ -20,10 +21,12 @@
       <JournalPanel />
     {:else if activeSection === 'training'}
       <PersonalLoRAPanel />
+    {:else if activeSection === 'visual-novel'}
+      <VisualNovelPanel onReturnToChat={() => navigate('chat')} />
     {:else if activeSection === 'settings'}
       <SettingsPanel />
     {:else}
-      <ChatWindow />
+      <ChatWindow onOpenVisualNovel={() => navigate('visual-novel')} />
     {/if}
   </main>
 </div>

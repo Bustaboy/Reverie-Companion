@@ -15,6 +15,6 @@ export const navigationItems: NavigationItem[] = [
   { id: 'training', label: 'Training', hint: 'Personal LoRA review', enabled: true },
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
   { id: 'memory', label: 'Memory', hint: 'Long-term recall', enabled: false },
-  { id: 'visual-novel', label: 'Visual Novel', hint: 'Future mode', enabled: false },
+  { id: 'visual-novel', label: 'Visual Novel', hint: 'Reactive scene', enabled: true },
   { id: 'settings', label: 'Settings', hint: 'Memory controls', enabled: true }
 ];

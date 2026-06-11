@@ -3,6 +3,12 @@
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
 
+  interface Props {
+    onOpenVisualNovel?: () => void;
+  }
+
+  let { onOpenVisualNovel = () => undefined }: Props = $props();
+
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
   };
@@ -32,9 +38,12 @@
       <p class="subtitle">A warm, offline companion interface built for long conversations.</p>
     </div>
 
-    <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
-      <span></span>
-      {statusLabel}
+    <div class="chat-header-actions">
+      <button type="button" class="mode-toggle-button" onclick={onOpenVisualNovel}>VN Mode</button>
+      <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
+        <span></span>
+        {statusLabel}
+      </div>
     </div>
   </header>
 
