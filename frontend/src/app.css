@@ -255,6 +255,11 @@ h1 {
   box-shadow: 0 0 0 4px rgba(120, 224, 178, 0.12);
 }
 
+.status-pill.streaming span {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 4px rgba(255, 176, 166, 0.14);
+}
+
 .message-list {
   min-height: 0;
   overflow-y: auto;
@@ -327,6 +332,15 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.from-assistant.is-streaming .bubble {
+  border-color: rgba(240, 154, 159, 0.2);
+}
+
+.from-assistant.has-error .bubble {
+  border-color: rgba(255, 176, 166, 0.34);
+  background: rgba(240, 154, 159, 0.075);
+}
+
 .from-user .bubble {
   background: var(--user);
   border-color: rgba(255, 255, 255, 0.13);
@@ -336,6 +350,53 @@ h1 {
 .bubble p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.soft-placeholder,
+.thinking-state {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.thinking-state {
+  margin: -0.25rem 0 0 3.1rem;
+  font-size: 0.9rem;
+}
+
+.stream-cursor {
+  display: inline-block;
+  width: 0.48rem;
+  height: 1rem;
+  margin-left: 0.12rem;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  vertical-align: -0.12rem;
+  animation: reverie-cursor-pulse 1.2s ease-in-out infinite;
+}
+
+.message-error {
+  margin-top: 0.7rem !important;
+  padding-top: 0.65rem;
+  color: #ffd4ce;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9rem;
+}
+
+@keyframes reverie-cursor-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-cursor {
+    animation: none;
+  }
 }
 
 .markdown-content :global(*) {

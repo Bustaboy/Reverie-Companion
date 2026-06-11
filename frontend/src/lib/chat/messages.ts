@@ -1,9 +1,14 @@
-import type { ChatMessage, ChatRole } from '$lib/types/chat';
+import type { ChatMessage, ChatMessageStatus, ChatRole } from '$lib/types/chat';
 
-export const createChatMessage = (role: ChatRole, content: string): ChatMessage => ({
+export const createChatMessage = (
+  role: ChatRole,
+  content: string,
+  status: ChatMessageStatus = 'complete'
+): ChatMessage => ({
   id: crypto.randomUUID(),
   role,
   content,
+  status,
   createdAt: new Date()
 });
 
@@ -12,13 +17,8 @@ export const createInitialMessages = (): ChatMessage[] => [
     id: 'welcome-1',
     role: 'assistant',
     content:
-      "Good evening. I'm here with you. Tell me what kind of scene, mood, or memory you want to explore first.\n\n*For now this is a local UI prototype — the backend will be connected later.*",
+      "Good evening. I'm here with you. Tell me what kind of scene, mood, or memory you want to explore first.",
+    status: 'complete',
     createdAt: new Date()
   }
 ];
-
-export const createPrototypeAssistantReply = (): ChatMessage =>
-  createChatMessage(
-    'assistant',
-    "I heard you. Backend connection comes later, but the chat flow is ready for a real local model response.\n\n**Next foundation pieces:** character state, memory retrieval, and settings."
-  );

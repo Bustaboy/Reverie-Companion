@@ -1,14 +1,15 @@
 <script lang="ts">
   interface Props {
     onSend: (message: string) => void;
+    disabled?: boolean;
   }
 
-  let { onSend }: Props = $props();
+  let { onSend, disabled = false }: Props = $props();
   let draft = $state('');
 
   const send = () => {
     const value = draft.trim();
-    if (!value) return;
+    if (!value || disabled) return;
 
     onSend(value);
     draft = '';
@@ -28,12 +29,13 @@
     id="message-input"
     bind:value={draft}
     onkeydown={handleKeydown}
-    placeholder="Share what is on your mind..."
+    placeholder={disabled ? 'Reverie is finishing her thought...' : 'Share what is on your mind...'}
     rows="1"
+    {disabled}
   ></textarea>
 
-  <button type="submit" disabled={!draft.trim()} aria-label="Send message">
-    <span>Send</span>
+  <button type="submit" disabled={!draft.trim() || disabled} aria-label="Send message">
+    <span>{disabled ? 'Sending' : 'Send'}</span>
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M3.4 20.4 21.2 12 3.4 3.6 6 10.8l8.3 1.2L6 13.2l-2.6 7.2Z" />
     </svg>

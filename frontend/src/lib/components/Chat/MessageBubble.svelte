@@ -10,7 +10,13 @@
   let { message }: Props = $props();
 </script>
 
-<article class:from-user={message.role === 'user'} class:from-assistant={message.role === 'assistant'} class="message-row">
+<article
+  class:from-user={message.role === 'user'}
+  class:from-assistant={message.role === 'assistant'}
+  class:is-streaming={message.status === 'streaming'}
+  class:has-error={message.status === 'error'}
+  class="message-row"
+>
   <div class="avatar" aria-hidden="true">
     {message.role === 'assistant' ? 'R' : 'You'}
   </div>
@@ -23,7 +29,19 @@
 
     <div class="bubble">
       {#if message.role === 'assistant'}
-        <Markdown content={message.content} />
+        {#if message.content}
+          <Markdown content={message.content} />
+        {:else}
+          <p class="soft-placeholder">Reverie is gathering her thoughts...</p>
+        {/if}
+
+        {#if message.status === 'streaming' && message.content}
+          <span class="stream-cursor" aria-hidden="true"></span>
+        {/if}
+
+        {#if message.status === 'error' && message.error}
+          <p class="message-error">{message.error}</p>
+        {/if}
       {:else}
         <p>{message.content}</p>
       {/if}
