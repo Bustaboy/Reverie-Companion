@@ -77,11 +77,12 @@ Load relevant local prompts from `prompts/skills/` **before** designing, impleme
 | Self-learning/growth | `prompts/skills/self-learning-growth.md` | Reflection loops, state evolution, growth notices, learning artifacts, datasets, LoRA/adapters, rollback, auditability. |
 | Self-reflection journal | `prompts/skills/self-reflection-journal.md` | `ReflectionManager`, `trigger_reflection`, journal schemas, insight extraction, promotion, privacy review, rollback. |
 | 8GB optimization | `prompts/skills/8gb-vram-optimization.md` | VRAM/RAM pressure, model loading, quantization, KV cache, embeddings, media, training, queues, responsiveness. |
+| 8GB Local AI Patterns | `prompts/skills/8gb-local-ai-patterns.md` | 8GB VRAM optimization, Unsloth QLoRA, roleplay dataset, emotional TTS, Visual Novel sprites, Svelte reactive state, ComfyUI lowvram, Flux GGUF, background training. |
 | Character/lore | `prompts/skills/character-creation-lore.md` | Character cards, schemas, traits, dialogue, lorebooks, identity vs. mutable state, import/export, NSFW behavior. |
 | Tauri/Svelte UI | `prompts/skills/tauri-svelte-ui-patterns.md` | Components, stores, commands/events, chat, VN mode, dashboards, editors, job panels, accessibility, performance. |
 | FastAPI backend | `prompts/skills/fastapi-backend-patterns.md` | Routes, Pydantic schemas, service/repository layers, jobs, workers, adapters, persistence, health checks, tests. |
 | Futa-Vision | `prompts/skills/futavision-integration.md` | Optional ComfyUI bridges, scene requests, media jobs, progress events, imports, metadata mapping, queues, availability. |
-| 8GB Local AI Patterns | `prompts/skills/8gb-local-ai-patterns.md` | 8GB VRAM optimization, Unsloth QLoRA, roleplay dataset, emotional TTS, Visual Novel sprites, Svelte reactive state, ComfyUI lowvram, Flux GGUF, background training. |
+
 
 Synthesize skill guidance around Reverie's pillars: **alive characters, local-first privacy, user control, smooth 8GB performance, modular architecture, maintainable code**.
 
