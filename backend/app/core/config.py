@@ -36,6 +36,27 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
+    # Long-term memory defaults are local-first and conservative for 8GB systems.
+    # The hot path uses one Ollama embedding call plus embedded LanceDB search;
+    # mem0 extraction is best-effort and can be disabled without losing direct
+    # LanceDB recall.
+    memory_enabled: bool = True
+    memory_db_path: str = "./data/memory"
+    memory_store_provider: str = "reverie_lancedb"
+    memory_collection_name: str = "reverie_memories"
+    memory_default_user_id: str = "local_user"
+    memory_default_session_id: str | None = None
+    memory_embedding_model: str = "nomic-embed-text"
+    memory_embedding_dimensions: int = Field(default=768, gt=0)
+    memory_llm_model: str | None = None
+    memory_extraction_temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+    memory_add_infer: bool = True
+    memory_search_min_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    memory_max_memory_chars: int = Field(default=4000, gt=500, le=20000)
+    memory_max_context_memories: int = Field(default=6, gt=0, le=20)
+    memory_context_max_chars: int = Field(default=4000, gt=500, le=20000)
+    memory_mem0_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
