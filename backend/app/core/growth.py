@@ -47,9 +47,12 @@ class GrowthOrchestrator:
 
     The orchestrator is intentionally the one place where chat-time memory,
     reflection journal context, subtle growth notifications, background journal
-    writes, and optional personal LoRA collection meet. Heavy work is read-only,
-    bounded, or scheduled after prompt preparation so interactive chat remains
-    responsive on 8GB systems.
+    writes, and optional personal LoRA collection meet. Existing memory and
+    journal artifacts may shape the current response; newly discovered evidence
+    is reflected after prompt preparation, then may become journal-only, memory,
+    a later UI notice, or an opt-in LoRA review candidate. Heavy work is
+    read-only, bounded, or scheduled after prompt preparation so interactive
+    chat remains responsive on 8GB systems.
     """
 
     _reflection_lock: asyncio.Lock | None = None

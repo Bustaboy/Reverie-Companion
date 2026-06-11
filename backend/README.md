@@ -1,73 +1,97 @@
 # Reverie Backend
 
-FastAPI backend foundation for Reverie, a local-first AI companion powered by Ollama.
+FastAPI backend for Reverie, a local-first AI companion powered by Ollama, durable memory, private reflection, and transparent growth controls.
 
-The current backend is intentionally small and modular so future systems can be layered in cleanly:
+The backend is intentionally modular so chat, memory, reflection, journaling, Personal LoRA review, and future media integrations can evolve without route handlers becoming product logic.
 
-- memory and retrieval (mem0 + embedded LanceDB)
-- character and prompt orchestration
-- reflection, journaling, and growth workflows
-- future local media/video integrations
+## Current Capabilities
 
-## Long-Term Memory Foundation
+- **Chat service**: non-streaming and SSE streaming chat through Ollama with bounded memory/reflection context injection.
+- **Long-term memory**: `app.core.memory.MemoryManager` stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local Ollama embeddings, and can write through mem0 when available.
+- **Reflection journal**: `app.core.reflection.ReflectionManager` writes local, inspectable journal entries from bounded conversation windows and can promote high-confidence insights into memory.
+- **Growth orchestration**: `app.core.growth.GrowthOrchestrator` coordinates memory retrieval, journal context, rare growth notifications, background reflection scheduling, and optional Personal LoRA candidate collection.
+- **Personal LoRA foundation**: `app.core.lora.PersonalLoRATrainer` persists reviewable examples, explicit opt-in settings, approved-only training jobs, and rollback-friendly adapter manifests. The current job runner is a conservative foundation, not a heavyweight fine-tuner yet.
+- **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, or Personal LoRA review state.
 
-`app.core.memory.MemoryManager` provides the backend-only foundation for persistent companion memory. It stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local embeddings with Ollama, and writes through mem0 when the optional SDK path is available so future adaptive extraction, reflection, journaling, pruning, and growth features can be layered in without changing route handlers.
+## Growth Loop Overview
 
-The memory manager is not wired into API routes yet. Future chat orchestration or prompt-building services can use it like this:
+The chat path stays responsive by using already persisted growth artifacts and scheduling heavier work after prompt preparation:
 
-```python
-from app.core.memory import MemoryManager
+1. `ChatService` receives a chat request and delegates growth preparation to `GrowthOrchestrator`.
+2. The orchestrator retrieves compact memory context from `MemoryManager` and recent journal context from `ReflectionManager` in bounded background threads.
+3. The prepared prompt receives memory first, then reflection context, so durable facts remain clearer than tentative growth hypotheses.
+4. After prompt preparation, the orchestrator schedules reflection only when cadence, cooldown, and meaningful-turn gates allow it.
+5. Reflection output may become journal-only, promote a high-confidence memory, surface a rare growth notification on a later turn, or enter the Personal LoRA review queue if collection is explicitly enabled.
 
-memory = MemoryManager()
-memory.add_memory(
-    "The user prefers emotionally warm, detailed companion responses.",
-    {"memory_type": "semantic", "source": "chat"},
-)
-context = memory.get_relevant_context("How should I respond to the user?")
-```
+This keeps the active token path free of training, unbounded scans, and hidden cloud calls.
 
-Default settings are intentionally 8GB-friendly:
+## 8GB-Friendly Defaults
 
-- no hosted services or mandatory cloud calls
-- embedded LanceDB on local disk for restart-safe vector persistence
-- one local Ollama embedding request per memory write/search
-- best-effort mem0 extraction, with direct LanceDB recall remaining available if mem0 fails
-- capped memory text, retrieval count, and context character budgets
-- no reranker or resident Python embedding model in the hot path
-- reflection journaling runs as throttled background work, not in the active token path
+- One local Ollama embedding request per memory write/search.
+- Embedded LanceDB persistence on local disk.
+- Capped memory text, retrieval count, journal entries, and context character budgets.
+- Reflection is throttled background work, not active response-path work.
+- Personal LoRA collection/training defaults to opt-out, rank 8, batch size 1, short sequence lengths, and one background job at a time.
+- No resident reranker, hosted telemetry, or mandatory external service.
 
-Pull the default local embedding model before using memory:
+## Key Settings
 
-```bash
-ollama pull nomic-embed-text
-```
+Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 
-Key memory settings in `.env`:
+### Chat and Ollama
 
-- `REVERIE_MEMORY_ENABLED`: disables retrieval/write attempts when set to `false`
+- `REVERIE_OLLAMA_HOST`: local Ollama host, default `http://localhost:11434`
+- `REVERIE_OLLAMA_MODEL`: chat model, default `llama3.1:8b`
+- `REVERIE_DEFAULT_TEMPERATURE`, `REVERIE_DEFAULT_TOP_P`, `REVERIE_DEFAULT_NUM_PREDICT`: generation defaults
+
+### Memory
+
+- `REVERIE_MEMORY_ENABLED`: disables retrieval/write attempts when `false`
 - `REVERIE_MEMORY_DB_PATH`: local directory for LanceDB plus mem0 history data
-- `REVERIE_MEMORY_EMBEDDING_MODEL`: local Ollama embedding model
-- `REVERIE_MEMORY_MAX_CONTEXT_MEMORIES` and `REVERIE_MEMORY_CONTEXT_MAX_CHARS`: prompt-context budget controls
+- `REVERIE_MEMORY_EMBEDDING_MODEL`: local Ollama embedding model, default `nomic-embed-text`
+- `REVERIE_MEMORY_MAX_CONTEXT_MEMORIES`, `REVERIE_MEMORY_CONTEXT_MAX_CHARS`: prompt-context budgets
 - `REVERIE_MEMORY_MEM0_ENABLED`: toggles best-effort mem0 write-through while preserving direct LanceDB storage
 
-Key reflection settings in `.env`:
+### Reflection and Journal
 
 - `REVERIE_REFLECTION_ENABLED`: master toggle for journal context and background reflection
-- `REVERIE_REFLECTION_FREQUENCY`: `low`, `balanced`, or `high`; adjusts message-count cadence and cooldown together
-- `REVERIE_REFLECTION_SENSITIVITY`: `conservative`, `balanced`, or `responsive`; controls how readily emotional/continuity cues trigger reflection
-- `REVERIE_REFLECTION_USER_MESSAGE_INTERVAL`: baseline number of user messages between scheduled reflections
-- `REVERIE_REFLECTION_MIN_INTERVAL_SECONDS`: baseline wall-clock throttle between reflection jobs
-- `REVERIE_REFLECTION_MIN_USER_MESSAGES`: gradual-start gate for non-explicit scheduled reflections
-- `REVERIE_REFLECTION_HISTORY_MESSAGE_LIMIT`: caps the evidence window passed to the journal writer
+- `REVERIE_REFLECTION_FREQUENCY`: `low`, `balanced`, or `high`
+- `REVERIE_REFLECTION_SENSITIVITY`: `conservative`, `balanced`, or `responsive`
+- `REVERIE_REFLECTION_USER_MESSAGE_INTERVAL`: baseline user-message cadence
+- `REVERIE_REFLECTION_MIN_INTERVAL_SECONDS`: wall-clock cooldown
+- `REVERIE_REFLECTION_HISTORY_MESSAGE_LIMIT`: evidence-window cap
+- `REVERIE_REFLECTION_CONTEXT_ENTRY_LIMIT`, `REVERIE_REFLECTION_CONTEXT_MAX_CHARS`: prompt-context limits
+
+### Growth Notifications
+
+- `REVERIE_GROWTH_NOTIFICATIONS_ENABLED`: enables rare UI growth notices
+- `REVERIE_GROWTH_NOTIFICATION_MIN_USER_MESSAGES`: minimum conversation depth before notices
+- `REVERIE_GROWTH_NOTIFICATION_MESSAGE_INTERVAL`: coarse turn gate
+- `REVERIE_GROWTH_NOTIFICATION_MIN_INTERVAL_SECONDS`: wall-clock quiet period
+- `REVERIE_GROWTH_NOTIFICATION_MIN_CONFIDENCE`, `REVERIE_GROWTH_NOTIFICATION_MIN_EVIDENCE_COUNT`: quality gates
+
+### Personal LoRA
+
+- `REVERIE_PERSONAL_LORA_ENABLED`: enables local review/training controls
+- `REVERIE_PERSONAL_LORA_DATA_PATH`: local JSONL/settings/manifest directory
+- `REVERIE_PERSONAL_LORA_RANK`, `REVERIE_PERSONAL_LORA_MAX_RANK`: conservative adapter rank controls
+- `REVERIE_PERSONAL_LORA_MIN_CONFIDENCE`, `REVERIE_PERSONAL_LORA_MIN_EVIDENCE_COUNT`: candidate quality gates
+- `REVERIE_PERSONAL_LORA_MAX_EXAMPLE_CHARS`, `REVERIE_PERSONAL_LORA_MAX_EXAMPLES_PER_JOB`: dataset/job caps
 
 ## Requirements
 
 - Python 3.11+
 - Ollama installed and running locally
-- A local Ollama model, for example:
+- A local Ollama chat model, for example:
 
 ```bash
 ollama pull llama3.1:8b
+```
+
+- The default local embedding model:
+
+```bash
+ollama pull nomic-embed-text
 ```
 
 ## Setup
@@ -78,10 +102,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-ollama pull nomic-embed-text
 ```
 
-Edit `.env` if you want to use a different Ollama host, chat model, embedding model, memory storage path, generation defaults, CORS origins, log level, or memory context budget.
+Edit `.env` if you want to use different Ollama models, storage paths, generation defaults, CORS origins, log level, or memory/growth budgets.
 
 ## Run
 
@@ -101,25 +124,31 @@ Checks that the API is running and returns system plus Ollama diagnostics, inclu
 
 Generates a chat response with Ollama. Streaming is enabled by default using Server-Sent Events.
 
-Request example:
-
-```json
-{
-  "messages": [
-    {"role": "system", "content": "You are Reverie, a warm and emotionally intelligent companion."},
-    {"role": "user", "content": "Hi, how are you feeling today?"}
-  ],
-  "stream": true
-}
-```
-
 Streaming response events:
 
 - `message`: incremental text chunks
+- `growth_notification`: optional rare growth notice metadata
 - `done`: final completion marker
 - `error`: meaningful stream failure details if Ollama fails after streaming starts
 
 For a non-streaming response, set `"stream": false`.
+
+### `GET /journal/entries`
+
+Returns recent local self-reflection journal entries for the Journal UI.
+
+### `GET /growth/personal-lora`
+
+Returns Personal LoRA settings, current job, example counts, and review queue items.
+
+### Personal LoRA actions
+
+- `PATCH /growth/personal-lora/settings`
+- `POST /growth/personal-lora/examples/{item_id}/approve`
+- `POST /growth/personal-lora/examples/{item_id}/reject`
+- `DELETE /growth/personal-lora/examples/{item_id}`
+- `POST /growth/personal-lora/start`
+- `POST /growth/personal-lora/stop`
 
 ## Project Structure
 
@@ -127,15 +156,11 @@ For a non-streaming response, set `"stream": false`.
 backend/
 ├── app/
 │   ├── main.py
-│   ├── core/
-│   │   ├── config.py
-│   │   ├── memory.py
-│   │   └── ollama_client.py
-│   ├── api/
-│   │   └── routes/
-│   │       └── chat.py
-│   └── models/
+│   ├── api/routes/          # Thin FastAPI route modules
+│   ├── core/                # Memory, reflection, growth, LoRA, Ollama clients
+│   ├── models/              # Pydantic request/response schemas
+│   └── services/            # Chat orchestration service
+├── tests/                   # Backend service and route tests
 ├── requirements.txt
-├── .env.example
 └── README.md
 ```

@@ -1,8 +1,6 @@
 # Reverie Frontend
 
-Tauri 2 + SvelteKit frontend for Reverie, an offline AI companion desktop app.
-
-This package is intentionally UI-only right now. It provides the desktop shell, warm dark visual language, and local chat prototype that the Python backend can connect to later.
+Tauri 2 + SvelteKit frontend for Reverie, an offline AI companion desktop app with warm chat, private journal review, memory/reflection settings, growth notifications, and Personal LoRA training controls.
 
 ## Prerequisites
 
@@ -10,6 +8,7 @@ This package is intentionally UI-only right now. It provides the desktop shell, 
 - npm 10+
 - Rust stable toolchain
 - Tauri 2 system dependencies for your operating system
+- Reverie backend running at `http://localhost:8000` unless `VITE_REVERIE_API_BASE_URL` is configured
 
 ## Setup
 
@@ -28,7 +27,15 @@ npm install
 | `npm run preview` | Preview the built frontend in a browser. |
 | `npm run check` | Run SvelteKit sync and TypeScript/Svelte diagnostics. |
 
-## Project structure
+## Current UI Capabilities
+
+- **Chat**: local backend chat integration, streaming response state, Markdown rendering, connection errors, and rare growth-notification cards.
+- **Journal**: private self-reflection entries with confidence, emotional intensity, promotion status, themes, insights, privacy tags, and training eligibility.
+- **Settings**: local controls for long-term memory, self-reflection, reflection frequency/sensitivity, growth notifications, and 8GB-aware context budget presets.
+- **Training**: Personal LoRA review panel with collection opt-in, training opt-in, pending candidate approval/rejection/deletion, job status, and safe start controls.
+- **Layout**: warm premium dark shell, fixed sidebar navigation, responsive panels, and local-first trust copy.
+
+## Project Structure
 
 ```text
 frontend/
@@ -36,14 +43,19 @@ frontend/
 ├── svelte.config.js            # SvelteKit static adapter for Tauri builds
 ├── vite.config.ts              # Vite dev server on Tauri's fixed port
 ├── src/
-│   ├── app.css                 # Premium warm dark theme and responsive layout styles
+│   ├── app.css                 # Premium warm dark theme and responsive panel styles
 │   ├── app.html                # SvelteKit HTML shell
 │   ├── lib/
-│   │   ├── chat/               # Local chat prototype factories and seed messages
+│   │   ├── api/                # Chat, journal, and growth API clients
+│   │   ├── chat/               # Local seed/fallback message helpers
 │   │   ├── components/
-│   │   │   ├── Chat/           # Chat window, message list, bubbles, markdown, composer
-│   │   │   └── Layout/         # App shell and future-friendly sidebar
-│   │   ├── config/             # App navigation and future feature configuration
+│   │   │   ├── Chat/           # Chat window, messages, markdown, composer, notices
+│   │   │   ├── Growth/         # Personal LoRA review/training panel
+│   │   │   ├── Journal/        # Reflection journal browser
+│   │   │   ├── Layout/         # App shell and sidebar
+│   │   │   └── Settings/       # Memory/reflection controls
+│   │   ├── config/             # App navigation metadata
+│   │   ├── stores/             # Chat, journal, settings, and growth stores
 │   │   ├── types/              # Shared TypeScript types
 │   │   └── utils/              # UI-safe formatting and markdown helpers
 │   └── routes/                 # SvelteKit routes
@@ -54,29 +66,28 @@ frontend/
     └── src/                    # Minimal Tauri bootstrap
 ```
 
-## Current UI foundation
+## Architecture Notes
 
-- Local-only chat state; no backend connection yet.
-- Warm, spacious dark theme intended to feel private and emotionally comfortable.
-- Fixed desktop sidebar with placeholders for Characters, Memory, Visual Novel mode, and Settings.
-- Main chat surface with scrollable messages, visually distinct user/assistant bubbles, and a bottom composer.
-- Assistant messages render basic GitHub-flavored Markdown via `marked`, with raw HTML escaped before rendering.
+The frontend is intentionally component-driven and trust-oriented:
 
-## Architecture notes
+- `src/lib/api/` isolates backend shape, timeouts, and user-friendly local-service errors.
+- `src/lib/stores/` keeps async loading state, selected journal entries, growth actions, and local settings out of markup.
+- `src/lib/components/Chat/` owns the active companion surface and only displays growth notifications provided by the backend/store.
+- `src/lib/components/Journal/` makes reflection artifacts inspectable without turning them into automatic canon.
+- `src/lib/components/Growth/` keeps Personal LoRA collection and training separate: examples must be collected, reviewed, approved, and training-opted-in before any job can use them.
+- `src/lib/components/Settings/` exposes calm MVP controls; advanced scheduler and backend synchronization can be added without changing the visual model.
 
-The frontend is intentionally small and component-driven:
+## Environment
 
-- `src/lib/components/Layout/` owns app chrome: sidebar, shell, and future high-level panels.
-- `src/lib/components/Chat/` owns conversation UI: window, message list, bubbles, markdown, and composer.
-- `src/lib/chat/` owns local prototype message factories so backend integration can replace that layer without rewriting UI components.
-- `src/lib/config/` owns navigation metadata and future feature entry points.
-- `src/lib/utils/` keeps formatting and rendering helpers out of Svelte component markup.
+Set `VITE_REVERIE_API_BASE_URL` if the backend is not on `http://localhost:8000`:
 
-This keeps future additions such as a character panel, memory viewer, Visual Novel mode, and settings pages from requiring a rewrite of the main chat shell.
+```bash
+VITE_REVERIE_API_BASE_URL=http://localhost:8000 npm run dev
+```
 
-## Future extension points
+## Future Extension Points
 
-- Replace `src/lib/chat/messages.ts` with a store or service that calls the local backend.
-- Convert disabled sidebar destinations into routed panels when features are ready.
-- Add character/session metadata beside `ChatMessage` instead of embedding it in presentational components.
+- Add full character gallery and character-card import/edit flows.
+- Add memory browser edit/delete controls using the same local-first panel pattern.
+- Synchronize Settings UI with backend `.env`/runtime controls once the settings API is introduced.
 - Add Visual Novel mode as a sibling layout surface under `src/lib/components/VisualNovel/`.

@@ -54,7 +54,10 @@
     }).format(date);
   };
 
-  const percent = (value: number | undefined) => `${Math.round((value ?? 0) * 100)}%`;
+  const percent = (value: number | undefined) => {
+    const bounded = Math.min(Math.max(value ?? 0, 0), 1);
+    return `${Math.round(bounded * 100)}%`;
+  };
 
   const labelFor = (value: string | undefined) =>
     (value ?? 'unknown')
@@ -81,7 +84,18 @@
     return formatDate(job.completed_at);
   };
 
-  const progressWidth = (job: LoRATrainingJob | null) => `${Math.max(6, Math.round((job?.progress ?? 0) * 100))}%`;
+  const progressWidth = (job: LoRATrainingJob | null) => {
+    const bounded = Math.min(Math.max(job?.progress ?? 0, 0), 1);
+    return `${Math.max(6, Math.round(bounded * 100))}%`;
+  };
+
+  const startDisabledReason = $derived.by(() => {
+    if ($personalLoRAReviewView.trainingActive) return 'Training is already running.';
+    if ($growthStore.actionState !== 'idle') return 'Please wait for the current action to finish.';
+    if (!$personalLoRAReviewView.trainingOptedIn) return 'Turn on training opt-in before starting.';
+    if ($personalLoRAReviewView.approvedExamples.length === 0) return 'Approve at least one candidate before training.';
+    return '';
+  });
 
   const statusTone = (status: LoRATrainingStatus | undefined) => {
     if (status === 'failed') return 'danger';
@@ -199,7 +213,9 @@
           {:else if $growthStore.currentJob?.status === 'failed'}
             <p class="training-warning">{$growthStore.currentJob.error ?? 'The last training run did not finish.'}</p>
           {:else}
-            <p class="training-small-note">Ready when you are: {$personalLoRAReviewView.approvedExamples.length} approved examples available.</p>
+            <p class="training-small-note">
+              {startDisabledReason || `Ready when you are: ${$personalLoRAReviewView.approvedExamples.length} approved examples available.`}
+            </p>
           {/if}
           <button class="primary-training-button" type="button" onclick={startTraining} disabled={!$personalLoRAReviewView.canStartTraining}>
             {$growthStore.actionState === 'training' ? 'Starting…' : 'Start Training'}
@@ -220,7 +236,7 @@
           <div class="training-empty compact-empty">
             <div class="training-empty-mark">✓</div>
             <h3>No pending candidates</h3>
-            <p>When future reflections qualify for training review, they will appear here before anything can be used.</p>
+            <p>When reflections qualify for training review, they will appear here before anything can be used.</p>
           </div>
         {:else}
           <div class="candidate-list">

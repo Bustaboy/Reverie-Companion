@@ -22,6 +22,7 @@ class PersonalLoRASettingsUpdate(BaseModel):
     rank: int | None = Field(default=None, ge=8, le=16)
     max_steps: int | None = Field(default=None, ge=10, le=120)
     learning_rate: float | None = Field(default=None, ge=0.00001, le=0.0002)
+    batch_size: int | None = Field(default=None, ge=1, le=2)
     gradient_accumulation_steps: int | None = Field(default=None, ge=4, le=16)
     max_sequence_length: int | None = Field(default=None, ge=256, le=1024)
     pause_during_chat: bool | None = None
