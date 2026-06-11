@@ -2,3 +2,5 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 ollama==0.4.5
 pydantic-settings==2.7.1
+mem0ai>=0.1.0
+lancedb>=0.17.0

@@ -6,6 +6,7 @@ logging, and generation behavior without changing code.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,22 @@ class Settings(BaseSettings):
     default_num_predict: int = Field(default=512, gt=0)
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+
+    data_dir: Path = Path("./data")
+
+    memory_enabled: bool = True
+    memory_store_provider: str = "lancedb"
+    memory_collection_name: str = "reverie_memories"
+    memory_default_user_id: str = "local_user"
+    memory_default_session_id: str = "default_session"
+    memory_embedding_model: str = "nomic-embed-text"
+    memory_embedding_dims: int = Field(default=768, gt=0)
+    memory_llm_model: str | None = None
+    memory_extraction_temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+    memory_add_infer: bool = True
+    memory_search_threshold: float = Field(default=0.1, ge=0.0, le=1.0)
+    memory_context_limit: int = Field(default=6, gt=0, le=20)
+    memory_context_max_chars: int = Field(default=4_000, gt=500, le=20_000)
 
 
 @lru_cache

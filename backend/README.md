@@ -4,7 +4,7 @@ FastAPI backend foundation for Reverie, a local-first AI companion powered by Ol
 
 The current backend is intentionally small and modular so future systems can be layered in cleanly:
 
-- memory and retrieval
+- memory and retrieval (mem0 + embedded LanceDB)
 - character and prompt orchestration
 - reflection, journaling, and growth workflows
 - future local media/video integrations
@@ -27,9 +27,10 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+ollama pull nomic-embed-text
 ```
 
-Edit `.env` if you want to use a different Ollama host, model, generation defaults, CORS origins, or log level.
+Edit `.env` if you want to use a different Ollama host, model, generation defaults, CORS origins, log level, or local memory storage path.
 
 ## Run
 
@@ -38,6 +39,34 @@ uvicorn app.main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`.
+
+
+## Local Memory Foundation
+
+The backend includes a backend-only `MemoryManager` in `app/core/memory.py` for long-term memory. It uses:
+
+- `mem0` for adaptive user/session memory extraction and retrieval
+- embedded LanceDB under `REVERIE_DATA_DIR/memory/lancedb` for local vector persistence
+- Ollama embeddings through `REVERIE_MEMORY_EMBEDDING_MODEL` (default: `nomic-embed-text`) so no cloud provider is required
+
+The memory manager is lazy-loaded and is not wired into API routes yet. Future chat orchestration can call:
+
+```python
+from app.core.memory import MemoryManager
+
+memory = MemoryManager()
+memory.add_memory(
+    "The user prefers emotionally warm, detailed companion responses.",
+    {"memory_type": "semantic", "source": "chat", "session_id": "default_session"},
+)
+context = memory.get_relevant_context("How should I respond to the user?")
+```
+
+Keep Ollama running and pull the embedding model before first use:
+
+```bash
+ollama pull nomic-embed-text
+```
 
 ## Endpoints
 
@@ -77,6 +106,7 @@ backend/
 │   ├── main.py
 │   ├── core/
 │   │   ├── config.py
+│   │   ├── memory.py
 │   │   └── ollama_client.py
 │   ├── api/
 │   │   └── routes/
