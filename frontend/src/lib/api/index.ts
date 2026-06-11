@@ -11,3 +11,5 @@ export {
   type MessagePayload,
   type MessageRole
 } from './chatService';
+
+export type { MemoryContext, MemoryContextItem, MemoryContextStatus } from '$lib/types/chat';

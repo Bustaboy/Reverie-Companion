@@ -114,12 +114,26 @@ interface BackendMemoryContextBody {
   context?: unknown;
   used?: unknown;
   memory_used?: unknown;
+  has_context?: unknown;
+  hasContext?: unknown;
   status?: unknown;
   summary?: unknown;
   preview?: unknown;
+  label?: unknown;
+  message?: unknown;
   items?: unknown;
   results?: unknown;
+  item_count?: unknown;
+  itemCount?: unknown;
+  count?: unknown;
+  memory_count?: unknown;
+  memoryCount?: unknown;
+  disabled?: unknown;
+  unavailable?: unknown;
+  error?: unknown;
+  empty?: unknown;
   request_id?: unknown;
+  requestId?: unknown;
 }
 
 interface BackendStreamMessageBody extends BackendMemoryContextBody {
@@ -132,6 +146,7 @@ interface BackendStreamErrorBody {
   error?: unknown;
   details?: unknown;
   request_id?: unknown;
+  requestId?: unknown;
 }
 
 interface BackendStreamDoneBody extends BackendMemoryContextBody {
@@ -440,19 +455,13 @@ export class ChatService {
         event: 'message',
         content: typeof body.content === 'string' ? body.content : '',
         model: typeof body.model === 'string' ? body.model : undefined,
-        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body)
       };
     }
 
-    if (rawEvent.event === 'memory' || rawEvent.event === 'context') {
-      const body = data as BackendMemoryContextBody;
-      const memoryContext = this.extractMemoryContext(body);
-      return {
-        event: 'memory',
-        memoryContext: memoryContext ?? { used: false, status: 'empty' },
-        requestId: typeof body.request_id === 'string' ? body.request_id : undefined
-      };
+    if (['memory', 'context', 'memory_context'].includes(rawEvent.event)) {
+      return this.toChatStreamMemoryEvent(data);
     }
 
     if (rawEvent.event === 'error') {
@@ -460,7 +469,7 @@ export class ChatService {
       return {
         event: 'error',
         error: typeof body.error === 'string' ? body.error : 'The companion stream reported an error.',
-        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        requestId: this.readRequestId(body),
         details: body.details
       };
     }
@@ -470,7 +479,7 @@ export class ChatService {
       return {
         event: 'done',
         done: typeof body.done === 'boolean' ? body.done : true,
-        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body)
       };
     }
@@ -478,8 +487,19 @@ export class ChatService {
     throw new ChatServiceError(`The companion stream sent an unsupported '${rawEvent.event}' event.`);
   }
 
-  private extractMemoryContext(body: BackendMemoryContextBody): MemoryContext | undefined {
-    const explicitContext = body.memory_context ?? body.memoryContext ?? body.memory ?? body.context;
+  private toChatStreamMemoryEvent(data: unknown): ChatStreamMemoryEvent {
+    const body = this.isRecord(data) ? data : {};
+    const memoryContext = this.extractMemoryContext(body) ?? this.normalizeMemoryContext(body);
+
+    return {
+      event: 'memory',
+      memoryContext: memoryContext ?? { used: false, status: 'unknown' },
+      requestId: this.readRequestId(body)
+    };
+  }
+
+  private extractMemoryContext(body: BackendMemoryContextBody | Record<string, unknown>): MemoryContext | undefined {
+    const explicitContext = body.memory_context ?? body.memoryContext ?? body.memory ?? this.getNestedMemory(body);
     const explicitItems = body.memories ?? body.items ?? body.results;
     const normalized = this.normalizeMemoryContext(explicitContext, explicitItems);
 
@@ -487,24 +507,16 @@ export class ChatService {
       return normalized;
     }
 
-    const status = this.normalizeMemoryStatus(body.status);
-    const used = this.normalizeBoolean(body.used ?? body.memory_used);
-    const summary = this.normalizeText(body.summary ?? body.preview);
+    return this.normalizeMemoryContext(body, explicitItems);
+  }
 
-    const items = this.normalizeMemoryItems(explicitItems);
-
-    if (used === undefined && !status && !summary && items.length === 0) {
-      return undefined;
+  private getNestedMemory(body: BackendMemoryContextBody | Record<string, unknown>): unknown {
+    const context = body.context;
+    if (!this.isRecord(context)) {
+      return context;
     }
 
-    const effectiveUsed = used ?? (status === 'used' || Boolean(summary) || items.length > 0);
-
-    return {
-      used: effectiveUsed,
-      status: status ?? (effectiveUsed ? 'used' : 'empty'),
-      summary,
-      items: items.length > 0 ? items : undefined
-    };
+    return context.memoryContext ?? context.memory_context ?? context.memory ?? context.memories;
   }
 
   private normalizeMemoryContext(context: unknown, fallbackItems?: unknown): MemoryContext | undefined {
@@ -512,31 +524,55 @@ export class ChatService {
       return undefined;
     }
 
+    if (typeof context === 'boolean') {
+      return { used: context, status: context ? 'used' : 'empty' };
+    }
+
     if (typeof context === 'string') {
       const summary = this.normalizeText(context);
-      return summary ? { used: true, status: 'used', summary } : undefined;
+      return summary ? { used: true, status: 'used', summary } : { used: false, status: 'empty' };
     }
 
     if (Array.isArray(context)) {
       const items = this.normalizeMemoryItems(context);
-      return items.length > 0 ? { used: true, status: 'used', items, summary: items[0]?.label } : undefined;
+      return {
+        used: context.length > 0,
+        status: context.length > 0 ? 'used' : 'empty',
+        itemCount: context.length,
+        items: items.length > 0 ? items : undefined,
+        summary: items[0]?.label
+      };
     }
 
-    if (typeof context !== 'object') {
+    if (!this.isRecord(context)) {
       return undefined;
     }
 
-    const body = context as BackendMemoryContextBody;
-    const nestedItems = body.memories ?? body.items ?? body.results ?? fallbackItems;
+    const nestedItems = context.memories ?? context.items ?? context.results ?? fallbackItems;
     const items = this.normalizeMemoryItems(nestedItems);
-    const status = this.normalizeMemoryStatus(body.status);
-    const used = this.normalizeBoolean(body.used ?? body.memory_used);
-    const summary = this.normalizeText(body.summary ?? body.preview ?? body.context ?? body.memory_context);
-    const effectiveUsed = used ?? (status === 'used' || Boolean(summary) || items.length > 0);
+    const itemCount =
+      this.readNumber(context, ['item_count', 'itemCount', 'count', 'memory_count', 'memoryCount']) ??
+      (Array.isArray(nestedItems) ? nestedItems.length : undefined);
+    const status = this.normalizeMemoryStatus(context.status) ?? this.statusFromFlags(context);
+    const used = this.readBoolean(context, ['used', 'has_context', 'hasContext', 'memory_used']);
+    const summary = this.normalizeText(
+      context.summary ?? context.preview ?? context.label ?? context.message ?? context.context
+    );
+    const hasMemorySignal =
+      used !== undefined || status !== undefined || Boolean(summary) || items.length > 0 || itemCount !== undefined;
+
+    if (!hasMemorySignal) {
+      return undefined;
+    }
+
+    const unavailableStatus = status === 'disabled' || status === 'unavailable' || status === 'empty';
+    const effectiveUsed =
+      used ?? (!unavailableStatus && (status === 'used' || Boolean(summary) || items.length > 0 || (itemCount ?? 0) > 0));
 
     return {
       used: effectiveUsed,
       status: status ?? (effectiveUsed ? 'used' : 'empty'),
+      itemCount,
       summary,
       items: items.length > 0 ? items : undefined
     };
@@ -559,13 +595,12 @@ export class ChatService {
       return label ? { label } : undefined;
     }
 
-    if (!item || typeof item !== 'object') {
+    if (!this.isRecord(item)) {
       return undefined;
     }
 
-    const candidate = item as Record<string, unknown>;
     const label = this.compactMemoryLabel(
-      candidate.label ?? candidate.summary ?? candidate.text ?? candidate.content ?? candidate.memory ?? candidate.title
+      item.label ?? item.summary ?? item.text ?? item.content ?? item.memory ?? item.title ?? item.message
     );
 
     if (!label) {
@@ -574,7 +609,7 @@ export class ChatService {
 
     return {
       label,
-      id: typeof candidate.id === 'string' ? candidate.id : undefined
+      id: typeof item.id === 'string' ? item.id : undefined
     };
   }
 
@@ -591,16 +626,55 @@ export class ChatService {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
-  private normalizeBoolean(value: unknown): boolean | undefined {
-    return typeof value === 'boolean' ? value : undefined;
+  private readRequestId(
+    body: BackendMemoryContextBody | BackendStreamErrorBody | Record<string, unknown>
+  ): string | undefined {
+    const requestId = body.request_id ?? body.requestId;
+    return typeof requestId === 'string' ? requestId : undefined;
+  }
+
+  private readBoolean(value: Record<string, unknown>, keys: string[]): boolean | undefined {
+    for (const key of keys) {
+      if (typeof value[key] === 'boolean') {
+        return value[key];
+      }
+    }
+
+    return undefined;
+  }
+
+  private readNumber(value: Record<string, unknown>, keys: string[]): number | undefined {
+    for (const key of keys) {
+      const candidate = value[key];
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
+  private statusFromFlags(value: Record<string, unknown>): MemoryContext['status'] | undefined {
+    if (value.disabled === true) return 'disabled';
+    if (value.unavailable === true || value.error === true) return 'unavailable';
+    if (value.empty === true) return 'empty';
+    return undefined;
   }
 
   private normalizeMemoryStatus(value: unknown): MemoryContext['status'] | undefined {
-    if (value !== 'used' && value !== 'empty' && value !== 'disabled' && value !== 'unavailable') {
+    if (typeof value !== 'string') {
       return undefined;
     }
 
-    return value;
+    const normalized = value.toLowerCase();
+    const knownStatuses: Array<MemoryContext['status']> = ['used', 'empty', 'disabled', 'unavailable', 'unknown'];
+    return knownStatuses.includes(normalized as MemoryContext['status'])
+      ? (normalized as MemoryContext['status'])
+      : undefined;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private parseSseJson(rawEvent: RawSseEvent): unknown {
