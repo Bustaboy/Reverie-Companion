@@ -9,6 +9,8 @@ import time
 from collections.abc import AsyncIterator, Iterable
 
 from app.core.config import Settings
+from app.core.growth import GrowthOrchestrator
+from app.core.lora import get_personal_lora_trainer
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
 from app.core.reflection import JournalEntry, ReflectionManager, ReflectionScheduler
@@ -53,12 +55,37 @@ class ChatService:
         ollama_client: OllamaClient,
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
+        growth_orchestrator: GrowthOrchestrator | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
         self._reflection_scheduler = ReflectionScheduler.from_settings(settings)
+        # Preserve historical test/reset hooks while delegating new growth-loop
+        # coordination to GrowthOrchestrator. FastAPI creates services per request,
+        # so process-wide timing remains on lightweight class state.
+        GrowthOrchestrator._reflection_lock = type(self)._reflection_lock
+        GrowthOrchestrator._last_reflection_started_at = type(
+            self
+        )._last_reflection_started_at
+        GrowthOrchestrator._inflight_reflection_tasks = type(
+            self
+        )._inflight_reflection_tasks
+        GrowthOrchestrator._last_growth_notification_at = type(
+            self
+        )._last_growth_notification_at
+        GrowthOrchestrator._emitted_growth_notification_ids = type(
+            self
+        )._emitted_growth_notification_ids
+        self._growth_orchestrator = growth_orchestrator or GrowthOrchestrator(
+            settings=settings,
+            memory_manager=memory_manager,
+            reflection_manager=reflection_manager,
+            lora_trainer=(
+                get_personal_lora_trainer() if settings.personal_lora_enabled else None
+            ),
+        )
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
@@ -122,18 +149,20 @@ class ChatService:
     ) -> tuple[ChatRequest, GrowthNotification | None]:
         """Build a model request and choose at most one optional growth notice."""
 
-        # The prompt uses only reflections that already exist. Any new reflection
-        # produced from this request is queued below and can influence later turns,
-        # which keeps the current chat response from waiting on journaling work.
-        memory_context, reflection_entries = await asyncio.gather(
-            self._retrieve_memory_context(request, request_id=request_id),
-            self._retrieve_reflection_entries(request, request_id=request_id),
+        # The orchestrator ties together existing memory, reflection journals,
+        # growth notices, and optional LoRA collection. It only uses already
+        # persisted growth artifacts on the current response path; new reflection
+        # work is queued after prompt preparation for later turns.
+        growth_context = await self._growth_orchestrator.prepare_chat_growth_context(
+            request, request_id=request_id
         )
-        reflection_context = self._reflection_context_from_entries(reflection_entries)
-        growth_notification = self._select_growth_notification(
-            reflection_entries, request=request, request_id=request_id
+        memory_context = growth_context.memory_context
+        reflection_context = growth_context.reflection_context
+        growth_notification = growth_context.growth_notification
+        self._growth_orchestrator.schedule_reflection_if_due(
+            request, request_id=request_id
         )
-        self._schedule_reflection_if_due(request, request_id=request_id)
+        self._sync_growth_state()
 
         # Keep retrieved continuity context below caller/system instructions and
         # above dialogue. Memory is inserted before reflection so durable facts
@@ -464,7 +493,7 @@ class ChatService:
         async for frame in self._ollama_client.stream_chat(
             request, request_id=request_id
         ):
-            yield self._inject_growth_notification_into_done_sse(
+            yield self._growth_orchestrator.inject_growth_notification_into_done_sse(
                 frame, growth_notification
             )
 
@@ -797,6 +826,23 @@ class ChatService:
             *normalized_context_messages,
             *messages[insert_at:],
         ]
+
+    def _sync_growth_state(self) -> None:
+        """Mirror orchestrator process state for legacy tests and callers."""
+
+        type(self)._reflection_lock = GrowthOrchestrator._reflection_lock
+        type(self)._last_reflection_started_at = (
+            GrowthOrchestrator._last_reflection_started_at
+        )
+        type(self)._inflight_reflection_tasks = (
+            GrowthOrchestrator._inflight_reflection_tasks
+        )
+        type(self)._last_growth_notification_at = (
+            GrowthOrchestrator._last_growth_notification_at
+        )
+        type(self)._emitted_growth_notification_ids = (
+            GrowthOrchestrator._emitted_growth_notification_ids
+        )
 
     @classmethod
     def _get_reflection_lock(cls) -> asyncio.Lock:

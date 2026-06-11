@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
+from app.api.routes.growth import router as growth_router
 from app.api.routes.journal import router as journal_router
 from app.core.config import Settings, get_settings
 from app.core.ollama_client import OllamaClient, OllamaClientError
@@ -32,7 +33,9 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     """Return compact, structured validation errors for client mistakes.
 
     FastAPI's default validation response is useful for developers but can be
@@ -43,7 +46,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
     errors = [
         {
-            "field": ".".join(str(part) for part in error.get("loc", []) if part != "body"),
+            "field": ".".join(
+                str(part) for part in error.get("loc", []) if part != "body"
+            ),
             "message": error.get("msg", "Invalid value."),
             "type": error.get("type", "value_error"),
         }
@@ -88,7 +93,11 @@ def create_app() -> FastAPI:
 
     app.include_router(chat_router)
     app.include_router(journal_router)
-    logger.info("Reverie backend application configured", extra={"app_version": settings.app_version})
+    app.include_router(growth_router)
+    logger.info(
+        "Reverie backend application configured",
+        extra={"app_version": settings.app_version},
+    )
 
     return app
 
@@ -97,7 +106,9 @@ app = create_app()
 
 
 @app.get("/health", tags=["health"])
-async def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
+async def health(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
     """Return API, system, and Ollama health diagnostics."""
 
     ollama_client = OllamaClient(settings)
@@ -120,7 +131,10 @@ async def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[s
             response["status"] = "degraded"
         response.update(ollama_status)
     except OllamaClientError as exc:
-        logger.warning("Health check degraded", extra={"error": exc.message, "details": exc.details})
+        logger.warning(
+            "Health check degraded",
+            extra={"error": exc.message, "details": exc.details},
+        )
         response["status"] = "degraded"
         response["ollama"] = {
             "reachable": False,
