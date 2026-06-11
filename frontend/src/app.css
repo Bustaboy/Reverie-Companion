@@ -1556,3 +1556,429 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.training-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1.8rem;
+  background:
+    radial-gradient(circle at 12% 4%, rgba(240, 154, 159, 0.16), transparent 24rem),
+    radial-gradient(circle at 88% 0%, rgba(122, 74, 132, 0.14), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.062), rgba(255, 255, 255, 0.028)),
+    var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px);
+}
+
+.training-hero,
+.candidate-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.training-hero {
+  padding: 1.35rem 1.55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.training-hero > div {
+  max-width: 54rem;
+}
+
+.training-notice {
+  display: grid;
+  gap: 0.25rem;
+  margin: 1rem 1.5rem 0;
+  padding: 0.9rem 1rem;
+  color: #ffdfe0;
+  border: 1px solid rgba(240, 154, 159, 0.24);
+  border-radius: 1rem;
+  background: rgba(240, 154, 159, 0.09);
+}
+
+.training-notice span,
+.training-card p,
+.training-small-note,
+.candidate-card p,
+.candidate-meta,
+.reviewed-strip span {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.training-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.2rem 1.2rem;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.training-overview {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.2fr) minmax(16rem, 0.8fr);
+  gap: 0.85rem;
+}
+
+.training-card,
+.candidate-card,
+.reviewed-strip {
+  border: 1px solid var(--line);
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.066), rgba(255, 255, 255, 0.034)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.training-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.training-card h2,
+.candidate-section-header h2,
+.candidate-card h3,
+.training-empty h2,
+.training-empty h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.training-card p,
+.candidate-card p {
+  margin: 0;
+}
+
+.status-card {
+  grid-row: span 2;
+  align-content: start;
+  background:
+    linear-gradient(135deg, rgba(240, 154, 159, 0.13), rgba(122, 74, 132, 0.095)),
+    rgba(255, 255, 255, 0.045);
+}
+
+.lora-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.lora-status-grid > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.lora-status-grid span,
+.candidate-topline,
+.candidate-section-header > span {
+  color: var(--dim);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lora-status-grid strong {
+  color: var(--text);
+  font-size: 0.96rem;
+}
+
+.trust-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(240, 154, 159, 0.105), rgba(132, 91, 150, 0.065)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.trust-card > span {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  color: #ffe1db;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.12);
+}
+
+.controls-card,
+.start-card {
+  align-content: start;
+}
+
+.primary-training-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.85rem;
+  padding: 0.75rem 1.05rem;
+  color: #20151c;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.primary-training-button:hover:not(:disabled),
+.primary-training-button:focus-visible {
+  transform: translateY(-1px);
+}
+
+.primary-training-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+  filter: saturate(0.75);
+}
+
+.training-progress {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.training-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #ffe4e3;
+}
+
+.status-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.status-dot.working {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 4px rgba(255, 176, 166, 0.12);
+}
+
+.status-dot.ready {
+  background: #78e0b2;
+  box-shadow: 0 0 0 4px rgba(120, 224, 178, 0.12);
+}
+
+.status-dot.danger {
+  background: #ff9a8f;
+}
+
+.progress-track {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+}
+
+.training-warning {
+  padding: 0.68rem 0.76rem;
+  color: #ffe0dc !important;
+  border: 1px solid rgba(255, 176, 166, 0.18);
+  border-radius: 0.9rem;
+  background: rgba(255, 176, 166, 0.07);
+}
+
+.candidate-section {
+  margin-top: 1rem;
+}
+
+.candidate-section-header {
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.candidate-section-header h2 {
+  margin-top: 0.2rem;
+}
+
+.candidate-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.candidate-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.candidate-main {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.candidate-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.candidate-topline strong {
+  color: #ffd8d4;
+}
+
+.candidate-meta,
+.training-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.candidate-meta span,
+.training-tags span {
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.candidate-meta span {
+  padding: 0.32rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.training-tags span {
+  padding: 0.42rem 0.62rem;
+  color: #ffe4e3;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 6.8rem;
+}
+
+.candidate-actions button {
+  padding: 0.58rem 0.75rem;
+  color: #ffe3df;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.065);
+  cursor: pointer;
+}
+
+.candidate-actions button.approve {
+  color: #1c171c;
+  background: linear-gradient(135deg, #ffd7d0, var(--accent-strong));
+  font-weight: 900;
+}
+
+.candidate-actions button.danger {
+  color: #ffc7bf;
+  border-color: rgba(255, 176, 166, 0.2);
+  background: rgba(255, 176, 166, 0.06);
+}
+
+.candidate-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.reviewed-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.reviewed-strip strong {
+  color: #ffd8d4;
+}
+
+.reviewed-strip span {
+  max-width: 22rem;
+  overflow: hidden;
+  padding: 0.34rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 999px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-empty {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  max-width: 32rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.training-empty.compact-empty {
+  max-width: none;
+  border: 1px solid var(--line);
+  border-radius: 1.35rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.training-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.35rem;
+  background: linear-gradient(135deg, rgba(240, 154, 159, 0.88), rgba(122, 74, 132, 0.88));
+  box-shadow: 0 18px 40px rgba(240, 154, 159, 0.14);
+  font-size: 1.5rem;
+}
+
+.training-empty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 980px) {
+  .training-overview,
+  .candidate-card {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .training-hero,
+  .candidate-section-header,
+  .candidate-topline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lora-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
