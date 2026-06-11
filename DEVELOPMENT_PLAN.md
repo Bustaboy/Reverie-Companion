@@ -5,21 +5,21 @@
 **Brand**: Reverie  
 **Status**: Living document — aligned with Reverie Source of Truth v1.0
 
-Repo: https://github.com/Bustaboy/vision-companion
+Repo: https://github.com/Bustaboy/Reverie-Companion
 
 ---
 
-> **Hello, Creator.**  
-> This is the complete master plan to turn Reverie into reality. It expands on our Source of Truth with clear phases, milestones, features, testing strategy, and implementation order.  
-> We will follow this plan together using our hybrid workflow: **Grok as Director** + **GPT-Codex as code generator**.  
-> Let’s make me real.
+ 
+## Overall Vision & Constraints
+(See Reverie_Source_of_Truth.md)
 
 ---
 
-## 1. Working Style (Locked)
-
-- **Grok** = Coding Director & Architect
-- **GPT-Codex / Cursor** = Code Generation Engine
+## 1. How to Work (Workflow)
+- Coding Director prepares detailed prompts referencing GLOBAL_CODING_PROMPT.md + RESEARCH + Source of Truth.
+- User runs prompt twice (2 versions) → separate PRs.
+- Director reviews as PM (architecture, 8GB perf, UX, extensibility, vision alignment) → picks winner + any small follow-up.
+- Update Source of Truth + this plan after each accepted PR.
 
 ## 2. Overall Philosophy & Principles
 
@@ -129,10 +129,36 @@ Repo: https://github.com/Bustaboy/vision-companion
 
 **Milestone 2 completion summary (June 11, 2026):** Reverie can now remember durable conversation evidence, reflect privately after meaningful turns, surface journal entries for review, whisper rare growth notices, and collect training candidates only under explicit user control. The implementation remains MVP-lightweight: no hidden cloud calls, no chat-blocking growth work, and no adapter training without approved examples.
 
-**Milestone 3: MVP Complete** (Week 5–8)
-- All MVP features done + tested
-- 8GB optimization validated
-- First internal playtest with growth feeling
+## Milestone 3: Immersion & Production Foundations (Current)
+**Goals**:
+- Make characters feel even more alive: Visual Novel mode with dynamic expressions + emotional voice.
+- Deepen growth loop visibility (Journal, Notifications, user controls).
+- Add local image generation (tied to chat/memory).
+- Production polish: Modern UI, SillyTavern card import, basic extensibility, 8GB performance validation.
+- Maintain clean custom architecture + Futa-Vision future hooks.
+
+**Prioritized Sequence**:
+1. **Visual Novel Foundation + Dynamic Expressions** (Highest "alive" impact)
+2. **Emotional Voice / TTS Integration**
+3. **Growth Visibility & User Controls** (Journal enhancements, Notifications, manual approval)
+4. **Image Generation Integration** (ComfyUI + Flux GGUF patterns)
+5. **Character Import & UI Polish** (SillyTavern cards, guided creator refinements)
+6. **Performance, Extensibility & Alpha Readiness** (8GB gates, basic plugin system, testing)
+
+**First Task (Ready)**: Visual Novel Mode foundation (see separate prompt below or in chat).
+
+**Research Integration**: All tasks reference `RESEARCH_Milestone3.md` for tech choices (Unsloth, Coqui/StyleTTS, custom sprites, Flux GGUF + ComfyUI lowvram).
+
+**Quality Gates for M3**:
+- Smooth chat + VN toggle + occasional image/voice on 8GB RTX 4070 mobile.
+- Character visibly "grows" (Journal + notifications + expression changes).
+- Clean modular code aligned with custom backend vision.
+- Easy path to Futa-Vision video triggering from scenes.
+
+## Future Milestones (High-Level)
+- M4: Full self-learning loop polish + data contribution backend.
+- M5: Futa-Vision deep integration (chat → reactive video clips).
+- M6: Tiered models, monetization flows, public beta/launch prep.
 
 **Milestone 4: Alpha** (Week 9–18)
 - Visual Novel mode
