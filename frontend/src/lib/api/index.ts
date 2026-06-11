@@ -4,6 +4,8 @@ export {
   chatService,
   type ChatRequest,
   type ChatResponse,
+  type ChatStreamEvent,
+  type ChatStreamMemoryEvent,
   type ChatServiceOptions,
   type Message,
   type MessagePayload,

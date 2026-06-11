@@ -1,4 +1,5 @@
 import { dev } from '$app/environment';
+import type { MemoryContext, MemoryContextItem } from '$lib/types/chat';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -40,6 +41,8 @@ export interface ChatResponse {
   model: string;
   message: MessagePayload;
   done: boolean;
+  /** Optional normalized memory context returned by newer backends. */
+  memoryContext?: MemoryContext;
 }
 
 export interface ChatStreamOptions {
@@ -51,6 +54,13 @@ export interface ChatStreamMessageEvent {
   event: 'message';
   content: string;
   model?: string;
+  requestId?: string;
+  memoryContext?: MemoryContext;
+}
+
+export interface ChatStreamMemoryEvent {
+  event: 'memory';
+  memoryContext: MemoryContext;
   requestId?: string;
 }
 
@@ -65,9 +75,14 @@ export interface ChatStreamDoneEvent {
   event: 'done';
   done: boolean;
   requestId?: string;
+  memoryContext?: MemoryContext;
 }
 
-export type ChatStreamEvent = ChatStreamMessageEvent | ChatStreamErrorEvent | ChatStreamDoneEvent;
+export type ChatStreamEvent =
+  | ChatStreamMessageEvent
+  | ChatStreamMemoryEvent
+  | ChatStreamErrorEvent
+  | ChatStreamDoneEvent;
 
 export interface ChatServiceOptions {
   /** Backend base URL, for example http://localhost:8000. */
@@ -91,7 +106,23 @@ interface RawSseEvent {
   data: string;
 }
 
-interface BackendStreamMessageBody {
+interface BackendMemoryContextBody {
+  memory_context?: unknown;
+  memoryContext?: unknown;
+  memory?: unknown;
+  memories?: unknown;
+  context?: unknown;
+  used?: unknown;
+  memory_used?: unknown;
+  status?: unknown;
+  summary?: unknown;
+  preview?: unknown;
+  items?: unknown;
+  results?: unknown;
+  request_id?: unknown;
+}
+
+interface BackendStreamMessageBody extends BackendMemoryContextBody {
   content?: unknown;
   model?: unknown;
   request_id?: unknown;
@@ -103,7 +134,7 @@ interface BackendStreamErrorBody {
   request_id?: unknown;
 }
 
-interface BackendStreamDoneBody {
+interface BackendStreamDoneBody extends BackendMemoryContextBody {
   done?: unknown;
   request_id?: unknown;
 }
@@ -267,8 +298,9 @@ export class ChatService {
         throw this.toServiceError(response, responseBody as BackendErrorBody);
       }
 
-      this.logResponse(url, responseBody);
-      return responseBody as ChatResponse;
+      const chatResponse = this.toChatResponse(responseBody);
+      this.logResponse(url, chatResponse);
+      return chatResponse;
     } catch (error) {
       throw this.toUserFriendlyError(error);
     } finally {
@@ -300,6 +332,14 @@ export class ChatService {
         cause: error
       });
     }
+  }
+
+  private toChatResponse(responseBody: unknown): ChatResponse {
+    const body = responseBody as ChatResponse & BackendMemoryContextBody;
+    return {
+      ...body,
+      memoryContext: this.extractMemoryContext(body)
+    };
   }
 
   private async *readSseEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<RawSseEvent, void, void> {
@@ -400,6 +440,17 @@ export class ChatService {
         event: 'message',
         content: typeof body.content === 'string' ? body.content : '',
         model: typeof body.model === 'string' ? body.model : undefined,
+        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        memoryContext: this.extractMemoryContext(body)
+      };
+    }
+
+    if (rawEvent.event === 'memory' || rawEvent.event === 'context') {
+      const body = data as BackendMemoryContextBody;
+      const memoryContext = this.extractMemoryContext(body);
+      return {
+        event: 'memory',
+        memoryContext: memoryContext ?? { used: false, status: 'empty' },
         requestId: typeof body.request_id === 'string' ? body.request_id : undefined
       };
     }
@@ -419,11 +470,137 @@ export class ChatService {
       return {
         event: 'done',
         done: typeof body.done === 'boolean' ? body.done : true,
-        requestId: typeof body.request_id === 'string' ? body.request_id : undefined
+        requestId: typeof body.request_id === 'string' ? body.request_id : undefined,
+        memoryContext: this.extractMemoryContext(body)
       };
     }
 
     throw new ChatServiceError(`The companion stream sent an unsupported '${rawEvent.event}' event.`);
+  }
+
+  private extractMemoryContext(body: BackendMemoryContextBody): MemoryContext | undefined {
+    const explicitContext = body.memory_context ?? body.memoryContext ?? body.memory ?? body.context;
+    const explicitItems = body.memories ?? body.items ?? body.results;
+    const normalized = this.normalizeMemoryContext(explicitContext, explicitItems);
+
+    if (normalized) {
+      return normalized;
+    }
+
+    const status = this.normalizeMemoryStatus(body.status);
+    const used = this.normalizeBoolean(body.used ?? body.memory_used);
+    const summary = this.normalizeText(body.summary ?? body.preview);
+
+    const items = this.normalizeMemoryItems(explicitItems);
+
+    if (used === undefined && !status && !summary && items.length === 0) {
+      return undefined;
+    }
+
+    const effectiveUsed = used ?? (status === 'used' || Boolean(summary) || items.length > 0);
+
+    return {
+      used: effectiveUsed,
+      status: status ?? (effectiveUsed ? 'used' : 'empty'),
+      summary,
+      items: items.length > 0 ? items : undefined
+    };
+  }
+
+  private normalizeMemoryContext(context: unknown, fallbackItems?: unknown): MemoryContext | undefined {
+    if (context === null || context === undefined || context === false) {
+      return undefined;
+    }
+
+    if (typeof context === 'string') {
+      const summary = this.normalizeText(context);
+      return summary ? { used: true, status: 'used', summary } : undefined;
+    }
+
+    if (Array.isArray(context)) {
+      const items = this.normalizeMemoryItems(context);
+      return items.length > 0 ? { used: true, status: 'used', items, summary: items[0]?.label } : undefined;
+    }
+
+    if (typeof context !== 'object') {
+      return undefined;
+    }
+
+    const body = context as BackendMemoryContextBody;
+    const nestedItems = body.memories ?? body.items ?? body.results ?? fallbackItems;
+    const items = this.normalizeMemoryItems(nestedItems);
+    const status = this.normalizeMemoryStatus(body.status);
+    const used = this.normalizeBoolean(body.used ?? body.memory_used);
+    const summary = this.normalizeText(body.summary ?? body.preview ?? body.context ?? body.memory_context);
+    const effectiveUsed = used ?? (status === 'used' || Boolean(summary) || items.length > 0);
+
+    return {
+      used: effectiveUsed,
+      status: status ?? (effectiveUsed ? 'used' : 'empty'),
+      summary,
+      items: items.length > 0 ? items : undefined
+    };
+  }
+
+  private normalizeMemoryItems(items: unknown): MemoryContextItem[] {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    return items
+      .map((item) => this.normalizeMemoryItem(item))
+      .filter((item): item is MemoryContextItem => Boolean(item))
+      .slice(0, 3);
+  }
+
+  private normalizeMemoryItem(item: unknown): MemoryContextItem | undefined {
+    if (typeof item === 'string') {
+      const label = this.compactMemoryLabel(item);
+      return label ? { label } : undefined;
+    }
+
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const label = this.compactMemoryLabel(
+      candidate.label ?? candidate.summary ?? candidate.text ?? candidate.content ?? candidate.memory ?? candidate.title
+    );
+
+    if (!label) {
+      return undefined;
+    }
+
+    return {
+      label,
+      id: typeof candidate.id === 'string' ? candidate.id : undefined
+    };
+  }
+
+  private compactMemoryLabel(value: unknown): string | undefined {
+    const text = this.normalizeText(value);
+    if (!text) {
+      return undefined;
+    }
+
+    return text.length > 72 ? `${text.slice(0, 69).trimEnd()}…` : text;
+  }
+
+  private normalizeText(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  }
+
+  private normalizeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
+  private normalizeMemoryStatus(value: unknown): MemoryContext['status'] | undefined {
+    if (value !== 'used' && value !== 'empty' && value !== 'disabled' && value !== 'unavailable') {
+      return undefined;
+    }
+
+    return value;
   }
 
   private parseSseJson(rawEvent: RawSseEvent): unknown {
