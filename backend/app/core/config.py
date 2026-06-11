@@ -68,8 +68,13 @@ class Settings(BaseSettings):
     reflection_context_max_chars: int = Field(default=1600, gt=200, le=8000)
 
     # Growth notifications are rare, privacy-safe UI whispers surfaced from
-    # journal entries on later turns. They do not trigger extra model calls.
+    # journal entries on later turns. Timing has three gates: enough user turns
+    # have happened, the current turn lands on a coarse message interval, and
+    # enough wall-clock time has passed since the last visible notice. They do
+    # not trigger extra model calls.
     growth_notifications_enabled: bool = True
+    growth_notification_min_user_messages: int = Field(default=6, gt=0, le=100)
+    growth_notification_message_interval: int = Field(default=6, gt=0, le=100)
     growth_notification_min_interval_seconds: float = Field(default=900.0, ge=0.0)
     growth_notification_min_confidence: float = Field(default=0.62, ge=0.0, le=1.0)
     growth_notification_min_evidence_count: int = Field(default=2, gt=0, le=20)

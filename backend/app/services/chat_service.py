@@ -91,6 +91,15 @@ class ChatService:
         response = await self._ollama_client.chat(
             prepared_request, request_id=request_id
         )
+        return self._attach_growth_notification(response, growth_notification)
+
+    def _attach_growth_notification(
+        self,
+        response: ChatResponse,
+        growth_notification: GrowthNotification | None,
+    ) -> ChatResponse:
+        """Attach optional growth metadata without changing response shape elsewhere."""
+
         if growth_notification is None:
             return response
         return response.model_copy(update={"growth_notification": growth_notification})
@@ -142,7 +151,7 @@ class ChatService:
         )
         reflection_context = self._reflection_context_from_entries(reflection_entries)
         growth_notification = self._select_growth_notification(
-            reflection_entries, request_id=request_id
+            reflection_entries, request=request, request_id=request_id
         )
         self._schedule_reflection_if_due(request, request_id=request_id)
 
@@ -483,25 +492,24 @@ class ChatService:
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
 
     def _select_growth_notification(
-        self, entries: list[JournalEntry], *, request_id: str | None
+        self,
+        entries: list[JournalEntry],
+        *,
+        request: ChatRequest,
+        request_id: str | None,
     ) -> GrowthNotification | None:
-        """Choose a rare, dismissible growth note from existing journal entries."""
+        """Choose a rare, dismissible growth note from existing journal entries.
 
-        if not self._settings.growth_notifications_enabled:
-            return None
+        Notification timing is intentionally stricter than reflection timing. A
+        notice can appear only after enough user turns, only on configured message
+        intervals, and only after the wall-clock cooldown has elapsed. This keeps
+        growth legible without turning every journal entry into UI noise.
+        """
 
         now = time.monotonic()
-        elapsed = now - type(self)._last_growth_notification_at
-        min_interval = self._settings.growth_notification_min_interval_seconds
-        if elapsed < min_interval:
-            logger.debug(
-                "Growth notification skipped by interval throttle",
-                extra={
-                    "request_id": request_id,
-                    "elapsed_seconds": round(elapsed, 3),
-                    "min_interval_seconds": min_interval,
-                },
-            )
+        if not self._growth_notification_timing_allows(
+            request, request_id=request_id, now=now
+        ):
             return None
 
         for entry in entries:
@@ -552,6 +560,58 @@ class ChatService:
             return notification
 
         return None
+
+    def _growth_notification_timing_allows(
+        self, request: ChatRequest, *, request_id: str | None, now: float
+    ) -> bool:
+        """Return whether this turn is allowed to surface one growth notice."""
+
+        if not self._settings.growth_notifications_enabled:
+            logger.debug(
+                "Growth notification skipped because notifications are disabled",
+                extra={"request_id": request_id},
+            )
+            return False
+
+        user_message_count = self._user_message_count(request)
+        min_user_messages = self._settings.growth_notification_min_user_messages
+        if user_message_count < min_user_messages:
+            logger.debug(
+                "Growth notification skipped until enough user turns accumulate",
+                extra={
+                    "request_id": request_id,
+                    "user_message_count": user_message_count,
+                    "min_user_messages": min_user_messages,
+                },
+            )
+            return False
+
+        message_interval = max(1, self._settings.growth_notification_message_interval)
+        if user_message_count % message_interval != 0:
+            logger.debug(
+                "Growth notification skipped by message interval",
+                extra={
+                    "request_id": request_id,
+                    "user_message_count": user_message_count,
+                    "message_interval": message_interval,
+                },
+            )
+            return False
+
+        elapsed = now - type(self)._last_growth_notification_at
+        min_interval = self._settings.growth_notification_min_interval_seconds
+        if elapsed < min_interval:
+            logger.debug(
+                "Growth notification skipped by wall-clock throttle",
+                extra={
+                    "request_id": request_id,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "min_interval_seconds": min_interval,
+                },
+            )
+            return False
+
+        return True
 
     def _reflection_trigger_reason(self, request: ChatRequest) -> str | None:
         """Choose low-cost, natural reflection moments instead of every turn."""

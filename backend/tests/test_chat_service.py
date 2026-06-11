@@ -117,6 +117,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
             settings=Settings(
                 reflection_min_interval_seconds=0,
                 reflection_user_message_interval=6,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
             ),
             ollama_client=ollama,  # type: ignore[arg-type]
             memory_manager=memory,  # type: ignore[arg-type]
@@ -217,6 +219,70 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertEqual(ollama.requests[0].messages, request.messages)
         self.assertEqual(reflection.triggered_histories, [])
 
+    def test_growth_notifications_wait_for_message_count_and_interval(self) -> None:
+        asyncio.run(self._assert_growth_notifications_wait_for_count_and_interval())
+
+    async def _assert_growth_notifications_wait_for_count_and_interval(self) -> None:
+        entry = {
+            "entry_id": "journal_timing",
+            "status": "active",
+            "character_summary": "I noticed trust becoming easier.",
+            "insights": [
+                {"summary": "Trust is becoming steadier.", "memory_worthy": True}
+            ],
+            "themes": ["trust"],
+            "confidence": 0.85,
+            "evidence_count": 2,
+            "growth_notification": {
+                "id": "growth_journal_timing",
+                "journal_entry_id": "journal_timing",
+                "created_at": "2026-06-11T00:00:00Z",
+                "message": "Reverie seems more confident in your trust.",
+                "why": "A private reflection noticed a trust pattern.",
+                "theme": "trust",
+                "style": "whisper",
+                "controls": ["dismiss", "review", "disable_similar"],
+            },
+        }
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=3,
+                growth_notification_message_interval=3,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+
+        too_early = await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="Please remember this."),
+                    ChatMessage(role="user", content="Please remember this too."),
+                ],
+            ),
+            request_id="req-growth-too-early",
+        )
+        interval_turn = await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="Please remember this."),
+                    ChatMessage(role="user", content="Please remember this too."),
+                    ChatMessage(
+                        role="user", content="Please remember this third thing."
+                    ),
+                ],
+            ),
+            request_id="req-growth-interval",
+        )
+
+        self.assertIsNone(too_early.growth_notification)
+        self.assertIsNotNone(interval_turn.growth_notification)
+
     def test_growth_notifications_are_throttled_and_configurable(self) -> None:
         asyncio.run(self._assert_growth_notifications_are_throttled_and_configurable())
 
@@ -251,6 +317,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
             settings=Settings(
                 memory_enabled=False,
                 reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
                 growth_notification_min_interval_seconds=999,
             ),
             ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
@@ -268,6 +336,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
                 memory_enabled=False,
                 growth_notifications_enabled=False,
                 reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
                 growth_notification_min_interval_seconds=0,
             ),
             ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]

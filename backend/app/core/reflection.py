@@ -340,15 +340,21 @@ class ReflectionManager:
     ) -> GrowthNotification | None:
         """Create a concise, privacy-safe growth note for meaningful entries.
 
-        The note deliberately references themes and future behavior rather than raw
-        transcript details, so it can be shown inline without exposing sensitive
-        evidence. It remains tied to the journal entry for review/rollback.
+        This method decides whether a reflection is safe and grounded enough to
+        become user-visible metadata. It never copies raw transcript text into
+        the notification: the user sees only a theme, a small future-behavior
+        hint, and an explanation that points back to the private journal entry
+        for later review/rollback. ChatService owns timing so this method stays
+        focused on safety and content quality.
         """
 
         if entry.get("status", "active") != "active":
             return None
         sensitivity_tags = set(entry.get("sensitivity_tags") or [])
         if sensitivity_tags & {"high_sensitivity", "intimate_content"}:
+            # Boundary-only reflections may still be useful and non-sensitive,
+            # but high-sensitivity or intimate content should remain journal-only
+            # unless a future review UI explicitly expands it.
             return None
 
         confidence = float(entry.get("confidence", 0.0) or 0.0)
