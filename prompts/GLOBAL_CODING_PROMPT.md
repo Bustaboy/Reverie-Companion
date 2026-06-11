@@ -40,6 +40,20 @@ Always keep these in mind when writing code:
 
 Follow the defined phases (MVP → Alpha → Beta) and respect the feature scope of the current phase.
 
+## Skill Loading Protocol
+
+Load the most relevant skill prompt from `prompts/skills/` before implementing or reviewing work in that area. Skill guidance is additive: it sharpens the task-specific approach but must not override this global prompt, the source of truth, the development plan, or explicit user instructions.
+
+- **Memory/RAG work**: Load `prompts/skills/memory-rag-system.md` for short-, medium-, or long-term memory; vector or graph retrieval; memory extraction, ranking, summarization, pruning, deletion, provenance, context-window assembly, prompt-injection defenses, contradiction handling, user transparency, or long-conversation tests.
+- **Self-learning/growth work**: Load `prompts/skills/self-learning-growth.md` for reflection loops, journaling, growth notifications, character-state evolution, user-approved learning artifacts, dataset generation, LoRA/adapter training flows, rollback, auditability, or any feature that changes future character behavior.
+- **8GB VRAM optimization work**: Load `prompts/skills/8gb-vram-optimization.md` whenever a change can affect GPU memory, CPU/RAM pressure, model loading, quantization, KV cache, embeddings, reranking, image/video generation, training jobs, batching, background queues, latency, throughput, or responsiveness on the RTX 4070 8GB mobile target.
+- **Futa-Vision integration work**: Load `prompts/skills/futavision-integration.md` for any optional ComfyUI/Futa-Vision bridge, generated visual scene request, image/video job lifecycle, progress event, result import, character-to-visual metadata mapping, queue integration, service availability handling, or API boundary touching future media generation.
+- **Character creation/lore work**: Load `prompts/skills/character-creation-lore.md` for character cards, schemas, personality fields, trait sliders, example dialogue, lorebooks/world-info, continuity validation, stable identity vs. mutable state, NSFW character behavior, import/export, or character authoring tools.
+- **Tauri/Svelte UI work**: Load `prompts/skills/tauri-svelte-ui-patterns.md` for desktop UI, Svelte components/stores, Tauri commands/events, chat or Visual Novel mode UI, memory/growth dashboards, character editors, job status panels, native desktop integration, accessibility, or frontend performance.
+- **FastAPI backend work**: Load `prompts/skills/fastapi-backend-patterns.md` for API routes, Pydantic schemas, service/repository layering, local-first backend orchestration, background jobs, worker queues, model adapters, persistence, health checks, error handling, or tests around backend behavior.
+
+When a task spans domains, Codex may combine 1-2 relevant skills, but should keep the core global prompt principles intact: memory quality, character growth, local-first privacy, uncensored companion behavior, clean modular architecture, user control, and smooth performance on 8GB hardware.
+
 ## Architectural Principles
 
 - **Multi-layer Memory**: Support short-term, medium-term, and long-term memory with vector + graph retrieval.
