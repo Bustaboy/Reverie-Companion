@@ -323,6 +323,27 @@ h1 {
   font-weight: 800;
 }
 
+.memory-cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.12rem 0.42rem;
+  color: #eecbd0 !important;
+  border: 1px solid rgba(240, 154, 159, 0.16);
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.07);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.memory-cue span {
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  background: rgba(255, 176, 166, 0.82);
+  box-shadow: 0 0 10px rgba(255, 176, 166, 0.24);
+}
+
 .bubble {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);

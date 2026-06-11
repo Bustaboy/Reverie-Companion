@@ -8,6 +8,9 @@
   }
 
   let { message }: Props = $props();
+
+  const memoryLabel = $derived(message.memoryContext?.label ?? 'Remembered');
+  const showMemoryCue = $derived(message.role === 'assistant' && message.memoryContext?.used === true);
 </script>
 
 <article
@@ -25,6 +28,12 @@
     <div class="message-meta">
       <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
+      {#if showMemoryCue}
+        <span class="memory-cue" title="A little remembered context helped shape this reply." aria-label="Memory was used">
+          <span aria-hidden="true"></span>
+          {memoryLabel}
+        </span>
+      {/if}
     </div>
 
     <div class="bubble">

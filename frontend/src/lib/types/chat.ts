@@ -1,3 +1,5 @@
+import type { ChatMemoryContext } from '$lib/api';
+
 export type ChatRole = 'user' | 'assistant';
 
 export type ChatMessageStatus = 'complete' | 'streaming' | 'error';
@@ -9,4 +11,5 @@ export interface ChatMessage {
   createdAt: Date;
   status?: ChatMessageStatus;
   error?: string;
+  memoryContext?: ChatMemoryContext;
 }
