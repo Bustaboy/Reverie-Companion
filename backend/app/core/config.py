@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     memory_context_max_chars: int = Field(default=4000, gt=500, le=20000)
     memory_mem0_enabled: bool = True
 
+    # Reflection stays off the synchronous generation path. Retrieval injects only
+    # compact prior journal insights, while new reflection jobs run in the
+    # background at a conservative cadence for 8GB systems.
+    reflection_enabled: bool = True
+    reflection_trigger_user_turn_interval: int = Field(default=4, gt=0, le=50)
+    reflection_min_user_turns: int = Field(default=2, gt=0, le=20)
+    reflection_history_max_messages: int = Field(default=12, gt=1, le=50)
+    reflection_context_max_entries: int = Field(default=3, gt=0, le=10)
+    reflection_context_max_chars: int = Field(default=1500, gt=200, le=8000)
+
 
 @lru_cache
 def get_settings() -> Settings:
