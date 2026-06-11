@@ -13,7 +13,9 @@ The current backend is intentionally small and modular so future systems can be 
 
 `app.core.memory.MemoryManager` provides the backend-only foundation for persistent companion memory. It stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local embeddings with Ollama, and writes through mem0 when the optional SDK path is available so future adaptive extraction, reflection, journaling, pruning, and growth features can be layered in without changing route handlers.
 
-The memory manager is not wired into API routes yet. Future chat orchestration or prompt-building services can use it like this:
+Chat requests now use `app.services.chat_service.ChatService` to retrieve relevant long-term memory before calling Ollama. Retrieved memories are inserted as a compact system context block after any caller-provided system instructions and before the active dialogue. Retrieval is best-effort: if memory is disabled, empty, or temporarily unavailable, chat continues without memory context.
+
+You can still seed memories directly through the backend memory manager:
 
 ```python
 from app.core.memory import MemoryManager
@@ -23,7 +25,6 @@ memory.add_memory(
     "The user prefers emotionally warm, detailed companion responses.",
     {"memory_type": "semantic", "source": "chat"},
 )
-context = memory.get_relevant_context("How should I respond to the user?")
 ```
 
 Default settings are intentionally 8GB-friendly:
@@ -88,7 +89,7 @@ Checks that the API is running and returns system plus Ollama diagnostics, inclu
 
 ### `POST /chat`
 
-Generates a chat response with Ollama. Streaming is enabled by default using Server-Sent Events.
+Generates a chat response with Ollama. When memory is enabled, the backend first retrieves relevant long-term memories and injects them into the model prompt as bounded context. Streaming is enabled by default using Server-Sent Events.
 
 Request example:
 
@@ -123,6 +124,8 @@ backend/
 │   ├── api/
 │   │   └── routes/
 │   │       └── chat.py
+│   ├── services/
+│   │   └── chat_service.py
 │   └── models/
 ├── requirements.txt
 ├── .env.example
