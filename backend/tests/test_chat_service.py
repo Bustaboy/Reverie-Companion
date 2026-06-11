@@ -187,6 +187,38 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertEqual(len(ollama.requests), 1)
         self.assertEqual(ollama.requests[0].messages, request.messages)
 
+
+    def test_conservative_reflection_sensitivity_skips_sensitive_background_work(
+        self,
+    ) -> None:
+        asyncio.run(self._assert_conservative_sensitivity_skips_sensitive_work())
+
+    async def _assert_conservative_sensitivity_skips_sensitive_work(self) -> None:
+        reflection = FakeReflectionManager()
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_sensitivity="conservative",
+                reflection_user_message_interval=2,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            reflection_manager=reflection,  # type: ignore[arg-type]
+        )
+        request = ChatRequest(
+            stream=False,
+            messages=[
+                ChatMessage(role="user", content="first quiet turn"),
+                ChatMessage(
+                    role="user",
+                    content="This intimate topic is important but not a learning request.",
+                ),
+            ],
+        )
+
+        await service.chat(request, request_id="req-sensitive-conservative")
+
+        self.assertEqual(reflection.triggered_histories, [])
+
     def test_reflection_disabled_skips_journal_context_and_background_work(
         self,
     ) -> None:

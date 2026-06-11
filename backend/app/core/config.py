@@ -7,6 +7,8 @@ logging, and generation behavior without changing code.
 
 from functools import lru_cache
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -61,6 +63,10 @@ class Settings(BaseSettings):
     # recent journal insights, while new reflections run as throttled background
     # work so local LLM responsiveness remains the priority on 8GB systems.
     reflection_enabled: bool = True
+    reflection_frequency: Literal["low", "balanced", "high"] = "balanced"
+    reflection_sensitivity: Literal[
+        "conservative", "balanced", "responsive"
+    ] = "balanced"
     reflection_user_message_interval: int = Field(default=6, gt=0, le=100)
     reflection_min_interval_seconds: float = Field(default=180.0, ge=0.0)
     reflection_history_message_limit: int = Field(default=12, gt=0, le=50)

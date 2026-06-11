@@ -104,6 +104,270 @@ _STOPWORDS = {
 }
 
 
+_REFLECTION_EXPLICIT_KEYWORDS = frozenset(
+    {
+        "remember",
+        "learn",
+        "journal",
+        "reflect",
+        "reflection",
+        "don't forget",
+        "do not forget",
+    }
+)
+_REFLECTION_SALIENT_KEYWORDS = frozenset(
+    {
+        "prefer",
+        "preference",
+        "boundary",
+        "boundaries",
+        "promise",
+        "trust",
+        "routine",
+        "reassure",
+        "reassurance",
+        "anxious",
+        "afraid",
+        "hurt",
+        "important",
+        "always",
+        "never",
+    }
+)
+_REFLECTION_SENSITIVE_KEYWORDS = frozenset(
+    {
+        "sex",
+        "nsfw",
+        "nude",
+        "intimate",
+        "desire",
+        "trauma",
+        "abuse",
+        "panic",
+        "self-harm",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ReflectionScheduleDecision:
+    """Cheap scheduling result used by chat before background journaling."""
+
+    should_reflect: bool
+    reason: str | None = None
+    user_message_count: int = 0
+    min_interval_seconds: float = 0.0
+    history_message_limit: int = 0
+    frequency: str = "balanced"
+    sensitivity: str = "balanced"
+
+
+class ReflectionScheduler:
+    """Lightweight user-configurable scheduler for background reflection.
+
+    The scheduler intentionally inspects only message roles and the latest user
+    turn text. It does not call embeddings, memory, or a language model, which
+    keeps the chat hot path responsive on 8GB local systems. Reflections are
+    allowed at explicit user-learning moments, coarse message intervals, or
+    gradually more/less often according to the user's frequency and sensitivity
+    controls.
+    """
+
+    _FREQUENCY_INTERVAL_MULTIPLIERS = {
+        "low": 2.0,
+        "balanced": 1.0,
+        "high": 0.5,
+    }
+    _FREQUENCY_THROTTLE_MULTIPLIERS = {
+        "low": 2.0,
+        "balanced": 1.0,
+        "high": 0.5,
+    }
+    _SENSITIVITY_THROTTLE_MULTIPLIERS = {
+        "conservative": 1.5,
+        "balanced": 1.0,
+        "responsive": 0.75,
+    }
+
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings or get_settings()
+
+    def evaluate(self, conversation_history: Any) -> ReflectionScheduleDecision:
+        """Return whether recent chat history is a good reflection moment."""
+
+        frequency = self._settings.reflection_frequency
+        sensitivity = self._settings.reflection_sensitivity
+        history_limit = self._effective_history_limit()
+        min_interval = self._effective_min_interval_seconds()
+        messages = self._coerce_messages(conversation_history)
+        user_messages = [message for message in messages if message[0] == "user"]
+        user_message_count = len(user_messages)
+        if not self._settings.reflection_enabled:
+            return ReflectionScheduleDecision(
+                should_reflect=False,
+                reason="disabled",
+                user_message_count=user_message_count,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+        if not user_messages:
+            return ReflectionScheduleDecision(
+                should_reflect=False,
+                reason="no_user_messages",
+                user_message_count=0,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+
+        latest_user_text = user_messages[-1][1].lower()
+        explicit_matches = self._matched_keywords(
+            latest_user_text, _REFLECTION_EXPLICIT_KEYWORDS
+        )
+        sensitive = self._contains_sensitive_content(latest_user_text)
+        # Explicit user requests are the clearest consent signal for learning.
+        # Sensitivity still affects automatic salient/interval triggers.
+        if explicit_matches:
+            return ReflectionScheduleDecision(
+                should_reflect=True,
+                reason=f"explicit_user_request:{','.join(explicit_matches[:3])}",
+                user_message_count=user_message_count,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+
+        if sensitive and sensitivity == "conservative":
+            return ReflectionScheduleDecision(
+                should_reflect=False,
+                reason="sensitive_content_conservative",
+                user_message_count=user_message_count,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+
+        salient_matches = self._matched_keywords(
+            latest_user_text, _REFLECTION_SALIENT_KEYWORDS
+        )
+        if salient_matches and sensitivity != "conservative":
+            return ReflectionScheduleDecision(
+                should_reflect=True,
+                reason=f"salient_keywords:{','.join(salient_matches[:3])}",
+                user_message_count=user_message_count,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+
+        interval = self._effective_message_interval()
+        if user_message_count >= interval and user_message_count % interval == 0:
+            return ReflectionScheduleDecision(
+                should_reflect=True,
+                reason=f"message_interval:{interval}",
+                user_message_count=user_message_count,
+                min_interval_seconds=min_interval,
+                history_message_limit=history_limit,
+                frequency=frequency,
+                sensitivity=sensitivity,
+            )
+
+        return ReflectionScheduleDecision(
+            should_reflect=False,
+            reason="not_due",
+            user_message_count=user_message_count,
+            min_interval_seconds=min_interval,
+            history_message_limit=history_limit,
+            frequency=frequency,
+            sensitivity=sensitivity,
+        )
+
+    def history_window(self, conversation_history: Any) -> list[dict[str, str]]:
+        """Return a bounded evidence window for the journal writer."""
+
+        messages = self._coerce_messages(conversation_history)
+        return [
+            {"role": role, "content": content}
+            for role, content in messages[-self._effective_history_limit() :]
+            if role != "system" and content.strip()
+        ]
+
+    def _effective_message_interval(self) -> int:
+        base_interval = max(1, self._settings.reflection_user_message_interval)
+        multiplier = self._FREQUENCY_INTERVAL_MULTIPLIERS.get(
+            self._settings.reflection_frequency, 1.0
+        )
+        return max(2, round(base_interval * multiplier))
+
+    def _effective_min_interval_seconds(self) -> float:
+        base_interval = self._settings.reflection_min_interval_seconds
+        frequency_multiplier = self._FREQUENCY_THROTTLE_MULTIPLIERS.get(
+            self._settings.reflection_frequency, 1.0
+        )
+        sensitivity_multiplier = self._SENSITIVITY_THROTTLE_MULTIPLIERS.get(
+            self._settings.reflection_sensitivity, 1.0
+        )
+        return max(0.0, base_interval * frequency_multiplier * sensitivity_multiplier)
+
+    def _effective_history_limit(self) -> int:
+        base_limit = max(1, self._settings.reflection_history_message_limit)
+        if self._settings.reflection_frequency == "high":
+            return min(50, base_limit + 4)
+        if self._settings.reflection_frequency == "low":
+            return max(4, base_limit - 4)
+        return base_limit
+
+    def _contains_sensitive_content(self, text: str) -> bool:
+        return any(keyword in text for keyword in _REFLECTION_SENSITIVE_KEYWORDS)
+
+    def _matched_keywords(self, text: str, keywords: frozenset[str]) -> list[str]:
+        matches: list[str] = []
+        for keyword in keywords:
+            if " " in keyword:
+                if keyword in text:
+                    matches.append(keyword)
+                continue
+            if re.search(rf"\b{re.escape(keyword)}\b", text):
+                matches.append(keyword)
+        return sorted(matches)
+
+    def _coerce_messages(self, conversation_history: Any) -> list[tuple[str, str]]:
+        if conversation_history is None:
+            return []
+        if not isinstance(conversation_history, Iterable) or isinstance(
+            conversation_history, str
+        ):
+            conversation_history = [conversation_history]
+
+        messages: list[tuple[str, str]] = []
+        for item in conversation_history:
+            role = "unknown"
+            content = ""
+            if isinstance(item, dict):
+                role = str(item.get("role") or "unknown").lower()
+                content = str(item.get("content") or item.get("message") or "")
+            elif isinstance(item, tuple | list) and len(item) >= 2:
+                role = str(item[0] or "unknown").lower()
+                content = str(item[1] or "")
+            elif hasattr(item, "role") and hasattr(item, "content"):
+                role = str(getattr(item, "role", "unknown") or "unknown").lower()
+                content = str(getattr(item, "content", "") or "")
+            else:
+                content = str(item or "")
+            if role not in {"system", "user", "assistant"}:
+                role = "unknown"
+            normalized = " ".join(content.strip().split())
+            if normalized:
+                messages.append((role, normalized))
+        return messages
+
+
 class ConversationTurn(TypedDict):
     """Normalized conversation turn used as reflection evidence."""
 
@@ -1108,5 +1372,7 @@ __all__ = [
     "ReflectionJournalError",
     "ReflectionManager",
     "ReflectionManagerConfig",
+    "ReflectionScheduleDecision",
+    "ReflectionScheduler",
     "get_reflection_manager",
 ]

@@ -49,6 +49,19 @@ Key memory settings in `.env`:
 - `REVERIE_MEMORY_MAX_CONTEXT_MEMORIES` and `REVERIE_MEMORY_CONTEXT_MAX_CHARS`: prompt-context budget controls
 - `REVERIE_MEMORY_MEM0_ENABLED`: toggles best-effort mem0 write-through while preserving direct LanceDB storage
 
+## Reflection Scheduling Controls
+
+Reflection and growth journaling are enabled by default, but they are scheduled conservatively so chat stays responsive. The chat service reads existing journal notes for continuity, then queues any new reflection as background work after natural learning moments; the current response never waits for journaling.
+
+Key reflection settings in `.env`:
+
+- `REVERIE_REFLECTION_ENABLED`: disables journal context and background reflection when set to `false`
+- `REVERIE_REFLECTION_FREQUENCY`: `low`, `balanced`, or `high`; adjusts the message interval, cooldown, and evidence window size
+- `REVERIE_REFLECTION_SENSITIVITY`: `conservative`, `balanced`, or `responsive`; controls whether salient or sensitive turns can auto-trigger reflection
+- `REVERIE_REFLECTION_USER_MESSAGE_INTERVAL`: base user-message interval for scheduled reflections
+- `REVERIE_REFLECTION_MIN_INTERVAL_SECONDS`: base wall-clock cooldown between background reflections
+- `REVERIE_REFLECTION_HISTORY_MESSAGE_LIMIT`: maximum recent messages copied into a journal evidence window
+
 ## Requirements
 
 - Python 3.11+

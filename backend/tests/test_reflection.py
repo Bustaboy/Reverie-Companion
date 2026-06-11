@@ -157,5 +157,91 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
         return [json.loads(line) for line in journal_path.read_text().splitlines()]
 
 
+class ReflectionSchedulerTests(unittest.TestCase):
+    def test_frequency_adjusts_message_interval_and_throttle(self) -> None:
+        from app.core.config import Settings
+        from app.core.reflection import ReflectionScheduler
+
+        low_scheduler = ReflectionScheduler(
+            Settings(
+                reflection_frequency="low",
+                reflection_user_message_interval=6,
+                reflection_min_interval_seconds=120,
+            )
+        )
+        low_decision = low_scheduler.evaluate(
+            [
+                {"role": "user", "content": f"quiet update {index}"}
+                for index in range(12)
+            ]
+        )
+
+        high_scheduler = ReflectionScheduler(
+            Settings(
+                reflection_frequency="high",
+                reflection_user_message_interval=6,
+                reflection_min_interval_seconds=120,
+            )
+        )
+        high_decision = high_scheduler.evaluate(
+            [
+                {"role": "user", "content": f"quiet update {index}"}
+                for index in range(3)
+            ]
+        )
+
+        self.assertTrue(low_decision.should_reflect)
+        self.assertEqual(low_decision.reason, "message_interval:12")
+        self.assertEqual(low_decision.min_interval_seconds, 240)
+        self.assertTrue(high_decision.should_reflect)
+        self.assertEqual(high_decision.reason, "message_interval:3")
+        self.assertEqual(high_decision.min_interval_seconds, 60)
+
+    def test_conservative_sensitivity_suppresses_sensitive_auto_triggers(self) -> None:
+        from app.core.config import Settings
+        from app.core.reflection import ReflectionScheduler
+
+        scheduler = ReflectionScheduler(
+            Settings(
+                reflection_sensitivity="conservative",
+                reflection_user_message_interval=2,
+            )
+        )
+        automatic_decision = scheduler.evaluate(
+            [
+                {"role": "user", "content": "first quiet turn"},
+                {
+                    "role": "user",
+                    "content": "This intimate topic is important but not a learning request.",
+                },
+            ]
+        )
+        explicit_decision = scheduler.evaluate(
+            [
+                {
+                    "role": "user",
+                    "content": "Please remember this intimate boundary carefully.",
+                }
+            ]
+        )
+
+        self.assertFalse(automatic_decision.should_reflect)
+        self.assertEqual(automatic_decision.reason, "sensitive_content_conservative")
+        self.assertTrue(explicit_decision.should_reflect)
+        self.assertTrue(explicit_decision.reason.startswith("explicit_user_request"))
+
+    def test_scheduler_respects_reflection_disabled_control(self) -> None:
+        from app.core.config import Settings
+        from app.core.reflection import ReflectionScheduler
+
+        scheduler = ReflectionScheduler(Settings(reflection_enabled=False))
+        decision = scheduler.evaluate(
+            [{"role": "user", "content": "Please remember this preference."}]
+        )
+
+        self.assertFalse(decision.should_reflect)
+        self.assertEqual(decision.reason, "disabled")
+
+
 if __name__ == "__main__":
     unittest.main()
