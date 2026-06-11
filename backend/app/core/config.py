@@ -61,8 +61,27 @@ class Settings(BaseSettings):
     # recent journal insights, while new reflections run as throttled background
     # work so local LLM responsiveness remains the priority on 8GB systems.
     reflection_enabled: bool = True
+    reflection_frequency: str = Field(
+        default="balanced",
+        pattern="^(low|balanced|high)$",
+        description=(
+            "User-facing reflection cadence. Low waits longer between journal "
+            "passes, balanced is conservative by default, and high reflects more "
+            "readily while still throttling background work."
+        ),
+    )
+    reflection_sensitivity: str = Field(
+        default="balanced",
+        pattern="^(conservative|balanced|responsive)$",
+        description=(
+            "How readily meaningful cues trigger reflection. Conservative favors "
+            "explicit remember/learn requests and scheduled intervals; responsive "
+            "also reacts to softer emotional and continuity cues."
+        ),
+    )
     reflection_user_message_interval: int = Field(default=6, gt=0, le=100)
     reflection_min_interval_seconds: float = Field(default=180.0, ge=0.0)
+    reflection_min_user_messages: int = Field(default=2, gt=0, le=20)
     reflection_history_message_limit: int = Field(default=12, gt=0, le=50)
     reflection_context_entry_limit: int = Field(default=5, gt=0, le=20)
     reflection_context_max_chars: int = Field(default=1600, gt=200, le=8000)

@@ -34,6 +34,7 @@ Default settings are intentionally 8GB-friendly:
 - best-effort mem0 extraction, with direct LanceDB recall remaining available if mem0 fails
 - capped memory text, retrieval count, and context character budgets
 - no reranker or resident Python embedding model in the hot path
+- reflection journaling runs as throttled background work, not in the active token path
 
 Pull the default local embedding model before using memory:
 
@@ -48,6 +49,16 @@ Key memory settings in `.env`:
 - `REVERIE_MEMORY_EMBEDDING_MODEL`: local Ollama embedding model
 - `REVERIE_MEMORY_MAX_CONTEXT_MEMORIES` and `REVERIE_MEMORY_CONTEXT_MAX_CHARS`: prompt-context budget controls
 - `REVERIE_MEMORY_MEM0_ENABLED`: toggles best-effort mem0 write-through while preserving direct LanceDB storage
+
+Key reflection settings in `.env`:
+
+- `REVERIE_REFLECTION_ENABLED`: master toggle for journal context and background reflection
+- `REVERIE_REFLECTION_FREQUENCY`: `low`, `balanced`, or `high`; adjusts message-count cadence and cooldown together
+- `REVERIE_REFLECTION_SENSITIVITY`: `conservative`, `balanced`, or `responsive`; controls how readily emotional/continuity cues trigger reflection
+- `REVERIE_REFLECTION_USER_MESSAGE_INTERVAL`: baseline number of user messages between scheduled reflections
+- `REVERIE_REFLECTION_MIN_INTERVAL_SECONDS`: baseline wall-clock throttle between reflection jobs
+- `REVERIE_REFLECTION_MIN_USER_MESSAGES`: gradual-start gate for non-explicit scheduled reflections
+- `REVERIE_REFLECTION_HISTORY_MESSAGE_LIMIT`: caps the evidence window passed to the journal writer
 
 ## Requirements
 

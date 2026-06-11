@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Iterable
 from app.core.config import Settings
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
-from app.core.reflection import JournalEntry, ReflectionManager
+from app.core.reflection import JournalEntry, ReflectionManager, ReflectionScheduler
 from app.models.chat import (
     MAX_MESSAGE_LENGTH,
     ChatMessage,
@@ -21,27 +21,6 @@ from app.models.chat import (
 )
 
 logger = logging.getLogger(__name__)
-
-_REFLECTION_TRIGGER_KEYWORDS = frozenset(
-    {
-        "remember",
-        "prefer",
-        "preference",
-        "boundary",
-        "boundaries",
-        "promise",
-        "trust",
-        "routine",
-        "reassure",
-        "reassurance",
-        "anxious",
-        "afraid",
-        "hurt",
-        "important",
-        "always",
-        "never",
-    }
-)
 
 _REFLECTION_CONTEXT_MAX_ENTRIES = 3
 _REFLECTION_CONTEXT_MIN_CONFIDENCE = 0.35
@@ -79,6 +58,7 @@ class ChatService:
         self._ollama_client = ollama_client
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
+        self._reflection_scheduler = ReflectionScheduler.from_settings(settings)
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
@@ -372,15 +352,23 @@ class ChatService:
             )
             return
 
-        trigger_reason = self._reflection_trigger_reason(request)
-        if trigger_reason is None:
+        decision = self._reflection_scheduler.evaluate(
+            request.messages,
+            now=time.monotonic(),
+            last_started_at=type(self)._last_reflection_started_at,
+            inflight_count=len(type(self)._inflight_reflection_tasks),
+        )
+        if not decision.should_schedule:
             logger.debug(
-                "Background reflection skipped because this turn is not a reflection moment",
+                "Background reflection skipped by scheduler",
                 extra={
                     "request_id": request_id,
-                    "user_message_count": self._user_message_count(request),
-                    "reflection_user_message_interval": (
-                        self._settings.reflection_user_message_interval
+                    "reason": decision.reason,
+                    "user_message_count": decision.user_message_count,
+                    "reflection_frequency": self._settings.reflection_frequency,
+                    "reflection_sensitivity": self._settings.reflection_sensitivity,
+                    "effective_interval": (
+                        self._reflection_scheduler.effective_user_message_interval()
                     ),
                     "chat_continues": True,
                 },
@@ -389,10 +377,20 @@ class ChatService:
 
         logger.debug(
             "Scheduling background reflection for chat turn",
-            extra={"request_id": request_id, "trigger_reason": trigger_reason},
+            extra={
+                "request_id": request_id,
+                "trigger_reason": decision.reason,
+                "reflection_frequency": self._settings.reflection_frequency,
+                "reflection_sensitivity": self._settings.reflection_sensitivity,
+            },
         )
         task = asyncio.create_task(
-            self._run_reflection_background(request.messages, request_id=request_id)
+            self._run_reflection_background(
+                request.messages,
+                request_id=request_id,
+                trigger_reason=decision.reason or "scheduled",
+                min_interval_seconds=decision.min_interval_seconds,
+            )
         )
         self._inflight_reflection_tasks.add(task)
         task.add_done_callback(self._discard_reflection_task)
@@ -402,14 +400,16 @@ class ChatService:
         messages: list[ChatMessage],
         *,
         request_id: str | None,
+        trigger_reason: str,
+        min_interval_seconds: float,
     ) -> None:
         """Run sync ReflectionManager work off the event loop with throttling."""
 
         lock = self._get_reflection_lock()
         async with lock:
             now = time.monotonic()
-            elapsed = now - self._last_reflection_started_at
-            min_interval = self._settings.reflection_min_interval_seconds
+            elapsed = now - type(self)._last_reflection_started_at
+            min_interval = min_interval_seconds
             if elapsed < min_interval:
                 logger.debug(
                     "Reflection skipped by interval throttle",
@@ -422,7 +422,7 @@ class ChatService:
                 )
                 return
 
-            self._last_reflection_started_at = now
+            type(self)._last_reflection_started_at = now
             history = self._reflection_history_window(messages)
 
         try:
@@ -448,6 +448,7 @@ class ChatService:
                 "entry_id": entry.get("entry_id"),
                 "insight_count": len(entry.get("insights", [])),
                 "promoted_to_memory": bool(entry.get("linked_memory_ids")),
+                "trigger_reason": trigger_reason,
             },
         )
 
@@ -600,7 +601,7 @@ class ChatService:
 
         elapsed = now - type(self)._last_growth_notification_at
         min_interval = self._settings.growth_notification_min_interval_seconds
-        if elapsed < min_interval:
+        if type(self)._last_growth_notification_at > 0 and elapsed < min_interval:
             logger.debug(
                 "Growth notification skipped by wall-clock throttle",
                 extra={
@@ -616,25 +617,13 @@ class ChatService:
     def _reflection_trigger_reason(self, request: ChatRequest) -> str | None:
         """Choose low-cost, natural reflection moments instead of every turn."""
 
-        user_messages = [
-            message for message in request.messages if message.role == "user"
-        ]
-        if not user_messages:
-            return None
-
-        latest_user_text = user_messages[-1].content.lower()
-        matched_keywords = sorted(
-            keyword
-            for keyword in _REFLECTION_TRIGGER_KEYWORDS
-            if keyword in latest_user_text
+        decision = self._reflection_scheduler.evaluate(
+            request.messages,
+            now=time.monotonic(),
+            last_started_at=type(self)._last_reflection_started_at,
+            inflight_count=len(type(self)._inflight_reflection_tasks),
         )
-        if matched_keywords:
-            return f"salient_keywords:{','.join(matched_keywords[:3])}"
-
-        interval = max(1, self._settings.reflection_user_message_interval)
-        if len(user_messages) >= interval and len(user_messages) % interval == 0:
-            return f"message_interval:{interval}"
-        return None
+        return decision.reason if decision.should_schedule else None
 
     def _should_trigger_reflection(self, request: ChatRequest) -> bool:
         """Return whether this turn should create a background journal entry."""
@@ -820,6 +809,8 @@ class ChatService:
         cls._inflight_reflection_tasks.discard(task)
         try:
             task.result()
+        except asyncio.CancelledError:
+            logger.debug("Background reflection task was cancelled")
         except Exception as exc:  # pragma: no cover - safety net for callbacks.
             logger.warning(
                 "Unexpected reflection task failure after callback",
