@@ -81,6 +81,7 @@ Load relevant local prompts from `prompts/skills/` **before** designing, impleme
 | Tauri/Svelte UI | `prompts/skills/tauri-svelte-ui-patterns.md` | Components, stores, commands/events, chat, VN mode, dashboards, editors, job panels, accessibility, performance. |
 | FastAPI backend | `prompts/skills/fastapi-backend-patterns.md` | Routes, Pydantic schemas, service/repository layers, jobs, workers, adapters, persistence, health checks, tests. |
 | Futa-Vision | `prompts/skills/futavision-integration.md` | Optional ComfyUI bridges, scene requests, media jobs, progress events, imports, metadata mapping, queues, availability. |
+| 8GB Local AI Patterns | `prompts/skills/8gb-local-ai-patterns.md` | 8GB VRAM optimization, Unsloth QLoRA, roleplay dataset, emotional TTS, Visual Novel sprites, Svelte reactive state, ComfyUI lowvram, Flux GGUF, background training. |
 
 Synthesize skill guidance around Reverie's pillars: **alive characters, local-first privacy, user control, smooth 8GB performance, modular architecture, maintainable code**.
 
