@@ -36,6 +36,17 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
+    memory_db_path: str = "./data/memory"
+    memory_collection_name: str = "reverie_memories"
+    memory_default_user_id: str = "default_user"
+    memory_default_session_id: str | None = None
+    memory_embedding_model: str = "nomic-embed-text"
+    memory_embedding_dimensions: int = Field(default=768, gt=0)
+    memory_llm_model: str | None = None
+    memory_max_memory_chars: int = Field(default=4000, gt=0)
+    memory_max_context_memories: int = Field(default=6, gt=0, le=20)
+    memory_mem0_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

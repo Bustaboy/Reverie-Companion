@@ -9,6 +9,16 @@ The current backend is intentionally small and modular so future systems can be 
 - reflection, journaling, and growth workflows
 - future local media/video integrations
 
+## Long-Term Memory Foundation
+
+`app.core.memory.MemoryManager` provides the backend-only foundation for persistent companion memory. It stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local embeddings with Ollama, and writes through mem0 when the optional SDK path is available so future adaptive extraction, reflection, and growth features can be layered in without changing route handlers.
+
+Default settings are intentionally 8GB-friendly: no hosted services, one embedding request per memory/search operation, capped memory text size, small context retrieval limits, and no reranker in the hot path. Pull the default local embedding model before using memory:
+
+```bash
+ollama pull nomic-embed-text
+```
+
 ## Requirements
 
 - Python 3.11+
@@ -29,7 +39,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` if you want to use a different Ollama host, model, generation defaults, CORS origins, or log level.
+Edit `.env` if you want to use a different Ollama host, chat model, embedding model, memory storage path, generation defaults, CORS origins, or log level.
 
 ## Run
 
@@ -77,6 +87,7 @@ backend/
 │   ├── main.py
 │   ├── core/
 │   │   ├── config.py
+│   │   ├── memory.py
 │   │   └── ollama_client.py
 │   ├── api/
 │   │   └── routes/
