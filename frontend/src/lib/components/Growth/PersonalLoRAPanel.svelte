@@ -1,26 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { growthStore } from '$lib/stores/growthStore';
+  import { growthStore, personalLoRAReviewView } from '$lib/stores/growthStore';
   import type { LoRATrainingExample, LoRATrainingJob, LoRATrainingStatus } from '$lib/types/growth';
 
-  const isTrainingActive = (job: LoRATrainingJob | null) => job?.status === 'queued' || job?.status === 'running';
-
-  const pendingExamples = $derived(
-    $growthStore.examples.filter((example) => (example.status ?? 'pending_review') === 'pending_review')
-  );
-  const approvedExamples = $derived($growthStore.examples.filter((example) => example.status === 'approved'));
-  const recentlyReviewedExamples = $derived(
-    $growthStore.examples.filter((example) => example.status === 'rejected').slice(0, 3)
-  );
   const isLoading = $derived($growthStore.loadState === 'loading');
   const isRefreshing = $derived($growthStore.loadState === 'refreshing');
   const isBusy = $derived($growthStore.actionState !== 'idle');
-  const collectionOptedIn = $derived($growthStore.settings?.collection_opt_in ?? false);
-  const trainingOptedIn = $derived($growthStore.settings?.training_opt_in ?? false);
-  const reviewRequired = $derived($growthStore.settings?.require_review_before_training ?? true);
-  const canStartTraining = $derived(
-    trainingOptedIn && approvedExamples.length > 0 && !isBusy && !isTrainingActive($growthStore.currentJob)
-  );
 
   onMount(() => {
     void growthStore.loadPersonalLoRA();
@@ -51,7 +36,7 @@
   };
 
   const startTraining = () => {
-    if (!canStartTraining) return;
+    if (!$personalLoRAReviewView.canStartTraining) return;
     void growthStore.startTraining();
   };
 
@@ -141,7 +126,7 @@
             <span class="setting-kicker">Current LoRA</span>
             <h2>{adapterStatus($growthStore.currentJob)}</h2>
             <p>
-              {trainingOptedIn
+              {$personalLoRAReviewView.trainingOptedIn
                 ? 'Personal training is allowed after you approve examples.'
                 : 'Training is paused until you explicitly opt in.'}
             </p>
@@ -157,7 +142,7 @@
             </div>
             <div>
               <span>Approved examples</span>
-              <strong>{approvedExamples.length}</strong>
+              <strong>{$personalLoRAReviewView.approvedExamples.length}</strong>
             </div>
             <div>
               <span>Needs review</span>
@@ -183,15 +168,15 @@
             <p>Collection finds possible examples. Training is a separate choice.</p>
           </div>
           <label class="inline-toggle">
-            <input type="checkbox" checked={collectionOptedIn} onchange={setCollectionOptIn} />
-            <span>{collectionOptedIn ? 'Collect review candidates' : 'Do not collect candidates'}</span>
+            <input type="checkbox" checked={$personalLoRAReviewView.collectionOptedIn} onchange={setCollectionOptIn} />
+            <span>{$personalLoRAReviewView.collectionOptedIn ? 'Collect review candidates' : 'Do not collect candidates'}</span>
           </label>
           <label class="inline-toggle">
-            <input type="checkbox" checked={trainingOptedIn} onchange={setTrainingOptIn} />
-            <span>{trainingOptedIn ? 'Allow approved examples to train' : 'Training opt-in is off'}</span>
+            <input type="checkbox" checked={$personalLoRAReviewView.trainingOptedIn} onchange={setTrainingOptIn} />
+            <span>{$personalLoRAReviewView.trainingOptedIn ? 'Allow approved examples to train' : 'Training opt-in is off'}</span>
           </label>
           <p class="training-small-note">
-            {reviewRequired ? 'Review is required before training.' : 'Review is currently optional in settings, but this panel still uses approved examples only.'}
+            {$personalLoRAReviewView.reviewRequired ? 'Review is required before training.' : 'Review is currently optional in settings, but this panel still uses approved examples only.'}
           </p>
         </article>
 
@@ -203,7 +188,7 @@
               Starts the basic local training controller with approved examples only. Detailed progress and advanced parameters are intentionally left out for now.
             </p>
           </div>
-          {#if isTrainingActive($growthStore.currentJob)}
+          {#if $personalLoRAReviewView.trainingActive}
             <div class="training-progress" aria-label="Training progress">
               <div>
                 <span class="status-dot {statusTone($growthStore.currentJob?.status)}"></span>
@@ -214,9 +199,9 @@
           {:else if $growthStore.currentJob?.status === 'failed'}
             <p class="training-warning">{$growthStore.currentJob.error ?? 'The last training run did not finish.'}</p>
           {:else}
-            <p class="training-small-note">Ready when you are: {approvedExamples.length} approved examples available.</p>
+            <p class="training-small-note">Ready when you are: {$personalLoRAReviewView.approvedExamples.length} approved examples available.</p>
           {/if}
-          <button class="primary-training-button" type="button" onclick={startTraining} disabled={!canStartTraining}>
+          <button class="primary-training-button" type="button" onclick={startTraining} disabled={!$personalLoRAReviewView.canStartTraining}>
             {$growthStore.actionState === 'training' ? 'Starting…' : 'Start Training'}
           </button>
         </article>
@@ -228,10 +213,10 @@
             <p class="eyebrow">Review queue</p>
             <h2 id="candidate-heading">Pending training candidates</h2>
           </div>
-          <span>{pendingExamples.length} waiting · {approvedExamples.length} approved</span>
+          <span>{$personalLoRAReviewView.pendingExamples.length} waiting · {$personalLoRAReviewView.approvedExamples.length} approved</span>
         </div>
 
-        {#if pendingExamples.length === 0}
+        {#if $personalLoRAReviewView.pendingExamples.length === 0}
           <div class="training-empty compact-empty">
             <div class="training-empty-mark">✓</div>
             <h3>No pending candidates</h3>
@@ -239,7 +224,7 @@
           </div>
         {:else}
           <div class="candidate-list">
-            {#each pendingExamples as example (example.item_id)}
+            {#each $personalLoRAReviewView.pendingExamples as example (example.item_id)}
               <article class="candidate-card">
                 <div class="candidate-main">
                   <div class="candidate-topline">
@@ -278,10 +263,10 @@
         {/if}
       </section>
 
-      {#if recentlyReviewedExamples.length > 0}
+      {#if $personalLoRAReviewView.recentlyReviewedExamples.length > 0}
         <section class="reviewed-strip" aria-label="Recently rejected examples">
           <strong>Recently kept out of training</strong>
-          {#each recentlyReviewedExamples as example (example.item_id)}
+          {#each $personalLoRAReviewView.recentlyReviewedExamples as example (example.item_id)}
             <span>{exampleSummary(example)}</span>
           {/each}
         </section>

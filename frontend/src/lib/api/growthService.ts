@@ -2,6 +2,10 @@ import { dev } from '$app/environment';
 import type {
   LoRATrainingExample,
   LoRATrainingJob,
+  PersonalLoRAExampleResponse,
+  PersonalLoRAJobResponse,
+  PersonalLoRASettings,
+  PersonalLoRASettingsResponse,
   PersonalLoRASettingsUpdate,
   PersonalLoRAStatusResponse
 } from '$lib/types/growth';
@@ -52,33 +56,33 @@ export class GrowthService {
     return this.request<PersonalLoRAStatusResponse>('/growth/personal-lora');
   }
 
-  updatePersonalLoRASettings(update: PersonalLoRASettingsUpdate): Promise<PersonalLoRAStatusResponse> {
-    return this.request<{ settings: PersonalLoRAStatusResponse['settings'] }>('/growth/personal-lora/settings', {
+  updatePersonalLoRASettings(update: PersonalLoRASettingsUpdate): Promise<PersonalLoRASettings> {
+    return this.request<PersonalLoRASettingsResponse>('/growth/personal-lora/settings', {
       method: 'PATCH',
       body: JSON.stringify(update)
-    }).then(async () => this.getPersonalLoRAStatus());
+    }).then((response) => response.settings);
   }
 
   approveExample(itemId: string): Promise<LoRATrainingExample> {
-    return this.request<{ example: LoRATrainingExample }>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}/approve`, {
+    return this.request<PersonalLoRAExampleResponse>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}/approve`, {
       method: 'POST'
     }).then((response) => response.example);
   }
 
   rejectExample(itemId: string): Promise<LoRATrainingExample> {
-    return this.request<{ example: LoRATrainingExample }>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}/reject`, {
+    return this.request<PersonalLoRAExampleResponse>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}/reject`, {
       method: 'POST'
     }).then((response) => response.example);
   }
 
   deleteExample(itemId: string): Promise<LoRATrainingExample> {
-    return this.request<{ example: LoRATrainingExample }>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}`, {
+    return this.request<PersonalLoRAExampleResponse>(`/growth/personal-lora/examples/${encodeURIComponent(itemId)}`, {
       method: 'DELETE'
     }).then((response) => response.example);
   }
 
   startTraining(): Promise<LoRATrainingJob> {
-    return this.request<{ job: LoRATrainingJob }>('/growth/personal-lora/start', { method: 'POST' }).then(
+    return this.request<PersonalLoRAJobResponse>('/growth/personal-lora/start', { method: 'POST' }).then(
       (response) => response.job
     );
   }
