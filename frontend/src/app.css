@@ -867,8 +867,10 @@ h1 {
 }
 
 .journal-notice {
-  display: grid;
-  gap: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
   margin: 1rem 1.5rem 0;
   padding: 0.9rem 1rem;
   color: #ffdfe0;
@@ -879,6 +881,15 @@ h1 {
 
 .journal-notice span {
   color: var(--muted);
+}
+
+.journal-notice button {
+  padding: 0.38rem 0.62rem;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
 }
 
 .journal-content {

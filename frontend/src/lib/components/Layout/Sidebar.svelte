@@ -35,6 +35,6 @@
 
   <div class="sidebar-card">
     <p>Growth stays local</p>
-    <span>Journal entries are private reflection artifacts you can inspect before future memory or training controls use them.</span>
+    <span>Journal entries are private reflection artifacts you can inspect before memory or training review uses them.</span>
   </div>
 </aside>

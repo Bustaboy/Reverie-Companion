@@ -1,7 +1,7 @@
 # Reverie — Master Development Plan
 
-**Version**: 1.1  
-**Date**: June 09, 2026  
+**Version**: 1.2
+**Date**: June 11, 2026
 **Brand**: Reverie  
 **Status**: Living document — aligned with Reverie Source of Truth v1.0
 
@@ -120,11 +120,14 @@ Repo: https://github.com/Bustaboy/vision-companion
 - Basic chat working end-to-end
 - First memory layer (mem0 + LanceDB) integrated
 
-**Milestone 2: Memory Core** (Week 3–4)
-- Multi-layer memory system functional
-- Character creation + import working
-- Basic reflection + journal implemented
-- Memory browser UI
+**Milestone 2: Memory & Self-Learning — Complete** (Week 3–4)
+- ✅ Chat now assembles bounded long-term memory context from local LanceDB/mem0 before generation.
+- ✅ Reflection runs as throttled background work, writes inspectable journal entries, and can promote high-confidence insights into memory.
+- ✅ Growth orchestration connects memory, reflection, journal context, rare growth notifications, and opt-in Personal LoRA review without blocking the active chat path.
+- ✅ Journal, Settings, Training, and growth-notification UI panels expose the self-learning loop with local-first trust language and clear user controls.
+- ✅ Personal LoRA foundation is in place: local review queue, explicit collection/training opt-ins, approved-only training jobs, rollback-friendly manifests, and conservative 8GB defaults.
+
+**Milestone 2 completion summary (June 11, 2026):** Reverie can now remember durable conversation evidence, reflect privately after meaningful turns, surface journal entries for review, whisper rare growth notices, and collect training candidates only under explicit user control. The implementation remains MVP-lightweight: no hidden cloud calls, no chat-blocking growth work, and no adapter training without approved examples.
 
 **Milestone 3: MVP Complete** (Week 5–8)
 - All MVP features done + tested

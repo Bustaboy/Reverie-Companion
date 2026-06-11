@@ -36,7 +36,10 @@
     }).format(date);
   };
 
-  const percent = (value: number | undefined) => `${Math.round((value ?? 0) * 100)}%`;
+  const percent = (value: number | undefined) => {
+    const bounded = Math.min(Math.max(value ?? 0, 0), 1);
+    return `${Math.round(bounded * 100)}%`;
+  };
 
   const titleFor = (entry: JournalEntry) => {
     const themes = entry.themes?.slice(0, 2).map(labelFor).join(' + ');
@@ -55,8 +58,14 @@
     return 'Kept as journal only';
   };
 
-  const entryPreview = (entry: JournalEntry) =>
+  const summaryFor = (entry: JournalEntry) =>
     entry.character_summary || entry.insights?.[0]?.summary || 'A quiet reflection is waiting to be read.';
+
+  const entryPreview = (entry: JournalEntry) => summaryFor(entry);
+
+  const clearJournalError = () => {
+    journalStore.clearError();
+  };
 
   const insightKey = (insight: ReflectionInsight, index: number) => `${insight.kind ?? 'insight'}-${index}`;
 </script>
@@ -78,8 +87,11 @@
 
   {#if $journalStore.error}
     <div class="journal-notice" role="status">
-      <strong>The journal stayed closed for a moment.</strong>
-      <span>{$journalStore.error}</span>
+      <div>
+        <strong>The journal stayed closed for a moment.</strong>
+        <span>{$journalStore.error}</span>
+      </div>
+      <button class="subtle" type="button" onclick={clearJournalError}>Dismiss</button>
     </div>
   {/if}
 
@@ -119,7 +131,7 @@
           <div class="journal-viewer-hero">
             <span>{formatEntryDate(selectedEntry.created_at, 'long')}</span>
             <h2>{titleFor(selectedEntry)}</h2>
-            <p>{selectedEntry.character_summary}</p>
+            <p>{summaryFor(selectedEntry)}</p>
           </div>
 
           <div class="journal-meta-grid" aria-label="Reflection metadata">

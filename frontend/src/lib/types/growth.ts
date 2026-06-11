@@ -80,5 +80,9 @@ export interface PersonalLoRAJobResponse {
 
 export type PersonalLoRASettingsUpdate = Pick<
   PersonalLoRASettings,
-  'collection_opt_in' | 'training_opt_in' | 'pause_during_chat' | 'require_review_before_training'
+  | 'collection_opt_in'
+  | 'training_opt_in'
+  | 'batch_size'
+  | 'pause_during_chat'
+  | 'require_review_before_training'
 >;

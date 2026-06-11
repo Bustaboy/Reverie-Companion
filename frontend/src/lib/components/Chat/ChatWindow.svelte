@@ -52,7 +52,7 @@
       </div>
       <div class="growth-actions" aria-label="Growth notification controls">
         <button type="button" onclick={dismissGrowthNotification}>Dismiss</button>
-        <button type="button" class="subtle" onclick={disableGrowthNotifications}>Hide these</button>
+        <button type="button" class="subtle" onclick={disableGrowthNotifications}>Hide future notes</button>
       </div>
     </aside>
   {/if}
