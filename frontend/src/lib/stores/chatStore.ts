@@ -22,6 +22,9 @@ const createAssistantPlaceholder = (): ChatMessage => ({
   status: 'streaming'
 });
 
+const OFFLINE_FALLBACK_MESSAGE =
+  "I'm sorry, I couldn't reach the local companion service right now. Please make sure the backend is running and try again.";
+
 const toServiceHistory = (messages: ChatMessage[]): Message[] =>
   messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -71,9 +74,7 @@ function createChatStore() {
   const failAssistantMessage = (assistantMessageId: string, errorMessage: string) => {
     store.update((state) => {
       const assistantMessage = state.messages.find((message) => message.id === assistantMessageId);
-      const fallbackContent =
-        assistantMessage?.content.trim() ||
-        "I'm sorry, I couldn't reach the local companion service right now. Please make sure the backend is running and try again.";
+      const fallbackContent = assistantMessage?.content.trim() || OFFLINE_FALLBACK_MESSAGE;
 
       return {
         ...state,
@@ -94,7 +95,7 @@ function createChatStore() {
       const trimmedContent = content.trim();
       const currentState = get(store);
 
-      if (!trimmedContent || currentState.generationState !== 'idle') {
+      if (!trimmedContent || currentState.generationState !== 'idle' || activeController) {
         return;
       }
 
@@ -116,6 +117,8 @@ function createChatStore() {
           if (event.event === 'message') {
             if (!event.content) continue;
 
+            // Keep the assistant placeholder stable and append incoming tokens in place.
+            // This avoids remounting the message bubble while the local backend streams.
             store.update((state) => ({
               ...state,
               generationState: 'streaming',

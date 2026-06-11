@@ -6,6 +6,15 @@
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
   };
+
+  const isGenerating = $derived($chatStore.generationState !== 'idle');
+  const statusLabel = $derived(
+    $chatStore.generationState === 'idle'
+      ? 'Local backend ready'
+      : $chatStore.generationState === 'thinking'
+        ? 'Reverie is thinking'
+        : 'Reverie is responding'
+  );
 </script>
 
 <section class="chat-window" aria-label="Reverie chat">
@@ -16,12 +25,22 @@
       <p class="subtitle">A warm, offline companion interface built for long conversations.</p>
     </div>
 
-    <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
+    <div class:streaming={isGenerating} class="status-pill" aria-label="Companion status">
       <span></span>
-      {$chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'}
+      {statusLabel}
     </div>
   </header>
 
+  {#if $chatStore.error}
+    <div class="chat-notice" role="status" aria-live="polite">
+      <div>
+        <strong>Reverie lost the thread for a moment.</strong>
+        <span>{$chatStore.error}</span>
+      </div>
+      <button type="button" onclick={() => chatStore.clearError()} aria-label="Dismiss connection notice">Dismiss</button>
+    </div>
+  {/if}
+
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
-  <MessageInput onSend={handleSend} disabled={$chatStore.generationState !== 'idle'} />
+  <MessageInput onSend={handleSend} disabled={isGenerating} />
 </section>

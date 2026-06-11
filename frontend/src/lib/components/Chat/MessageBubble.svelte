@@ -8,31 +8,40 @@
   }
 
   let { message }: Props = $props();
+
+  const isAssistant = $derived(message.role === 'assistant');
+  const isThinking = $derived(isAssistant && message.status === 'streaming' && !message.content);
 </script>
 
 <article
   class:from-user={message.role === 'user'}
-  class:from-assistant={message.role === 'assistant'}
+  class:from-assistant={isAssistant}
   class:is-streaming={message.status === 'streaming'}
+  class:is-thinking={isThinking}
   class:has-error={message.status === 'error'}
   class="message-row"
 >
   <div class="avatar" aria-hidden="true">
-    {message.role === 'assistant' ? 'R' : 'You'}
+    {isAssistant ? 'R' : 'You'}
   </div>
 
   <div class="bubble-shell">
     <div class="message-meta">
-      <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
+      <span>{isAssistant ? 'Reverie' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
     </div>
 
     <div class="bubble">
-      {#if message.role === 'assistant'}
+      {#if isAssistant}
         {#if message.content}
           <Markdown content={message.content} />
         {:else}
-          <p class="soft-placeholder">Reverie is gathering her thoughts...</p>
+          <div class="thinking-bubble" aria-live="polite" aria-label="Reverie is thinking">
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <p>Reverie is thinking</p>
+          </div>
         {/if}
 
         {#if message.status === 'streaming' && message.content}

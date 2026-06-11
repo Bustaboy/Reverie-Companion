@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+
   interface Props {
     onSend: (message: string) => void;
     disabled?: boolean;
@@ -6,6 +8,14 @@
 
   let { onSend, disabled = false }: Props = $props();
   let draft = $state('');
+  let textareaElement: HTMLTextAreaElement;
+
+  const resizeComposer = () => {
+    if (!textareaElement) return;
+
+    textareaElement.style.height = 'auto';
+    textareaElement.style.height = `${Math.min(textareaElement.scrollHeight, 192)}px`;
+  };
 
   const send = () => {
     const value = draft.trim();
@@ -21,12 +31,31 @@
       send();
     }
   };
+
+  $effect(() => {
+    draft;
+    void tick().then(resizeComposer);
+  });
+
+  $effect(() => {
+    if (disabled || !textareaElement) return;
+
+    void tick().then(() => textareaElement?.focus());
+  });
 </script>
 
-<form class="message-composer" onsubmit={(event) => { event.preventDefault(); send(); }}>
+<form
+  class:disabled={disabled}
+  class="message-composer"
+  onsubmit={(event) => {
+    event.preventDefault();
+    send();
+  }}
+>
   <label class="sr-only" for="message-input">Message Reverie</label>
   <textarea
     id="message-input"
+    bind:this={textareaElement}
     bind:value={draft}
     onkeydown={handleKeydown}
     placeholder={disabled ? 'Reverie is finishing her thought...' : 'Share what is on your mind...'}
