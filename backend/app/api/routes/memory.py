@@ -8,7 +8,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.memory import MemoryError, MemoryManager, get_memory_manager
+from app.core.memory import MemoryError
+from app.services.memory_browser_service import (
+    MemoryBrowserService,
+    get_memory_browser_service as get_memory_browser_service_singleton,
+)
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -47,15 +51,17 @@ class MemoryBulkDeleteResponse(BaseModel):
     deleted_count: int
 
 
-def get_memory_browser_manager() -> MemoryManager:
-    """Provide the process-local memory manager for Memory Browser routes."""
+def get_memory_browser_service() -> MemoryBrowserService:
+    """Provide the Memory Browser service, separate from chat RAG retrieval."""
 
-    return get_memory_manager()
+    return get_memory_browser_service_singleton()
 
 
 @router.get("/memories")
 async def list_memories(
-    memory_manager: Annotated[MemoryManager, Depends(get_memory_browser_manager)],
+    memory_service: Annotated[
+        MemoryBrowserService, Depends(get_memory_browser_service)
+    ],
     q: Annotated[str, Query(max_length=200)] = "",
     character: Annotated[str, Query(max_length=120)] = "",
     theme: Annotated[str, Query(max_length=80)] = "",
@@ -68,7 +74,7 @@ async def list_memories(
     """Return a paginated, filterable list of editable long-term memories."""
 
     try:
-        result = memory_manager.list_memories(
+        result = memory_service.list_memories(
             query=q,
             character=character,
             theme=theme,
@@ -97,11 +103,13 @@ async def list_memories(
 @router.get("/memories/{memory_id}")
 async def get_memory(
     memory_id: str,
-    memory_manager: Annotated[MemoryManager, Depends(get_memory_browser_manager)],
+    memory_service: Annotated[
+        MemoryBrowserService, Depends(get_memory_browser_service)
+    ],
 ) -> dict[str, Any]:
     """Return one memory with full provenance metadata."""
 
-    memory = memory_manager.get_memory(memory_id)
+    memory = memory_service.get_memory(memory_id)
     if memory is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,12 +122,14 @@ async def get_memory(
 async def update_memory(
     memory_id: str,
     request: MemoryUpdateRequest,
-    memory_manager: Annotated[MemoryManager, Depends(get_memory_browser_manager)],
+    memory_service: Annotated[
+        MemoryBrowserService, Depends(get_memory_browser_service)
+    ],
 ) -> dict[str, Any]:
     """Update editable memory text, tags, importance, and review metadata."""
 
     try:
-        memory = memory_manager.update_memory(
+        memory = memory_service.update_memory(
             memory_id,
             text=request.text,
             tags=request.tags,
@@ -151,12 +161,14 @@ async def update_memory(
 )
 async def delete_memory(
     memory_id: str,
-    memory_manager: Annotated[MemoryManager, Depends(get_memory_browser_manager)],
+    memory_service: Annotated[
+        MemoryBrowserService, Depends(get_memory_browser_service)
+    ],
 ) -> Response:
     """Permanently delete one memory so it can no longer be retrieved."""
 
     try:
-        deleted = memory_manager.delete_memory(memory_id)
+        deleted = memory_service.delete_memory(memory_id)
     except MemoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -173,7 +185,9 @@ async def delete_memory(
 @router.post("/memories/bulk-delete")
 async def bulk_delete_memories(
     request: MemoryBulkDeleteRequest,
-    memory_manager: Annotated[MemoryManager, Depends(get_memory_browser_manager)],
+    memory_service: Annotated[
+        MemoryBrowserService, Depends(get_memory_browser_service)
+    ],
 ) -> MemoryBulkDeleteResponse:
     """Delete selected memories or prune older memories after UI confirmation."""
 
@@ -183,7 +197,7 @@ async def bulk_delete_memories(
             detail={"error": "Choose memories or an older-than date before pruning."},
         )
     try:
-        deleted_count = memory_manager.bulk_delete_memories(
+        deleted_count = memory_service.bulk_delete_memories(
             ids=request.ids,
             older_than=request.older_than,
         )

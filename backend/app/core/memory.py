@@ -385,6 +385,21 @@ class MemoryManager:
     or prompt builders.
     """
 
+    _BROWSER_IMMUTABLE_METADATA_KEYS = {
+        "created_at",
+        "journal_entry_id",
+        "linked_journal_ids",
+        "provenance",
+        "rollback_id",
+        "source",
+        "source_message_ids",
+        "source_turn_indices",
+        "stored_by",
+        "user_id",
+        "session_id",
+        "memory_type",
+    }
+
     def __init__(self, config: MemoryManagerConfig | None = None) -> None:
         self._config = config or MemoryManagerConfig.from_settings()
         self._ollama = Client(host=self._config.ollama_host)
@@ -575,16 +590,15 @@ class MemoryManager:
 
         normalized_text = self._normalize_text(text)
         existing_metadata = dict(existing.get("metadata", {}))
-        patch_metadata = metadata or {}
-        if not isinstance(patch_metadata, dict):
-            raise ValueError("metadata must be a dictionary.")
-        merged_metadata = {**existing_metadata, **patch_metadata}
-        if tags is not None:
-            merged_metadata["tags"] = self._normalize_tags(tags)
-        if importance is not None:
-            merged_metadata["importance"] = round(float(importance), 3)
-        merged_metadata["edited_at"] = self._utc_now()
-        merged_metadata["edited_by"] = "MemoryBrowser"
+        merged_metadata = self._merge_browser_edit_metadata(
+            existing_metadata,
+            metadata or {},
+            tags=tags,
+            importance=importance,
+            previous_text=str(existing.get("text") or ""),
+            previous_updated_at=str(existing.get("updated_at") or ""),
+            text_changed=normalized_text != str(existing.get("text") or ""),
+        )
 
         record = MemoryRecord(
             id=memory_id,
@@ -1007,6 +1021,90 @@ class MemoryManager:
             raise ValueError("limit must be greater than zero.")
         return min(limit, self._config.max_context_memories * 2, 50)
 
+    def _merge_browser_edit_metadata(
+        self,
+        existing_metadata: dict[str, Any],
+        patch_metadata: dict[str, Any],
+        *,
+        tags: list[str] | None,
+        importance: float | None,
+        previous_text: str,
+        previous_updated_at: str,
+        text_changed: bool,
+    ) -> dict[str, Any]:
+        """Merge editable fields without erasing original memory provenance.
+
+        Browser edits are corrections to the durable note, not a new source of
+        truth about where the note came from. Immutable provenance fields keep
+        pointing at the original conversation/journal evidence while edit audit
+        metadata records that a user reviewed or changed the browser copy.
+        """
+
+        if not isinstance(patch_metadata, dict):
+            raise ValueError("metadata must be a dictionary.")
+
+        preserved = dict(existing_metadata)
+        attempted_immutable_changes = sorted(
+            key
+            for key in patch_metadata
+            if key in self._BROWSER_IMMUTABLE_METADATA_KEYS
+            and patch_metadata.get(key) != existing_metadata.get(key)
+        )
+        editable_patch = {
+            key: value
+            for key, value in patch_metadata.items()
+            if key not in self._BROWSER_IMMUTABLE_METADATA_KEYS
+        }
+        merged_metadata = {**preserved, **editable_patch}
+        if tags is not None:
+            merged_metadata["tags"] = self._normalize_tags(tags)
+        if importance is not None:
+            merged_metadata["importance"] = round(float(importance), 3)
+
+        edited_at = self._utc_now()
+        edit_history = merged_metadata.get("edit_history")
+        if not isinstance(edit_history, list):
+            edit_history = []
+        changed_field_set = set(editable_patch)
+        if text_changed:
+            changed_field_set.add("text")
+        if tags is not None:
+            changed_field_set.add("tags")
+        if importance is not None:
+            changed_field_set.add("importance")
+        changed_fields = sorted(changed_field_set)
+        edit_history.append(
+            {
+                "edited_at": edited_at,
+                "edited_by": "MemoryBrowser",
+                "previous_updated_at": previous_updated_at or None,
+                "previous_text_hash": self._text_hash(previous_text),
+                "changed_fields": changed_fields,
+                "ignored_provenance_keys": attempted_immutable_changes,
+            }
+        )
+        merged_metadata["edit_history"] = edit_history[-25:]
+        merged_metadata["edited_at"] = edited_at
+        merged_metadata["edited_by"] = "MemoryBrowser"
+        merged_metadata["content_version"] = self._next_content_version(
+            merged_metadata.get("content_version")
+        )
+        if attempted_immutable_changes:
+            merged_metadata["last_ignored_provenance_patch_keys"] = (
+                attempted_immutable_changes
+            )
+        else:
+            merged_metadata.pop("last_ignored_provenance_patch_keys", None)
+        return merged_metadata
+
+    def _next_content_version(self, value: Any) -> int:
+        try:
+            return int(value or 1) + 1
+        except (TypeError, ValueError):
+            return 2
+
+    def _text_hash(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
     def _read_all_rows(self) -> list[dict[str, Any]]:
         """Read all memory rows for paginated browser filtering."""

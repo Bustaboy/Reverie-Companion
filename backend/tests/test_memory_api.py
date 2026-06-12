@@ -8,11 +8,12 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.api.routes.memory import get_memory_browser_manager
+from app.api.routes.memory import get_memory_browser_service
+from app.core.memory import MemoryManager
 from app.main import app
 
 
-class FakeMemoryBrowserManager:
+class FakeMemoryBrowserService:
     """Small dependency stand-in that keeps Memory Browser API tests offline."""
 
     def __init__(self) -> None:
@@ -69,10 +70,58 @@ class FakeMemoryBrowserManager:
         return before - len(self.memories)
 
 
+class MemoryManagerBrowserEditTests(unittest.TestCase):
+    def test_browser_edit_preserves_original_provenance_metadata(self) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        existing_metadata = {
+            "source": "reflection_journal",
+            "journal_entry_id": "journal_original",
+            "provenance": {"source_turn_indices": [1, 2]},
+            "source_turn_indices": [1, 2],
+            "user_id": "local_user",
+            "tags": ["gentle"],
+            "importance": 0.72,
+            "content_version": 2,
+        }
+
+        merged = manager._merge_browser_edit_metadata(  # type: ignore[attr-defined]
+            existing_metadata,
+            {
+                "source": "manual_overwrite",
+                "journal_entry_id": "journal_wrong",
+                "provenance": {"source_turn_indices": [99]},
+                "browser_reviewed": True,
+                "review_note": "User corrected the wording.",
+            },
+            tags=["Grounding", "gentle", "grounding"],
+            importance=0.91,
+            previous_text="Old reassurance note.",
+            previous_updated_at="2026-06-11T12:00:00+00:00",
+            text_changed=True,
+        )
+
+        self.assertEqual(merged["source"], "reflection_journal")
+        self.assertEqual(merged["journal_entry_id"], "journal_original")
+        self.assertEqual(merged["provenance"], {"source_turn_indices": [1, 2]})
+        self.assertEqual(merged["source_turn_indices"], [1, 2])
+        self.assertTrue(merged["browser_reviewed"])
+        self.assertEqual(merged["review_note"], "User corrected the wording.")
+        self.assertEqual(merged["tags"], ["grounding", "gentle"])
+        self.assertEqual(merged["importance"], 0.91)
+        self.assertEqual(merged["content_version"], 3)
+        self.assertEqual(
+            merged["last_ignored_provenance_patch_keys"],
+            ["journal_entry_id", "provenance", "source"],
+        )
+        self.assertEqual(len(merged["edit_history"]), 1)
+        self.assertIn("text", merged["edit_history"][0]["changed_fields"])
+        self.assertIn("previous_text_hash", merged["edit_history"][0])
+
+
 class MemoryApiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.fake_manager = FakeMemoryBrowserManager()
-        app.dependency_overrides[get_memory_browser_manager] = lambda: self.fake_manager
+        self.fake_manager = FakeMemoryBrowserService()
+        app.dependency_overrides[get_memory_browser_service] = lambda: self.fake_manager
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
