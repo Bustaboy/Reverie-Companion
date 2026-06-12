@@ -436,4 +436,22 @@ The Task 3C frontend integration was tightened after review:
 - **Polished resource feedback**: user-facing copy now distinguishes TTS pause/resume, low-VRAM waiting, unknown VRAM preview fallback, OOM/degraded preset fallback, and normal queued/running states while preserving the backend rule that TTS always has priority over image generation.
 
 
+---
+
+## Milestone 3 Task 3D Update — Image Polish, History, Gallery, and Controls
+
+Task 3D completes the Milestone 3 image generation arc by turning the Task 3A/3B/3C queue and display foundation into a durable, user-controllable image system:
+
+- **Persistent per-conversation history**: image requests now carry typed metadata for conversation id, source surface, source message, source label, display prompt, variation lineage, and character-asset save state. The backend persists terminal image jobs to a local JSON history index beside generated image outputs and reloads that index on service startup so protected `/api/images/{job_id}/outputs/{output_index}` URLs remain available after app restart.
+- **History API and safe deletion**: the image API exposes conversation-scoped history listing plus job deletion. Deletion removes the job from the persisted history index and best-effort deletes local generated files only through the existing job-attached safe path resolver.
+- **Svelte gallery**: chat and Visual Novel mode can open a lightweight gallery panel backed by the typed image service and `imageGenerationStore`. The gallery lazy-loads persisted history, caps visible items, reuses the shared image job card, and shows completed/failed images with prompt summaries, source labels, and status metadata.
+- **User controls**: image cards/gallery entries support regenerate from the same prompt, create a variation with alternate composition/lighting while preserving identity, retry failed work, save completed images into the character visual manifest as generated backgrounds, and delete individual images from history.
+- **Character asset/manifest saving**: saved images are added to the Visual Novel manifest as local generated background assets and persisted in browser storage for the default local character experience. The current VN background updates immediately without modifying authored sprite layers.
+- **Polished display quality**: chat/VN image cards now use lazy image decoding, expandable previews, full-size open links for zoom, prompt-summary captions, warmer status/error copy, and shared progress/error presentation. VN generated scene art remains a low-opacity background enhancement behind authored sprite layers.
+- **Settings controls**: settings now include a default image preset selector (`preview_8gb`, `balanced_8gb`, `high_8gb`) alongside the off-by-default auto-generate toggle. Manual generation remains the default and all image work continues to queue behind chat/TTS priority.
+- **8GB safety preserved**: no new model residency is introduced. History and gallery store metadata and output references, cap visible items, lazy-load previews, keep ComfyUI as the only diffusion owner, and preserve the existing queue, VRAM checks, pause/resume, TTS preemption, and preview fallback behavior.
+
+**Milestone 3 Task 3 is complete.** Reverie now has the full local image generation architecture for Milestone 3: safe queued backend, deterministic prompt enrichment, frontend chat/VN integration, persistent history, gallery management, user controls, settings, and 8GB-friendly polish.
+
+
 *End of Source of Truth Document v1.0*

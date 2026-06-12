@@ -8,9 +8,13 @@
     previewOpen?: boolean;
     onCancel?: (job: ImageGenerationJob) => void;
     onRetry?: (job: ImageGenerationJob) => void;
+    onRegenerate?: (job: ImageGenerationJob) => void;
+    onVary?: (job: ImageGenerationJob) => void;
+    onSave?: (job: ImageGenerationJob) => void;
+    onDelete?: (job: ImageGenerationJob) => void;
   }
 
-  let { job, compact = false, showPreview = true, previewOpen = true, onCancel, onRetry }: Props = $props();
+  let { job, compact = false, showPreview = true, previewOpen = true, onCancel, onRetry, onRegenerate, onVary, onSave, onDelete }: Props = $props();
 
   const isActive = $derived(job.status === 'queued' || job.status === 'waiting_for_resources' || job.status === 'paused' || job.status === 'running');
   const isPausedForTTS = $derived(job.status === 'paused' || job.resource_mode === 'paused_for_tts');
@@ -19,6 +23,7 @@
   const progressPercent = $derived(Math.round(job.progress * 100));
   const progressStyle = $derived(`--image-progress: ${(job.progress * 100).toFixed(1)}%`);
   const previewUrl = $derived(job.status === 'completed' ? job.imageUrls[0] : undefined);
+  const promptCaption = $derived((job.displayPrompt || job.prompt).length > 130 ? `${(job.displayPrompt || job.prompt).slice(0, 130).trim()}…` : job.displayPrompt || job.prompt);
 
   const statusLabel = $derived.by(() => {
     if (job.status === 'completed') return job.fallback_used ? 'Image ready · lighter 8GB preset used' : 'Image ready';
@@ -94,7 +99,20 @@
   {#if showPreview && previewUrl}
     <details class="image-job-preview" open={previewOpen}>
       <summary>View generated image</summary>
-      <img src={previewUrl} alt={`Generated image for ${job.sourceLabel}: ${job.displayPrompt}`} loading="lazy" decoding="async" />
+      <figure>
+        <a href={previewUrl} target="_blank" rel="noreferrer" aria-label="Open generated image at full size">
+          <img src={previewUrl} alt={`Generated image for ${job.sourceLabel}: ${job.displayPrompt}`} loading="lazy" decoding="async" />
+        </a>
+        <figcaption>{promptCaption}</figcaption>
+      </figure>
     </details>
+  {/if}
+  {#if job.status === 'completed' && (onRegenerate || onVary || onSave || onDelete)}
+    <div class="image-job-controls" aria-label="Generated image controls">
+      {#if onRegenerate}<button type="button" onclick={() => onRegenerate?.(job)}>Regenerate</button>{/if}
+      {#if onVary}<button type="button" onclick={() => onVary?.(job)}>Vary</button>{/if}
+      {#if onSave}<button type="button" onclick={() => onSave?.(job)}>Save to assets</button>{/if}
+      {#if onDelete}<button type="button" class="danger" onclick={() => onDelete?.(job)}>Delete</button>{/if}
+    </div>
   {/if}
 </article>

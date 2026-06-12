@@ -236,3 +236,41 @@ def test_image_output_reference_rejects_unattached_or_unsafe_paths(tmp_path) -> 
             raise AssertionError("Unattached output index should be rejected")
 
     asyncio.run(run_test())
+
+
+def test_image_history_persists_and_reloads_terminal_jobs(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                prompt="persistent moonlit gallery portrait",
+                metadata={
+                    "conversation_id": "conversation-a",
+                    "source": "chat-message",
+                    "source_label": "Chat reply",
+                    "display_prompt": "Moonlit gallery portrait",
+                },
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        history = service.list_history("conversation-a")
+        assert [item.job_id for item in history] == [job.job_id]
+        assert history[0].metadata.display_prompt == "Moonlit gallery portrait"
+
+        reloaded = make_service(tmp_path, FakeCoordinator(free_vram_mb=7000), FakeAdapter())
+        reloaded_history = reloaded.list_history("conversation-a")
+        assert [item.job_id for item in reloaded_history] == [job.job_id]
+        assert reloaded.get_job(job.job_id).output_paths == [f"{job.job_id}.png"]
+
+        reloaded.delete_history_job(job.job_id)
+        assert reloaded.list_history("conversation-a") == []
+
+    asyncio.run(run_test())

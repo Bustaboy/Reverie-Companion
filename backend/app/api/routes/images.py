@@ -12,7 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from app.core.config import Settings, get_settings
-from app.models.image import ImageGenerateRequest, ImageGenerateResponse, ImageJobRead
+from app.models.image import (
+    ImageDeleteResponse,
+    ImageGenerateRequest,
+    ImageGenerateResponse,
+    ImageHistoryResponse,
+    ImageJobRead,
+)
 from app.services.image_generation_service import (
     ImageGenerationError,
     ImageGenerationService,
@@ -41,6 +47,29 @@ def get_images_service(
             },
         )
     return get_image_generation_service(settings)
+
+
+@router.get("/history/{conversation_id}", response_model=ImageHistoryResponse)
+async def list_image_history(
+    conversation_id: str,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+) -> ImageHistoryResponse:
+    normalized = conversation_id.strip() or "local-session"
+    return ImageHistoryResponse(
+        conversation_id=normalized, jobs=service.list_history(normalized)
+    )
+
+
+@router.delete("/history/{job_id}", response_model=ImageDeleteResponse)
+async def delete_image_history_job(
+    job_id: str,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+) -> ImageDeleteResponse:
+    try:
+        service.delete_history_job(job_id)
+    except ImageGenerationError as exc:
+        raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+    return ImageDeleteResponse(job_id=job_id)
 
 
 @router.post(

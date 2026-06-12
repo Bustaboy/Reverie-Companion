@@ -1,5 +1,6 @@
 <script lang="ts">
   import MessageInput from './MessageInput.svelte';
+  import { ImageGallery } from '$lib/components/ImageGeneration';
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
@@ -29,6 +30,10 @@
     imageGenerationStore.dismissError();
   };
 
+  const openGallery = () => {
+    imageGenerationStore.setGalleryOpen(true);
+  };
+
   const dismissGrowthNotification = () => {
     chatStore.dismissGrowthNotification();
   };
@@ -47,6 +52,7 @@
     </div>
 
     <div class="chat-header-actions">
+      <button type="button" class="ghost-button image-header-button" onclick={openGallery}>Gallery</button>
       <button
         type="button"
         class="ghost-button image-header-button"
@@ -70,6 +76,7 @@
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
 
   <AudioPlayer />
+  <ImageGallery />
 
   {#if $chatStore.growthNotification}
     <aside class="growth-notification" role="status" aria-live="polite">

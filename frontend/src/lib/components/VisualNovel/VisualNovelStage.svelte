@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import { ImageJobCard } from '$lib/components/ImageGeneration';
+  import { ImageGallery, ImageJobCard } from '$lib/components/ImageGeneration';
   import { AudioPlayer } from '$lib/components/TTS';
   import { chatStore } from '$lib/stores/chatStore';
   import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
@@ -83,6 +83,8 @@
     imageGenerationStore.visualizeScene($visualNovelScene, latestAssistantLine);
   };
 
+  const openGallery = () => imageGenerationStore.setGalleryOpen(true);
+
   const cancelVisualizeScene = () => {
     if (visualNovelImageJob) void imageGenerationStore.cancel(visualNovelImageJob.job_id);
   };
@@ -130,6 +132,7 @@
       </div>
 
       <div class="vn-actions">
+        <button type="button" class="ghost-button" onclick={openGallery}>Gallery</button>
         <button
           type="button"
           class="ghost-button"
@@ -242,4 +245,5 @@
       <AudioPlayer compact label="Visual novel voice playback" />
     </div>
   </div>
+  <ImageGallery />
 </section>

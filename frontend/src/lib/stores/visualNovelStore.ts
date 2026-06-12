@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import { derived, get, writable } from 'svelte/store';
 import { DEFAULT_CHARACTER_VISUAL_MANIFEST } from '$lib/visual-novel/defaultManifest';
 import { expressionManager } from '$lib/visual-novel/ExpressionManager';
@@ -5,6 +6,7 @@ import type {
   CharacterVisualManifest,
   NormalizedVisualState,
   ResolvedVisualNovelScene,
+  VisualAssetRef,
   VisualGrowthModifier,
   VisualStateMetadata
 } from '$lib/types/visualNovel';
@@ -25,8 +27,32 @@ const MAX_GROWTH_MODIFIER_MS = 60_000;
 const DEFAULT_GROWTH_MODIFIER_MS = 45_000;
 const DEFAULT_GROWTH_INTENSITY = 0.5;
 const MIN_GROWTH_INTENSITY = 0.2;
+const GENERATED_BACKGROUND_STORAGE_KEY = 'reverie.generatedCharacterAssets.v1';
 
-const initialManifest = DEFAULT_CHARACTER_VISUAL_MANIFEST;
+const readGeneratedBackgrounds = (): Record<string, VisualAssetRef> => {
+  if (!browser) return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GENERATED_BACKGROUND_STORAGE_KEY) ?? '{}') as Record<string, VisualAssetRef>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const persistGeneratedBackgrounds = (backgrounds: Record<string, VisualAssetRef>) => {
+  if (!browser) return;
+  window.localStorage.setItem(GENERATED_BACKGROUND_STORAGE_KEY, JSON.stringify(backgrounds));
+};
+
+const withGeneratedBackgrounds = (manifest: CharacterVisualManifest): CharacterVisualManifest => ({
+  ...manifest,
+  backgrounds: {
+    ...manifest.backgrounds,
+    ...readGeneratedBackgrounds()
+  }
+});
+
+const initialManifest = withGeneratedBackgrounds(DEFAULT_CHARACTER_VISUAL_MANIFEST);
 const initialVisualState = expressionManager.normalizeState(initialManifest);
 
 const INITIAL_STATE: VisualNovelState = {
@@ -114,6 +140,27 @@ function createVisualNovelStore() {
     },
     toggleFullImmersive() {
       store.update((state) => ({ ...state, fullImmersive: !state.fullImmersive }));
+    },
+    addGeneratedBackground(asset: VisualAssetRef & { label?: string }) {
+      const key = `generated_${Date.now()}`;
+      const background: VisualAssetRef = {
+        kind: 'image',
+        src: asset.src,
+        alt: asset.alt,
+        dominantColor: asset.dominantColor
+      };
+      store.update((state) => {
+        const generatedBackgrounds = { ...readGeneratedBackgrounds(), [key]: background };
+        persistGeneratedBackgrounds(generatedBackgrounds);
+        return {
+          ...state,
+          manifest: {
+            ...state.manifest,
+            backgrounds: { ...state.manifest.backgrounds, [key]: background }
+          },
+          currentVisualState: { ...state.currentVisualState, background: key as never }
+        };
+      });
     },
     markAssetFailed(src?: string) {
       if (!src) return;

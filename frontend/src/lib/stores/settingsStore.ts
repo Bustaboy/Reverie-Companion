@@ -5,6 +5,7 @@ export type ReflectionFrequency = 'low' | 'balanced' | 'high';
 export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
 export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
 export type TTSLatencyPreset = 'quality' | 'balanced' | 'speed';
+export type ImageQualityPresetSetting = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -19,6 +20,7 @@ export interface MemoryReflectionSettings {
   ttsSpeed: number;
   ttsLatencyPreset: TTSLatencyPreset;
   imageAutoGenerateOnAssistant: boolean;
+  imageDefaultPreset: ImageQualityPresetSetting;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -43,7 +45,8 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   ttsVolume: 0.86,
   ttsSpeed: 1,
   ttsLatencyPreset: 'balanced',
-  imageAutoGenerateOnAssistant: false
+  imageAutoGenerateOnAssistant: false,
+  imageDefaultPreset: 'preview_8gb'
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -62,6 +65,9 @@ const isContextBudgetPreset = (value: unknown): value is ContextBudgetPreset =>
 
 const isTTSLatencyPreset = (value: unknown): value is TTSLatencyPreset =>
   value === 'quality' || value === 'balanced' || value === 'speed';
+
+const isImageQualityPresetSetting = (value: unknown): value is ImageQualityPresetSetting =>
+  value === 'preview_8gb' || value === 'balanced_8gb' || value === 'high_8gb';
 
 const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -99,6 +105,9 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
     value.imageAutoGenerateOnAssistant,
     DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateOnAssistant
   ),
+  imageDefaultPreset: isImageQualityPresetSetting(value.imageDefaultPreset)
+    ? value.imageDefaultPreset
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.imageDefaultPreset,
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -131,6 +140,7 @@ const persistSettings = (state: SettingsState) => {
     ttsSpeed: state.ttsSpeed,
     ttsLatencyPreset: state.ttsLatencyPreset,
     imageAutoGenerateOnAssistant: state.imageAutoGenerateOnAssistant,
+    imageDefaultPreset: state.imageDefaultPreset,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -189,6 +199,9 @@ function createSettingsStore() {
     },
     setImageAutoGenerateOnAssistant(imageAutoGenerateOnAssistant: boolean) {
       save({ imageAutoGenerateOnAssistant });
+    },
+    setImageDefaultPreset(imageDefaultPreset: ImageQualityPresetSetting) {
+      save({ imageDefaultPreset });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

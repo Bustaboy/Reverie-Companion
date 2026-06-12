@@ -36,6 +36,7 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.models.image import (
+    ImageGenerationMetadata,
     ImageGenerateRequest,
     ImageJobEvent,
     ImageJobRead,
@@ -149,6 +150,7 @@ class ImageJob:
     resource_mode: str = "queued"
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    metadata: ImageGenerationMetadata = field(default_factory=ImageGenerationMetadata)
     sequence: int = 0
     cancel_requested: bool = False
     comfy_prompt_id: str | None = None
@@ -174,6 +176,7 @@ class ImageJob:
             resource_mode=self.resource_mode,
             vram_free_mb=self.vram_free_mb,
             vram_required_mb=self.vram_required_mb,
+            metadata=self.metadata,
         )
 
 
@@ -327,6 +330,9 @@ class ImageGenerationService:
         )
         self._worker_task: asyncio.Task[None] | None = None
         Path(settings.image_generation_output_dir).mkdir(parents=True, exist_ok=True)
+        self._history_path = Path(settings.image_generation_output_dir).resolve().parent / "history.json"
+        self._history_path.parent.mkdir(parents=True, exist_ok=True)
+        self._load_persisted_history()
 
     async def submit(self, request: ImageGenerateRequest) -> ImageJobRead:
         self._ensure_worker()
@@ -362,6 +368,7 @@ class ImageGenerationService:
             context=enriched_context,
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
+            metadata=request.metadata,
         )
         self._jobs[job_id] = job
         self._emit(
@@ -372,6 +379,27 @@ class ImageGenerationService:
 
     def get_job(self, job_id: str) -> ImageJobRead:
         return self._require_job(job_id).to_read()
+
+    def list_history(self, conversation_id: str = "local-session") -> list[ImageJobRead]:
+        normalized = (conversation_id or "local-session").strip() or "local-session"
+        jobs = [
+            job.to_read()
+            for job in self._jobs.values()
+            if job.metadata.conversation_id == normalized and job.status in TERMINAL_STATUSES
+        ]
+        return sorted(jobs, key=lambda job: job.created_at, reverse=True)
+
+    def delete_history_job(self, job_id: str) -> None:
+        job = self._require_job(job_id)
+        for output_path in list(job.output_paths):
+            local_path = self._resolve_local_output_path(output_path)
+            if local_path is not None:
+                try:
+                    local_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Could not delete generated image file", extra={"path": str(local_path)})
+        self._jobs.pop(job_id, None)
+        self._persist_history()
 
     def get_output_reference(
         self, job_id: str, output_index: int
@@ -788,6 +816,8 @@ class ImageGenerationService:
         if error is not None:
             job.error = error
         self._emit(job, event=f"job.{job.status.value}", message=job.message)
+        if job.status in TERMINAL_STATUSES:
+            self._persist_history()
 
     def _emit(self, job: ImageJob, *, event: str, message: str) -> None:
         job.updated_at = datetime.now(timezone.utc)
@@ -806,6 +836,7 @@ class ImageGenerationService:
             fallback_used=job.fallback_used,
             vram_free_mb=job.vram_free_mb,
             vram_required_mb=job.vram_required_mb,
+            metadata=job.metadata,
         )
         job.events.append(payload)
         for watcher in list(job.watchers):
@@ -813,6 +844,76 @@ class ImageGenerationService:
                 watcher.put_nowait(payload)
             except asyncio.QueueFull:
                 job.watchers.discard(watcher)
+
+    def _load_persisted_history(self) -> None:
+        if not self._history_path.is_file():
+            return
+        try:
+            raw_jobs = json.loads(self._history_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Image history could not be read; starting with an empty in-memory index.")
+            return
+        if not isinstance(raw_jobs, list):
+            return
+        for raw in raw_jobs:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                metadata_raw = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+                job = ImageJob(
+                    job_id=str(raw["job_id"]),
+                    prompt=str(raw.get("prompt", "")),
+                    negative_prompt=str(raw.get("negative_prompt", "")),
+                    context=raw.get("context") if isinstance(raw.get("context"), dict) else None,
+                    requested_preset=ImageQualityPreset(raw.get("requested_preset", ImageQualityPreset.preview_8gb)),
+                    active_preset=ImageQualityPreset(raw.get("active_preset", ImageQualityPreset.preview_8gb)),
+                    metadata=ImageGenerationMetadata(**metadata_raw),
+                    created_at=datetime.fromisoformat(str(raw.get("created_at"))),
+                    updated_at=datetime.fromisoformat(str(raw.get("updated_at"))),
+                    status=ImageJobStatus(raw.get("status", ImageJobStatus.completed)),
+                    progress=float(raw.get("progress", 1.0)),
+                    phase=str(raw.get("phase", "completed")),
+                    message=str(raw.get("message", "Image loaded from history.")),
+                    output_paths=[str(path) for path in raw.get("output_paths", []) if path],
+                    error=raw.get("error") if isinstance(raw.get("error"), dict) else None,
+                    fallback_used=bool(raw.get("fallback_used", False)),
+                    resource_mode=str(raw.get("resource_mode", "complete")),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            if job.status in TERMINAL_STATUSES:
+                self._jobs[job.job_id] = job
+
+    def _persist_history(self) -> None:
+        history = []
+        for job in sorted(self._jobs.values(), key=lambda item: item.created_at):
+            if job.status not in TERMINAL_STATUSES:
+                continue
+            history.append(
+                {
+                    "job_id": job.job_id,
+                    "status": job.status.value,
+                    "prompt": job.prompt,
+                    "negative_prompt": job.negative_prompt,
+                    "context": job.context,
+                    "requested_preset": job.requested_preset.value,
+                    "active_preset": job.active_preset.value,
+                    "created_at": job.created_at.isoformat(),
+                    "updated_at": job.updated_at.isoformat(),
+                    "progress": job.progress,
+                    "phase": job.phase,
+                    "message": job.message,
+                    "output_paths": job.output_paths,
+                    "error": job.error,
+                    "fallback_used": job.fallback_used,
+                    "resource_mode": job.resource_mode,
+                    "metadata": job.metadata.model_dump(mode="json"),
+                }
+            )
+        try:
+            self._history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        except OSError:
+            logger.warning("Image history could not be persisted", extra={"path": str(self._history_path)})
 
 
 _image_service: ImageGenerationService | None = None

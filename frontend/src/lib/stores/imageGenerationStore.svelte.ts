@@ -1,10 +1,12 @@
+import { browser } from '$app/environment';
 import { imageService, ImageServiceError, type ImageJobEvent, type ImageJobRead, type ImageQualityPreset } from '$lib/api/imageService';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
+import { visualNovelStore } from '$lib/stores/visualNovelStore';
 import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
 
-export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat';
+export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery-regenerate' | 'gallery-variation';
 
 export interface ImageGenerationJob extends ImageJobRead {
   source: ImageGenerationSource;
@@ -13,6 +15,7 @@ export interface ImageGenerationJob extends ImageJobRead {
   displayPrompt: string;
   imageUrls: string[];
   submittedAt: Date;
+  savedToCharacterAssets?: boolean;
 }
 
 interface QueueImageInput {
@@ -22,11 +25,12 @@ interface QueueImageInput {
   sourceMessageId?: string;
   context?: Record<string, unknown>;
   qualityPreset?: ImageQualityPreset;
+  variationOfJobId?: string;
 }
 
-const MAX_VISIBLE_JOBS = 8;
+const CONVERSATION_ID = 'local-session';
+const MAX_VISIBLE_JOBS = 16;
 const PROMPT_SOFT_LIMIT = 900;
-
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 const clipPrompt = (prompt: string): string => {
@@ -35,27 +39,46 @@ const clipPrompt = (prompt: string): string => {
   return `${normalized.slice(0, PROMPT_SOFT_LIMIT).trim()} …`;
 };
 
+const promptSummary = (prompt: string): string => {
+  const clipped = clipPrompt(prompt);
+  return clipped.length > 110 ? `${clipped.slice(0, 110).trim()}…` : clipped;
+};
+
 const isTerminalStatus = (status: ImageJobRead['status']) => TERMINAL_STATUSES.has(status);
 
 const normalizeError = (error: unknown): string => {
   if (error instanceof ImageServiceError) {
     if (error.code === 'image_generation_disabled') return 'Image generation is disabled in the local backend settings.';
     if (error.code === 'image_queue_full') return 'The local image queue is full. Wait for one scene to finish, then try again.';
-    if (error.retryable) return `${error.message} You can try again in a moment.`;
+    if (error.retryable) return `${error.message} You can retry this image from its card.`;
     return error.message;
   }
   return 'Reverie could not queue that image. Chat and voice are still safe.';
 };
 
-const jobFromRead = (job: ImageJobRead, input: QueueImageInput): ImageGenerationJob => ({
-  ...job,
+const metadataForInput = (input: QueueImageInput, prompt: string) => ({
+  conversation_id: CONVERSATION_ID,
   source: input.source,
-  sourceMessageId: input.sourceMessageId,
-  sourceLabel: input.sourceLabel,
-  displayPrompt: input.prompt,
-  imageUrls: job.output_paths.map((_, index) => imageService.resolveOutputUrl(job.job_id, index)).filter(Boolean),
-  submittedAt: new Date()
+  source_message_id: input.sourceMessageId,
+  source_label: input.sourceLabel,
+  display_prompt: prompt,
+  variation_of_job_id: input.variationOfJobId
 });
+
+const jobFromRead = (job: ImageJobRead, input?: QueueImageInput): ImageGenerationJob => {
+  const metadata = job.metadata;
+  const displayPrompt = input?.prompt ?? metadata?.display_prompt ?? job.prompt;
+  return {
+    ...job,
+    source: (input?.source ?? metadata?.source ?? 'chat-global') as ImageGenerationSource,
+    sourceMessageId: input?.sourceMessageId ?? metadata?.source_message_id ?? undefined,
+    sourceLabel: input?.sourceLabel ?? metadata?.source_label ?? 'Generated image',
+    displayPrompt,
+    imageUrls: job.output_paths.map((_, index) => imageService.resolveOutputUrl(job.job_id, index)).filter(Boolean),
+    submittedAt: new Date(job.created_at),
+    savedToCharacterAssets: Boolean(metadata?.saved_to_character_assets)
+  };
+};
 
 const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): ImageGenerationJob => ({
   ...existing,
@@ -104,13 +127,18 @@ class ImageGenerationStore {
   error = $state<string | null>(null);
   announcement = $state('Images are ready when you ask.');
   autoGenerateOnAssistant = $state(settingsStore.getSnapshot().imageAutoGenerateOnAssistant);
+  defaultPreset = $state<ImageQualityPreset>(settingsStore.getSnapshot().imageDefaultPreset);
+  galleryOpen = $state(false);
 
   private controllers = new Map<string, AbortController>();
+  private historyLoaded = false;
 
   constructor() {
     settingsStore.subscribe((settings) => {
       this.autoGenerateOnAssistant = settings.imageAutoGenerateOnAssistant;
+      this.defaultPreset = settings.imageDefaultPreset;
     });
+    if (browser) void this.loadHistory();
   }
 
   get activeJobs() {
@@ -119,6 +147,10 @@ class ImageGenerationStore {
 
   get completedJobs() {
     return this.jobs.filter((job) => job.status === 'completed');
+  }
+
+  get galleryJobs() {
+    return this.jobs.filter((job) => job.status === 'completed' || job.status === 'failed').slice(0, MAX_VISIBLE_JOBS);
   }
 
   get latestVisualNovelJob() {
@@ -159,6 +191,23 @@ class ImageGenerationStore {
     return this.jobs.find((job) => job.sourceMessageId === messageId && job.status === 'completed') ?? null;
   }
 
+  async loadHistory() {
+    if (this.historyLoaded) return;
+    this.historyLoaded = true;
+    try {
+      const response = await imageService.listHistory(CONVERSATION_ID);
+      const jobs = response.jobs.map((job) => jobFromRead(job));
+      this.mergeJobs(jobs);
+    } catch (error) {
+      this.error = normalizeError(error);
+    }
+  }
+
+  setGalleryOpen(open: boolean) {
+    this.galleryOpen = open;
+    if (open) void this.loadHistory();
+  }
+
   generateFromMessage(message: ChatMessage, source: ImageGenerationSource = 'chat-message') {
     if (!message.content.trim()) return;
     void this.queueImage({
@@ -167,7 +216,7 @@ class ImageGenerationStore {
       sourceLabel: message.role === 'assistant' ? 'Chat reply' : 'User message',
       prompt: promptFromMessage(message),
       context: contextFromMessage(message),
-      qualityPreset: 'preview_8gb'
+      qualityPreset: this.defaultPreset
     });
   }
 
@@ -186,7 +235,7 @@ class ImageGenerationStore {
       sourceLabel: 'Visual novel scene',
       prompt,
       context: contextFromScene(scene, dialogue),
-      qualityPreset: 'preview_8gb'
+      qualityPreset: this.defaultPreset
     });
   }
 
@@ -194,6 +243,60 @@ class ImageGenerationStore {
     if (!this.autoGenerateOnAssistant || message.role !== 'assistant' || message.status !== 'complete') return;
     if (this.jobs.some((job) => job.sourceMessageId === message.id)) return;
     this.generateFromMessage(message, 'auto-chat');
+  }
+
+  regenerate(job: ImageGenerationJob) {
+    void this.queueImage({
+      source: 'gallery-regenerate',
+      sourceMessageId: job.sourceMessageId,
+      sourceLabel: 'Regenerated image',
+      prompt: job.displayPrompt || job.prompt,
+      context: { regenerated_from_job_id: job.job_id, source: job.source },
+      qualityPreset: this.defaultPreset,
+      variationOfJobId: job.job_id
+    });
+  }
+
+  vary(job: ImageGenerationJob) {
+    const variationPrompt = clipPrompt(`${job.displayPrompt || job.prompt}. Create a tasteful alternate variation with a slightly different composition, lighting, and emotional nuance while preserving character identity.`);
+    void this.queueImage({
+      source: 'gallery-variation',
+      sourceMessageId: job.sourceMessageId,
+      sourceLabel: 'Image variation',
+      prompt: variationPrompt,
+      context: { variation_of_job_id: job.job_id, original_prompt: job.displayPrompt || job.prompt },
+      qualityPreset: this.defaultPreset,
+      variationOfJobId: job.job_id
+    });
+  }
+
+  saveToCharacterAssets(job: ImageGenerationJob) {
+    const url = job.imageUrls[0];
+    if (!url) {
+      this.error = 'That image is not available to save yet.';
+      return;
+    }
+    visualNovelStore.addGeneratedBackground({
+      kind: 'image',
+      src: url,
+      alt: `Generated scene: ${promptSummary(job.displayPrompt || job.prompt)}`,
+      label: job.sourceLabel,
+      dominantColor: '#211826'
+    });
+    this.patchJob(job.job_id, (existing) => ({ ...existing, savedToCharacterAssets: true }));
+    this.announcement = 'Saved this image to the character visual manifest as a generated background.';
+  }
+
+  async deleteJob(jobId: string) {
+    this.controllers.get(jobId)?.abort();
+    try {
+      await imageService.deleteHistoryJob(jobId);
+      this.jobs = this.jobs.filter((job) => job.job_id !== jobId);
+      this.announcement = 'Deleted that image from this conversation history.';
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
   }
 
   async cancel(jobId: string) {
@@ -220,6 +323,10 @@ class ImageGenerationStore {
     settingsStore.setImageAutoGenerateOnAssistant(enabled);
   }
 
+  setDefaultPreset(preset: ImageQualityPreset) {
+    settingsStore.setImageDefaultPreset(preset);
+  }
+
   private async queueImage(input: QueueImageInput) {
     const prompt = clipPrompt(input.prompt);
     if (!prompt) return;
@@ -233,7 +340,8 @@ class ImageGenerationStore {
       const response = await imageService.generateImage({
         prompt,
         context: input.context,
-        quality_preset: input.qualityPreset ?? 'preview_8gb'
+        quality_preset: input.qualityPreset ?? this.defaultPreset,
+        metadata: metadataForInput(input, prompt)
       });
       const job = jobFromRead(response.job, { ...input, prompt });
       this.upsertJob(job);
@@ -267,6 +375,12 @@ class ImageGenerationStore {
       .finally(() => {
         if (this.controllers.get(jobId) === controller) this.controllers.delete(jobId);
       });
+  }
+
+  private mergeJobs(jobs: ImageGenerationJob[]) {
+    const byId = new Map<string, ImageGenerationJob>();
+    for (const job of [...this.jobs, ...jobs]) byId.set(job.job_id, job);
+    this.jobs = [...byId.values()].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, MAX_VISIBLE_JOBS);
   }
 
   private upsertJob(job: ImageGenerationJob) {

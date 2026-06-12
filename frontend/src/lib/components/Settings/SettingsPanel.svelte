@@ -172,6 +172,11 @@
     settingsStore.setImageAutoGenerateOnAssistant((event.currentTarget as HTMLInputElement).checked);
   };
 
+  const handleImageDefaultPresetChange = (event: Event) => {
+    const preset = (event.currentTarget as HTMLSelectElement).value as 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
+    settingsStore.setImageDefaultPreset(preset);
+  };
+
   const handleTTSVolumeChange = (event: Event) => {
     settingsStore.setTTSVolume(Number((event.currentTarget as HTMLInputElement).value));
   };
@@ -412,14 +417,24 @@
         <h2>Local scene visualization</h2>
         <p>Generate images only when you ask by default. Optional auto-generation queues low-priority preview images after assistant replies and still lets voice/chat go first.</p>
       </div>
-      <label class="inline-toggle">
-        <input
-          type="checkbox"
-          checked={$settingsStore.imageAutoGenerateOnAssistant}
-          onchange={handleImageAutoGenerateChange}
-        />
-        <span>{ $settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images' }</span>
-      </label>
+      <div class="image-settings-controls">
+        <label class="settings-select-label">
+          <span>Default preset</span>
+          <select value={$settingsStore.imageDefaultPreset} onchange={handleImageDefaultPresetChange}>
+            <option value="preview_8gb">Preview 8GB · safest</option>
+            <option value="balanced_8gb">Balanced 8GB</option>
+            <option value="high_8gb">High 8GB · waits for headroom</option>
+          </select>
+        </label>
+        <label class="inline-toggle">
+          <input
+            type="checkbox"
+            checked={$settingsStore.imageAutoGenerateOnAssistant}
+            onchange={handleImageAutoGenerateChange}
+          />
+          <span>{ $settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images' }</span>
+        </label>
+      </div>
     </article>
 
     <article class="settings-card settings-wide voice-settings-card">

@@ -4,11 +4,22 @@ const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 export type ImageQualityPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
 export type ImageJobStatus = 'queued' | 'waiting_for_resources' | 'paused' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+export interface ImageGenerationMetadata {
+  conversation_id: string;
+  source?: string | null;
+  source_message_id?: string | null;
+  source_label?: string | null;
+  display_prompt?: string | null;
+  variation_of_job_id?: string | null;
+  saved_to_character_assets?: boolean;
+}
+
 export interface ImageGenerateRequest {
   prompt: string;
   context?: Record<string, unknown> | null;
   negative_prompt?: string;
   quality_preset?: ImageQualityPreset;
+  metadata?: Partial<ImageGenerationMetadata>;
 }
 
 export interface ImageJobErrorPayload {
@@ -36,11 +47,22 @@ export interface ImageJobRead {
   resource_mode?: string;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  metadata?: ImageGenerationMetadata;
 }
 
 export interface ImageGenerateResponse {
   request_id: string;
   job: ImageJobRead;
+}
+
+export interface ImageHistoryResponse {
+  conversation_id: string;
+  jobs: ImageJobRead[];
+}
+
+export interface ImageDeleteResponse {
+  job_id: string;
+  deleted: boolean;
 }
 
 export interface ImageJobEvent {
@@ -58,6 +80,7 @@ export interface ImageJobEvent {
   fallback_used?: boolean;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  metadata?: ImageGenerationMetadata;
 }
 
 export interface ImageEventCallbacks {
@@ -127,6 +150,25 @@ export class ImageService {
       globalThis.clearTimeout(timeout);
       cancelExternalAbort();
     }
+  }
+
+  async listHistory(conversationId = 'local-session'): Promise<ImageHistoryResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}`, {
+      headers: { Accept: 'application/json' }
+    });
+    const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as ImageHistoryResponse;
+  }
+
+  async deleteHistoryJob(jobId: string): Promise<ImageDeleteResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' }
+    });
+    const body = await this.parseJsonResponse<ImageDeleteResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as ImageDeleteResponse;
   }
 
   async getJob(jobId: string): Promise<ImageJobRead> {

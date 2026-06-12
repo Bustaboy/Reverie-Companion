@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from app.models.tts import TTSContext
 
@@ -30,6 +30,37 @@ class ImageJobStatus(StrEnum):
     cancelled = "cancelled"
 
 
+class ImageGenerationMetadata(BaseModel):
+    """Optional UI/history metadata attached to an image generation request."""
+
+    conversation_id: str = Field(default="local-session", min_length=1, max_length=120)
+    source: str | None = Field(default=None, max_length=80)
+    source_message_id: str | None = Field(default=None, max_length=160)
+    source_label: str | None = Field(default=None, max_length=120)
+    display_prompt: str | None = Field(default=None, max_length=MAX_IMAGE_PROMPT_CHARS)
+    variation_of_job_id: str | None = Field(default=None, max_length=160)
+    saved_to_character_assets: bool = False
+
+    @field_validator(
+        "conversation_id",
+        "source",
+        "source_message_id",
+        "source_label",
+        "display_prompt",
+        "variation_of_job_id",
+    )
+    @classmethod
+    def metadata_strings_must_be_trimmed(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if info.field_name == "conversation_id":
+            return trimmed or "local-session"
+        return trimmed or None
+
+
 class ImageGenerateRequest(BaseModel):
     """Request accepted by POST /api/images/generate."""
 
@@ -45,6 +76,7 @@ class ImageGenerateRequest(BaseModel):
         description="Optional negative prompt merged with Reverie safety/quality negatives.",
     )
     quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
+    metadata: ImageGenerationMetadata = Field(default_factory=ImageGenerationMetadata)
 
     @field_validator("prompt", "negative_prompt")
     @classmethod
@@ -74,6 +106,7 @@ class ImageJobRead(BaseModel):
     resource_mode: str = "queued"
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    metadata: ImageGenerationMetadata = Field(default_factory=ImageGenerationMetadata)
 
 
 class ImageGenerateResponse(BaseModel):
@@ -96,3 +129,14 @@ class ImageJobEvent(BaseModel):
     fallback_used: bool = False
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    metadata: ImageGenerationMetadata = Field(default_factory=ImageGenerationMetadata)
+
+
+class ImageHistoryResponse(BaseModel):
+    conversation_id: str
+    jobs: list[ImageJobRead] = Field(default_factory=list)
+
+
+class ImageDeleteResponse(BaseModel):
+    job_id: str
+    deleted: bool = True
