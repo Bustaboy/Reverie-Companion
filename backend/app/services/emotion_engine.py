@@ -24,9 +24,7 @@ _TAG_RE = re.compile(
     r"</?(?:" + "|".join(_ORPHEUS_TAGS) + r")(?:\s+[^>]*)?>",
     re.IGNORECASE,
 )
-_ANY_SIMPLE_TAG_RE = re.compile(
-    r"<\s*/?\s*[a-zA-Z][a-zA-Z0-9_-]{0,32}(?:\s+[^>]*)?>"
-)
+_ANY_SIMPLE_TAG_RE = re.compile(r"<\s*/?\s*[a-zA-Z][a-zA-Z0-9_-]{0,32}(?:\s+[^>]*)?>")
 _SENTENCE_RE = re.compile(r"([^.!?…]+[.!?…]*)(\s*)", re.DOTALL)
 _MAX_CONTEXT_CHARS = 4_000
 
@@ -224,14 +222,30 @@ class EmotionEngine:
         playful_hits = self._count_terms(lower, _PLAYFUL_TERMS)
         tender_hits = self._count_terms(lower, _TENDER_TERMS)
 
+        mood = tts_context.mood_settings if tts_context is not None else None
+        baseline = mood.baseline_expressiveness if mood is not None else 1.0
+        sensitivity = mood.emotional_sensitivity if mood is not None else 1.0
+        nsfw_intensity = mood.nsfw_intensity if mood is not None else 1.0
         context_intensity = tts_context.intensity if tts_context is not None else 1.0
+        scene_boost = (
+            0.14 * intimate_hits * nsfw_intensity + 0.10 * high_hits * sensitivity
+        )
+        if growth_notification is not None:
+            scene_boost += 0.10 * sensitivity
         intensity = min(
             2.0,
-            max(0.2, context_intensity + 0.14 * intimate_hits + 0.10 * high_hits),
+            max(0.15, context_intensity * baseline + scene_boost),
         )
         cues: list[str] = []
         if tts_context and tts_context.emotion_hint:
             cues.append(f"hint:{tts_context.emotion_hint.casefold()}")
+        if tts_context and tts_context.scene_tags:
+            cues.extend(f"scene:{tag.casefold()}" for tag in tts_context.scene_tags[:4])
+        if mood is not None:
+            cues.append(
+                "mood:"
+                f"expressive={baseline:.2f},sensitive={sensitivity:.2f},nsfw={nsfw_intensity:.2f}"
+            )
         if intimate_hits:
             cues.append("intimate_scene")
         if high_hits:
@@ -239,11 +253,20 @@ class EmotionEngine:
         if growth_notification is not None:
             cues.append("growth_reflection")
 
-        is_intimate = intimate_hits >= 2 or (
-            tts_context is not None
-            and tts_context.emotion_hint in {"intimate", "desire", "nsfw"}
+        hint = (
+            tts_context.emotion_hint.casefold()
+            if tts_context and tts_context.emotion_hint
+            else ""
         )
-        is_high = high_hits >= 3 or intensity >= 1.45
+        scene_tags = (
+            {tag.casefold() for tag in tts_context.scene_tags} if tts_context else set()
+        )
+        is_intimate = (
+            intimate_hits >= (1 if nsfw_intensity >= 1.35 else 2)
+            or hint in {"intimate", "desire", "nsfw"}
+            or bool(scene_tags & {"intimate", "nsfw", "desire", "aftercare"})
+        )
+        is_high = high_hits >= (2 if sensitivity >= 1.35 else 3) or intensity >= 1.45
         if is_intimate and intensity >= 1.25:
             return "intimate", intensity, is_high, True, cues
         if is_high:
@@ -268,13 +291,22 @@ class EmotionEngine:
         existing_tags: list[str],
     ) -> str:
         pieces = [visible_text, memory_context]
-        pieces.extend(message.content for message in recent_messages[-6:] if message.role != "system")
+        pieces.extend(
+            message.content
+            for message in recent_messages[-6:]
+            if message.role != "system"
+        )
         if tts_context is not None:
             pieces.extend(
                 str(item)
-                for item in (tts_context.emotion_hint, tts_context.mode, tts_context.character_id)
+                for item in (
+                    tts_context.emotion_hint,
+                    tts_context.mode,
+                    tts_context.character_id,
+                )
                 if item
             )
+            pieces.extend(tts_context.scene_tags[:6])
         for entry in reflection_entries[:3]:
             pieces.append(str(entry.get("character_summary", "")))
             pieces.extend(str(theme) for theme in entry.get("themes", [])[:5])
@@ -297,7 +329,9 @@ class EmotionEngine:
         pieces.extend(existing_tags)
         return "\n".join(pieces)[-_MAX_CONTEXT_CHARS:]
 
-    def _tags_for_scene(self, *, scene: EmotionScene, intensity: float, is_intimate: bool) -> list[str]:
+    def _tags_for_scene(
+        self, *, scene: EmotionScene, intensity: float, is_intimate: bool
+    ) -> list[str]:
         if scene == "neutral":
             return []
         if scene == "playful":

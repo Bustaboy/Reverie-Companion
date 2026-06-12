@@ -442,7 +442,15 @@ class TTSStore {
                 is_narration: nextItem.ttsContext.isNarration,
                 mode: nextItem.ttsContext.mode,
                 emotion_hint: nextItem.ttsContext.emotionHint,
-                intensity: nextItem.ttsContext.intensity
+                intensity: nextItem.ttsContext.intensity,
+                mood_settings: nextItem.ttsContext.moodSettings
+                  ? {
+                      baseline_expressiveness: nextItem.ttsContext.moodSettings.baselineExpressiveness,
+                      emotional_sensitivity: nextItem.ttsContext.moodSettings.emotionalSensitivity,
+                      nsfw_intensity: nextItem.ttsContext.moodSettings.nsfwIntensity
+                    }
+                  : undefined,
+                scene_tags: nextItem.ttsContext.sceneTags
               }
             : undefined,
           emotion: nextItem.emotion

@@ -4,12 +4,20 @@ export type ChatRole = 'user' | 'assistant';
 
 export type TTSMode = 'one_to_one' | 'rpg';
 
+export interface TTSMoodSettingsMetadata {
+  baselineExpressiveness?: number;
+  emotionalSensitivity?: number;
+  nsfwIntensity?: number;
+}
+
 export interface TTSContextMetadata {
   characterId?: string;
   isNarration?: boolean;
   mode?: TTSMode;
   emotionHint?: string;
   intensity?: number;
+  moodSettings?: TTSMoodSettingsMetadata;
+  sceneTags?: string[];
 }
 
 export interface TTSEmotionMetadata {

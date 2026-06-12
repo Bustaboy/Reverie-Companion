@@ -2619,3 +2619,63 @@ h1 {
 .clone-status .error {
   color: #ffb3a7;
 }
+
+.voice-mood-section {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.95rem;
+  border: 1px solid rgba(240, 154, 159, 0.14);
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(240, 154, 159, 0.1), transparent 18rem),
+    rgba(255, 255, 255, 0.035);
+}
+
+.voice-mood-controls {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.text-setting select {
+  width: 100%;
+  padding: 0.72rem 0.78rem;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.85rem;
+  background: rgba(20, 15, 22, 0.92);
+}
+
+.mood-slider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.mood-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.audio-error-actions {
+  display: inline-flex;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.audio-error-actions button {
+  padding: 0.28rem 0.52rem;
+  color: #ffe2df;
+  border: 1px solid rgba(240, 154, 159, 0.24);
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.1);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+@media (max-width: 920px) {
+  .mood-slider-grid {
+    grid-template-columns: 1fr;
+  }
+}

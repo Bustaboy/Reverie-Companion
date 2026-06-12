@@ -12,6 +12,29 @@ TTSBackendName = Literal["orpheus", "piper"]
 TTSMode = Literal["one_to_one", "rpg"]
 
 
+class TTSMoodSettings(BaseModel):
+    """Per-character voice mood/fine-tuning controls for lightweight emotion routing."""
+
+    baseline_expressiveness: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="How expressive this character should sound before scene boosts.",
+    )
+    emotional_sensitivity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="How strongly memories, growth cues, and recent messages affect emotion.",
+    )
+    nsfw_intensity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="How strongly intimate scene cues may boost TTS prosody.",
+    )
+
+
 class TTSEmotionMetadata(BaseModel):
     """Deterministic emotion/prosody metadata shared by chat and TTS."""
 
@@ -58,6 +81,15 @@ class TTSContext(BaseModel):
         ge=0.0,
         le=2.0,
         description="Emotion intensity multiplier for deterministic TTS tag injection.",
+    )
+    mood_settings: TTSMoodSettings = Field(
+        default_factory=TTSMoodSettings,
+        description="Per-character mood/fine-tuning controls resolved from the linked VoiceProfile.",
+    )
+    scene_tags: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="Lightweight current-scene tags from VN, memory, or growth routing.",
     )
 
     @field_validator("character_id", "emotion_hint")

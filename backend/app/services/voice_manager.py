@@ -17,6 +17,7 @@ from threading import RLock
 from typing import Any, BinaryIO
 
 from app.core.config import Settings
+from app.models.tts import TTSMoodSettings
 from app.models.voice import VoiceProfile, VoiceProfileUpdate
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,7 @@ class VoiceManager:
                 "reference_duration_seconds": duration_seconds,
                 "reference_audio_bytes": written,
             },
+            mood_settings=TTSMoodSettings(),
         )
         self.create_voice_profile(profile, overwrite=True)
         if character_id:
@@ -225,7 +227,7 @@ class VoiceManager:
         with self._lock:
             current = self.require_voice_profile(voice_id)
             values = update.model_dump(exclude_unset=True)
-            updated = current.model_copy(update=values)
+            updated = VoiceProfile.model_validate({**current.model_dump(), **values})
             self._voices[current.voice_id] = updated
             self._save_locked()
             return updated

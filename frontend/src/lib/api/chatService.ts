@@ -572,14 +572,39 @@ export class ChatService {
     const characterId = this.normalizeText(context.character_id ?? context.characterId);
     const mode = this.normalizeTTSMode(context.mode);
     const emotionHint = this.normalizeText(context.emotion_hint ?? context.emotionHint);
-    const intensity = this.readUnitNumber(context, ['intensity']);
+    const intensity = this.readBoundedNumber(context, ['intensity'], 0, 2);
     const isNarration = this.readBoolean(context, ['is_narration', 'isNarration']);
+    const moodSettings = this.normalizeTTSMoodSettings(context.mood_settings ?? context.moodSettings);
+    const rawSceneTags = context.scene_tags ?? context.sceneTags;
+    const sceneTags = Array.isArray(rawSceneTags)
+      ? rawSceneTags
+          .map((tag: unknown) => this.normalizeText(tag))
+          .filter((tag): tag is string => Boolean(tag))
+          .slice(0, 12)
+      : undefined;
 
-    if (!characterId && !mode && !emotionHint && intensity === undefined && isNarration === undefined) {
+    if (
+      !characterId &&
+      !mode &&
+      !emotionHint &&
+      intensity === undefined &&
+      isNarration === undefined &&
+      !moodSettings &&
+      !sceneTags?.length
+    ) {
       return undefined;
     }
 
-    return { characterId, mode, emotionHint, intensity, isNarration };
+    return { characterId, mode, emotionHint, intensity, isNarration, moodSettings, sceneTags };
+  }
+
+  private normalizeTTSMoodSettings(mood: unknown) {
+    if (!this.isRecord(mood)) return undefined;
+    const baselineExpressiveness = this.readBoundedNumber(mood, ['baseline_expressiveness', 'baselineExpressiveness'], 0, 2);
+    const emotionalSensitivity = this.readBoundedNumber(mood, ['emotional_sensitivity', 'emotionalSensitivity'], 0, 2);
+    const nsfwIntensity = this.readBoundedNumber(mood, ['nsfw_intensity', 'nsfwIntensity'], 0, 2);
+    if (baselineExpressiveness === undefined && emotionalSensitivity === undefined && nsfwIntensity === undefined) return undefined;
+    return { baselineExpressiveness, emotionalSensitivity, nsfwIntensity };
   }
 
   private normalizeTTSEmotion(emotion: unknown): TTSEmotionMetadata | undefined {
@@ -843,12 +868,16 @@ export class ChatService {
   }
 
   private readUnitNumber(value: Record<string, unknown>, keys: string[]): number | undefined {
+    return this.readBoundedNumber(value, keys, 0, 1);
+  }
+
+  private readBoundedNumber(value: Record<string, unknown>, keys: string[], min: number, max: number): number | undefined {
     const number = this.readNumber(value, keys);
     if (number === undefined) {
       return undefined;
     }
 
-    return Math.min(1, Math.max(0, number));
+    return Math.min(max, Math.max(min, number));
   }
 
   private statusFromFlags(value: Record<string, unknown>): MemoryContext['status'] | undefined {

@@ -10,9 +10,11 @@
 
   const statusLabel = $derived.by(() => {
     if (!ttsStore.enabled) return 'TTS disabled';
+    if (ttsStore.playbackState === 'error') return 'Voice needs attention';
     if (ttsStore.bufferHealth === 'prebuffering') return `Pre-buffering · ${ttsStore.bufferedSeconds.toFixed(1)}s`;
+    if (ttsStore.bufferHealth === 'low') return `Keeping the voice stream warm · ${ttsStore.currentVoiceName}`;
     if (ttsStore.bufferHealth === 'rebuffering') return `Smoothing stream · ${ttsStore.currentVoiceName}`;
-    if (ttsStore.playbackState === 'loading') return 'Preparing voice';
+    if (ttsStore.playbackState === 'loading') return 'Preparing local voice';
     if (ttsStore.playbackState === 'playing') return `Speaking · ${ttsStore.currentVoiceName}`;
     if (ttsStore.playbackState === 'paused') return `Paused · ${ttsStore.currentVoiceName}`;
     if (ttsStore.queueCount > 0) return `${ttsStore.queueCount} queued`;
@@ -46,6 +48,12 @@
   <div class="audio-player-copy">
     <p>{statusLabel}</p>
     <small aria-live="polite">{ttsStore.error ?? ttsStore.announcement}</small>
+    {#if ttsStore.error}
+      <div class="audio-error-actions" aria-label="Voice error actions">
+        <button type="button" onclick={() => ttsStore.clearError()}>Dismiss</button>
+        <button type="button" onclick={() => ttsStore.stop()}>Reset voice</button>
+      </div>
+    {/if}
     <div class="tts-progress" aria-hidden="true" style={progressStyle}></div>
   </div>
 

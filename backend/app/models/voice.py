@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.tts import TTSMoodSettings
+
 MAX_VOICE_ID_LENGTH = 80
 MAX_VOICE_NAME_LENGTH = 120
 MAX_REFERENCE_AUDIO_PATH_LENGTH = 500
@@ -25,6 +27,10 @@ class VoiceProfile(BaseModel):
         default=None, max_length=MAX_REFERENCE_AUDIO_PATH_LENGTH
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+    mood_settings: TTSMoodSettings = Field(
+        default_factory=TTSMoodSettings,
+        description="Per-character emotional TTS tuning stored with the voice profile.",
+    )
 
     @field_validator("voice_id", "name")
     @classmethod
@@ -62,6 +68,7 @@ class VoiceProfileUpdate(BaseModel):
         default=None, max_length=MAX_REFERENCE_AUDIO_PATH_LENGTH
     )
     metadata: dict[str, Any] | None = None
+    mood_settings: TTSMoodSettings | None = None
 
     @field_validator("name")
     @classmethod

@@ -6,12 +6,20 @@ const DEFAULT_TIMEOUT_MS = 90_000;
 
 export type TTSAudioFormat = 'wav' | 'pcm' | 'mp3';
 
+export interface TTSMoodSettingsPayload {
+  baseline_expressiveness?: number;
+  emotional_sensitivity?: number;
+  nsfw_intensity?: number;
+}
+
 export interface TTSContextPayload {
   character_id?: string;
   is_narration?: boolean;
   mode?: TTSMode;
   emotion_hint?: string;
   intensity?: number;
+  mood_settings?: TTSMoodSettingsPayload;
+  scene_tags?: string[];
 }
 
 export interface TTSGenerateRequest {

@@ -2,12 +2,27 @@ import { dev } from '$app/environment';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 
+export interface VoiceMoodSettings {
+  baseline_expressiveness: number;
+  emotional_sensitivity: number;
+  nsfw_intensity: number;
+}
+
 export interface VoiceProfile {
   voice_id: string;
   name: string;
   type: 'character' | 'narrator';
   reference_audio_path?: string | null;
   metadata: Record<string, unknown>;
+  mood_settings?: VoiceMoodSettings;
+}
+
+export interface UpdateVoiceProfileInput {
+  name?: string;
+  type?: VoiceProfile['type'];
+  reference_audio_path?: string | null;
+  metadata?: Record<string, unknown>;
+  mood_settings?: VoiceMoodSettings;
 }
 
 export interface CreateVoiceProfileInput {
@@ -43,6 +58,16 @@ export class VoiceService {
     const response = await this.fetcher(`${this.baseUrl}/api/voices`, { headers: { Accept: 'application/json' } });
     if (!response.ok) throw await this.toError(response, 'Could not load local voice profiles.');
     return (await response.json()) as VoiceProfile[];
+  }
+
+  async updateVoiceProfile(voiceId: string, input: UpdateVoiceProfileInput): Promise<VoiceProfile> {
+    const response = await this.fetcher(`${this.baseUrl}/api/voices/${encodeURIComponent(voiceId)}`, {
+      method: 'PATCH',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw await this.toError(response, 'Could not update that voice profile.');
+    return (await response.json()) as VoiceProfile;
   }
 
   async createVoiceProfile(input: CreateVoiceProfileInput): Promise<VoiceProfile> {

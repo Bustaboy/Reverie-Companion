@@ -84,8 +84,14 @@ class TTSContextRouter:
             reason = "default_narrator"
             is_narration = True
 
+        routed_context = resolved_context.model_copy(
+            update={
+                "is_narration": is_narration,
+                "mood_settings": profile.mood_settings,
+            }
+        )
         return self._decision(
-            context=resolved_context.model_copy(update={"is_narration": is_narration}),
+            context=routed_context,
             voice_profile=profile,
             is_narration=is_narration,
             reason=reason,
@@ -143,7 +149,9 @@ class TTSContextRouter:
         reason: TTSRoutingReason,
     ) -> TTSRoutingDecision:
         return TTSRoutingDecision(
-            context=context,
+            context=context.model_copy(
+                update={"mood_settings": voice_profile.mood_settings}
+            ),
             voice_profile=voice_profile,
             backend_voice_id=self._voice_manager.backend_voice_id_for_profile(
                 voice_profile

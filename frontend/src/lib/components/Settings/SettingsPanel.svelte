@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset } from '$lib/stores/settingsStore';
-  import { voiceService, type VoiceProfile } from '$lib/api/voiceService';
+  import { voiceService, type VoiceMoodSettings, type VoiceProfile } from '$lib/api/voiceService';
 
   const reflectionFrequencyOptions: Array<{
     value: ReflectionFrequency;
@@ -106,8 +107,21 @@
   let mediaRecorder: MediaRecorder | null = null;
   let recordingStartedAt = 0;
   let recordingDurationSeconds = $state<number | null>(null);
+  let voiceProfiles = $state<VoiceProfile[]>([]);
+  let selectedMoodVoiceId = $state('');
+  let isLoadingVoices = $state(false);
+  let isSavingMood = $state(false);
+  let moodStatus = $state<string | null>(null);
+  let moodError = $state<string | null>(null);
+  let draftMood = $state<VoiceMoodSettings>({
+    baseline_expressiveness: 1,
+    emotional_sensitivity: 1,
+    nsfw_intensity: 1
+  });
 
   const cloneAudio = $derived(cloneRecording ?? cloneFile);
+  const characterVoiceProfiles = $derived(voiceProfiles.filter((profile) => profile.type === 'character'));
+  const selectedMoodVoice = $derived(voiceProfiles.find((profile) => profile.voice_id === selectedMoodVoiceId) ?? null);
 
   const savedLabel = $derived(
     $settingsStore.savedAt
@@ -142,6 +156,70 @@
   const handleTTSSpeedChange = (event: Event) => {
     settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
   };
+
+  const clampMood = (value: number) => Math.min(2, Math.max(0, Number.isFinite(value) ? value : 1));
+
+  const moodForProfile = (profile: VoiceProfile | null): VoiceMoodSettings => ({
+    baseline_expressiveness: clampMood(profile?.mood_settings?.baseline_expressiveness ?? 1),
+    emotional_sensitivity: clampMood(profile?.mood_settings?.emotional_sensitivity ?? 1),
+    nsfw_intensity: clampMood(profile?.mood_settings?.nsfw_intensity ?? 1)
+  });
+
+  const loadVoiceProfiles = async () => {
+    isLoadingVoices = true;
+    moodError = null;
+    try {
+      const profiles = await voiceService.listVoices();
+      const characterProfiles = profiles.filter((profile) => profile.type === 'character');
+      voiceProfiles = profiles;
+      if (!selectedMoodVoiceId && characterProfiles.length > 0) {
+        selectedMoodVoiceId = characterProfiles[0].voice_id;
+        draftMood = moodForProfile(characterProfiles[0]);
+      }
+    } catch (error) {
+      moodError = error instanceof Error ? error.message : 'Could not load local voice profiles.';
+    } finally {
+      isLoadingVoices = false;
+    }
+  };
+
+  const selectMoodVoice = (event: Event) => {
+    selectedMoodVoiceId = (event.currentTarget as HTMLSelectElement).value;
+    draftMood = moodForProfile(voiceProfiles.find((profile) => profile.voice_id === selectedMoodVoiceId) ?? null);
+    moodStatus = null;
+    moodError = null;
+  };
+
+  const handleMoodChange = (key: keyof VoiceMoodSettings, event: Event) => {
+    draftMood = { ...draftMood, [key]: clampMood(Number((event.currentTarget as HTMLInputElement).value)) };
+    moodStatus = null;
+  };
+
+  const saveMoodSettings = async () => {
+    if (!selectedMoodVoice) {
+      moodError = 'Create or select a character voice profile first.';
+      return;
+    }
+
+    isSavingMood = true;
+    moodError = null;
+    moodStatus = 'Saving character mood locally…';
+    try {
+      const updated = await voiceService.updateVoiceProfile(selectedMoodVoice.voice_id, { mood_settings: draftMood });
+      voiceProfiles = voiceProfiles.map((profile) => (profile.voice_id === updated.voice_id ? updated : profile));
+      draftMood = moodForProfile(updated);
+      moodStatus = `${updated.name} mood controls are linked to EmotionEngine and TTS routing.`;
+    } catch (error) {
+      moodError = error instanceof Error ? error.message : 'Could not save mood settings.';
+      moodStatus = null;
+    } finally {
+      isSavingMood = false;
+    }
+  };
+
+  onMount(() => {
+    void loadVoiceProfiles();
+  });
 
   const handleCloneFileChange = (event: Event) => {
     const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
@@ -205,6 +283,9 @@
         filename: cloneFile?.name ?? 'recorded-reference.webm',
         durationSeconds: recordingDurationSeconds ?? undefined
       });
+      voiceProfiles = [...voiceProfiles.filter((profile) => profile.voice_id !== clonedProfile?.voice_id), clonedProfile];
+      selectedMoodVoiceId = clonedProfile.voice_id;
+      draftMood = moodForProfile(clonedProfile);
       cloneStatus = `Created ${clonedProfile.name}. It will use Orpheus zero-shot cloning when speech is generated.`;
     } catch (error) {
       cloneError = error instanceof Error ? error.message : 'Could not create that voice profile.';
@@ -413,6 +494,61 @@
           </button>
         {/each}
       </div>
+
+      <section class="voice-mood-section" aria-labelledby="voice-mood-title">
+        <div class="setting-copy compact">
+          <span class="setting-kicker">Mood</span>
+          <h3 id="voice-mood-title">Per-character voice mood</h3>
+          <p>Fine-tune how strongly this character reacts to memory, growth cues, high-emotion turns, and intimate scenes. Defaults stay balanced and 8GB-friendly.</p>
+        </div>
+
+        <div class="voice-mood-controls">
+          <label class="text-setting">
+            <span>Character voice profile</span>
+            <select disabled={isLoadingVoices || characterVoiceProfiles.length === 0} value={selectedMoodVoiceId} onchange={selectMoodVoice}>
+              {#if characterVoiceProfiles.length === 0}
+                <option value="">No character voice profiles yet</option>
+              {:else}
+                {#each characterVoiceProfiles as profile}
+                  <option value={profile.voice_id}>{profile.name}</option>
+                {/each}
+              {/if}
+            </select>
+          </label>
+
+          <div class="mood-slider-grid">
+            <label class="range-setting">
+              <span>Baseline Expressiveness <strong>{draftMood.baseline_expressiveness.toFixed(2)}×</strong></span>
+              <input type="range" min="0" max="2" step="0.05" value={draftMood.baseline_expressiveness} disabled={!selectedMoodVoice || isSavingMood} oninput={(event) => handleMoodChange('baseline_expressiveness', event)} />
+            </label>
+
+            <label class="range-setting">
+              <span>Emotional Sensitivity <strong>{draftMood.emotional_sensitivity.toFixed(2)}×</strong></span>
+              <input type="range" min="0" max="2" step="0.05" value={draftMood.emotional_sensitivity} disabled={!selectedMoodVoice || isSavingMood} oninput={(event) => handleMoodChange('emotional_sensitivity', event)} />
+            </label>
+
+            <label class="range-setting">
+              <span>NSFW Intensity <strong>{draftMood.nsfw_intensity.toFixed(2)}×</strong></span>
+              <input type="range" min="0" max="2" step="0.05" value={draftMood.nsfw_intensity} disabled={!selectedMoodVoice || isSavingMood} oninput={(event) => handleMoodChange('nsfw_intensity', event)} />
+            </label>
+          </div>
+
+          <div class="mood-actions">
+            <button type="button" class="create-voice-button" disabled={!selectedMoodVoice || isSavingMood} onclick={saveMoodSettings}>
+              {isSavingMood ? 'Saving mood…' : 'Save Mood to Voice Profile'}
+            </button>
+            <button type="button" class="record-button" disabled={isLoadingVoices} onclick={loadVoiceProfiles}>Refresh profiles</button>
+          </div>
+
+          <div class="clone-status" aria-live="polite">
+            {#if moodError}
+              <span class="error">{moodError}</span>
+            {:else if moodStatus}
+              <span>{moodStatus}</span>
+            {/if}
+          </div>
+        </div>
+      </section>
 
       <section class="clone-voice-section" aria-labelledby="clone-voice-title">
         <div class="setting-copy compact">

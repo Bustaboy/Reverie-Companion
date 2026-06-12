@@ -383,3 +383,43 @@ def test_stream_speech_chunks_falls_back_to_full_generation(tmp_path) -> None:
         assert chunks[-1].audio_format == "wav"
 
     asyncio.run(run_test())
+
+
+def test_generate_speech_applies_voice_profile_mood_to_tags(tmp_path) -> None:
+    async def run_test() -> None:
+        from app.models.tts import TTSMoodSettings
+        from app.models.voice import VoiceProfileUpdate
+
+        service = make_service(tmp_path)
+        service._voice_manager.update_voice_profile(
+            "tara",
+            VoiceProfileUpdate(
+                mood_settings=TTSMoodSettings(
+                    baseline_expressiveness=1.1,
+                    emotional_sensitivity=1.6,
+                    nsfw_intensity=1.8,
+                )
+            ),
+        )
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"piper wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend("piper", result=piper_result)
+
+        await service.generate_speech(
+            text="Stay close; I need you and want you.",
+            voice_id="tara",
+            request_id="req_profile_mood",
+        )
+
+        assert "<" in service._piper.last_kwargs["text"]
+        assert "Stay close" in service._piper.last_kwargs["text"]
+
+    asyncio.run(run_test())

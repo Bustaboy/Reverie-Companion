@@ -187,8 +187,8 @@ class ChatService:
     ) -> ChatRequest:
         """Build the model-facing request while keeping route handlers thin."""
 
-        prepared_request, _growth_context = (
-            await self._prepare_request_with_growth(request, request_id=request_id)
+        prepared_request, _growth_context = await self._prepare_request_with_growth(
+            request, request_id=request_id
         )
         return prepared_request
 
@@ -571,7 +571,9 @@ class ChatService:
                 growth_context=growth_context,
             )
 
-    def _inject_tts_context_into_done_sse(self, frame: str, request: ChatRequest) -> str:
+    def _inject_tts_context_into_done_sse(
+        self, frame: str, request: ChatRequest
+    ) -> str:
         """Attach caller-provided TTS context to final stream metadata."""
 
         return self._inject_voice_metadata_into_done_sse(
@@ -617,16 +619,19 @@ class ChatService:
         if not isinstance(payload, dict):
             payload = {"done": True}
 
+        route_seed_text = self._emotion_engine.strip_emotion_tags(
+            raw_response or clean_response
+        )
+        tts_context, voice_id = self._resolve_tts_context_and_voice(
+            clean_text=route_seed_text or clean_response, request=request
+        )
         tagging = self._emotion_engine.analyze_and_tag(
             text=raw_response or clean_response,
-            tts_context=request.tts_context,
+            tts_context=tts_context,
             recent_messages=request.messages,
             memory_context=growth_context.memory_context,
             reflection_entries=growth_context.reflection_entries,
             growth_notification=growth_context.growth_notification,
-        )
-        tts_context, voice_id = self._resolve_tts_context_and_voice(
-            clean_text=tagging.visible_text or clean_response, request=request
         )
         payload["text"] = tagging.visible_text or clean_response
         payload["tts_text"] = tagging.tts_text
@@ -653,7 +658,9 @@ class ChatService:
             return fallback_context, self._settings.tts_default_voice_id
         return routing.context, routing.voice_profile.voice_id
 
-    def _clean_stream_chunk(self, raw_content: str, pending_tag: str) -> tuple[str, str]:
+    def _clean_stream_chunk(
+        self, raw_content: str, pending_tag: str
+    ) -> tuple[str, str]:
         """Strip speech tags from a token chunk, including split tag boundaries."""
 
         combined = f"{pending_tag}{raw_content}"

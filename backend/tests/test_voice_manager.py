@@ -1,6 +1,7 @@
 """Tests for durable voice profile management."""
 
 from app.core.config import Settings
+from app.models.tts import TTSMoodSettings
 from app.models.voice import VoiceProfile, VoiceProfileUpdate
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
@@ -35,11 +36,21 @@ def test_voice_profile_crud_and_character_assignment(tmp_path) -> None:
 
     manager.create_voice_profile(profile)
     updated = manager.update_voice_profile(
-        "tara_soft", VoiceProfileUpdate(name="Tara Warm", metadata={"style": "warm"})
+        "tara_soft",
+        VoiceProfileUpdate(
+            name="Tara Warm",
+            metadata={"style": "warm"},
+            mood_settings=TTSMoodSettings(
+                baseline_expressiveness=1.25,
+                emotional_sensitivity=1.4,
+                nsfw_intensity=0.8,
+            ),
+        ),
     )
     assigned = manager.assign_voice_to_character("tara", "tara_soft")
 
     assert updated.name == "Tara Warm"
+    assert updated.mood_settings.emotional_sensitivity == 1.4
     assert assigned.voice_id == "tara_soft"
     assert manager.get_voice_for_character("tara") == updated
     assert manager.backend_voice_id_for_profile(updated) == "tara_soft"

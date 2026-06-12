@@ -601,16 +601,9 @@ class TTSService:
         """Generate speech from text using context-aware voice routing and tags."""
 
         visible_text = emotion_engine.strip_emotion_tags(text.strip())
-        normalized_text = (
-            tts_text.strip()
-            if tts_text and tts_text.strip()
-            else emotion_engine.analyze_and_tag(
-                text=visible_text, tts_context=context
-            ).tts_text
-        )
         try:
             routing = self._context_router.route(
-                text=visible_text or normalized_text,
+                text=visible_text or text,
                 context=context,
                 voice_id=voice_id,
                 character_id=character_id,
@@ -622,6 +615,13 @@ class TTSService:
                 retryable=False,
                 details=exc.details,
             ) from exc
+        normalized_text = (
+            tts_text.strip()
+            if tts_text and tts_text.strip()
+            else emotion_engine.analyze_and_tag(
+                text=visible_text, tts_context=routing.context
+            ).tts_text
+        )
         resolved_voice_id = routing.backend_voice_id
         response_voice_id = routing.voice_profile.voice_id
         if len(normalized_text) > self._settings.tts_max_text_chars:
@@ -819,16 +819,9 @@ class TTSService:
         tts_text: str | None,
     ):
         visible_text = emotion_engine.strip_emotion_tags(text.strip())
-        normalized_text = (
-            tts_text.strip()
-            if tts_text and tts_text.strip()
-            else emotion_engine.analyze_and_tag(
-                text=visible_text, tts_context=context
-            ).tts_text
-        )
         try:
             routing = self._context_router.route(
-                text=visible_text or normalized_text,
+                text=visible_text or text,
                 context=context,
                 voice_id=voice_id,
                 character_id=character_id,
@@ -840,6 +833,13 @@ class TTSService:
                 retryable=False,
                 details=exc.details,
             ) from exc
+        normalized_text = (
+            tts_text.strip()
+            if tts_text and tts_text.strip()
+            else emotion_engine.analyze_and_tag(
+                text=visible_text, tts_context=routing.context
+            ).tts_text
+        )
         if len(normalized_text) > self._settings.tts_max_text_chars:
             raise TTSServiceError(
                 "TTS text exceeds the configured maximum length.",
