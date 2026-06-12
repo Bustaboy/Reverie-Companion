@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChatWindow } from '$lib/components/Chat';
   import { JournalPanel } from '$lib/components/Journal';
+  import { CharacterEncyclopedia } from '$lib/components/Encyclopedia';
   import { GrowthDashboard, PersonalLoRAPanel } from '$lib/components/Growth';
   import { ImageGallery } from '$lib/components/ImageGeneration';
   import { MemoryBrowser } from '$lib/components/Memory';
@@ -36,6 +37,8 @@
       <PersonalLoRAPanel />
     {:else if activeSection === 'memory'}
       <MemoryBrowser />
+    {:else if activeSection === 'encyclopedia'}
+      <CharacterEncyclopedia />
     {:else if activeSection === 'settings'}
       <SettingsPanel />
     {:else if activeSection === 'visual-novel'}
