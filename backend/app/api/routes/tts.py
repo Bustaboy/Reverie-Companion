@@ -19,6 +19,12 @@ from app.services.tts_service import TTSBackendUnavailable, TTSService, TTSServi
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
+STREAMING_NDJSON_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
+STREAMING_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+}
+
 
 def get_tts_service(
     settings: Annotated[Settings, Depends(get_settings)],
@@ -74,10 +80,8 @@ async def generate_tts(
     )
 
     if request.stream:
-        return StreamingResponse(
-            _iter_tts_events(request, tts_service=tts_service, request_id=request_id),
-            media_type="application/x-ndjson",
-            headers={"Cache-Control": "no-cache", "X-Request-ID": request_id},
+        return _tts_streaming_response(
+            request, tts_service=tts_service, request_id=request_id
         )
 
     try:
@@ -124,6 +128,18 @@ async def generate_tts(
         sample_rate=result.sample_rate,
         duration_seconds=result.duration_seconds,
         fallback_used=result.fallback_used,
+    )
+
+
+def _tts_streaming_response(
+    request: TTSGenerateRequest, *, tts_service: TTSService, request_id: str
+) -> StreamingResponse:
+    """Build a no-buffer StreamingResponse for progressive TTS clients."""
+
+    return StreamingResponse(
+        _iter_tts_events(request, tts_service=tts_service, request_id=request_id),
+        media_type=STREAMING_NDJSON_MEDIA_TYPE,
+        headers={**STREAMING_HEADERS, "X-Request-ID": request_id},
     )
 
 
@@ -179,18 +195,39 @@ async def _iter_tts_events(
                 "retryable": exc.retryable,
             },
         )
+        yield _tts_error_event(exc, request_id=request_id)
+    except Exception as exc:  # pragma: no cover - defensive streaming envelope.
+        logger.exception(
+            "Unexpected streaming TTS failure",
+            extra={"request_id": request_id, "error": str(exc)},
+        )
         yield _json_line(
             {
                 "type": "error",
                 "request_id": request_id,
                 "error": {
-                    "code": exc.code,
-                    "message": exc.message,
-                    "details": {**exc.details, "request_id": request_id},
-                    "retryable": exc.retryable,
+                    "code": "tts_unexpected_stream_error",
+                    "message": "Unexpected TTS streaming error.",
+                    "details": {"request_id": request_id},
+                    "retryable": False,
                 },
             }
         )
+
+
+def _tts_error_event(exc: TTSServiceError, *, request_id: str) -> bytes:
+    return _json_line(
+        {
+            "type": "error",
+            "request_id": request_id,
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "details": {**exc.details, "request_id": request_id},
+                "retryable": exc.retryable,
+            },
+        }
+    )
 
 
 def _json_line(payload: dict[str, object]) -> bytes:

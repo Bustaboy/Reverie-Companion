@@ -10,6 +10,8 @@
 
   const statusLabel = $derived.by(() => {
     if (!ttsStore.enabled) return 'TTS disabled';
+    if (ttsStore.bufferHealth === 'prebuffering') return `Pre-buffering · ${ttsStore.bufferedSeconds.toFixed(1)}s`;
+    if (ttsStore.bufferHealth === 'rebuffering') return `Smoothing stream · ${ttsStore.currentVoiceName}`;
     if (ttsStore.playbackState === 'loading') return 'Preparing voice';
     if (ttsStore.playbackState === 'playing') return `Speaking · ${ttsStore.currentVoiceName}`;
     if (ttsStore.playbackState === 'paused') return `Paused · ${ttsStore.currentVoiceName}`;

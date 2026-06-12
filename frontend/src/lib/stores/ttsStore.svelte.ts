@@ -53,10 +53,24 @@ const normalizeAudioError = (error: unknown): string => {
 };
 
 
+type TTSBufferHealth = 'idle' | 'prebuffering' | 'healthy' | 'low' | 'rebuffering' | 'buffered-fallback';
+type StreamPushStatus = 'prebuffering' | 'started' | 'streamed' | 'buffered' | 'rebuffering';
+
+const STREAM_PREBUFFER_SECONDS = 0.7;
+const STREAM_LOW_BUFFER_SECONDS = 0.25;
+const STREAM_REBUFFER_SECONDS = 0.6;
+const STREAM_SCHEDULE_JITTER_SECONDS = 0.04;
+
 class ProgressiveAudioSink {
   private readonly context: AudioContext;
   private nextStartTime = 0;
+  private playbackStartTime = 0;
+  private scheduledSeconds = 0;
+  private pendingSeconds = 0;
+  private playbackStarted = false;
+  private didRebuffer = false;
   private sources: AudioBufferSourceNode[] = [];
+  private pendingPcmBuffers: AudioBuffer[] = [];
   private format: string | null = null;
   private chunks: Uint8Array[] = [];
 
@@ -67,7 +81,7 @@ class ProgressiveAudioSink {
     this.context = new AudioContextConstructor();
   }
 
-  async push(bytes: Uint8Array, event: Extract<TTSStreamEvent, { type: 'chunk' }>): Promise<'streamed' | 'buffered'> {
+  async push(bytes: Uint8Array, event: Extract<TTSStreamEvent, { type: 'chunk' }>): Promise<StreamPushStatus> {
     this.format = event.audio_format;
     if (event.audio_format !== 'pcm') {
       this.chunks.push(bytes);
@@ -75,33 +89,53 @@ class ProgressiveAudioSink {
     }
 
     if (this.context.state === 'suspended') await this.context.resume();
-    const samples = new Float32Array(Math.floor(bytes.byteLength / 2));
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = view.getInt16(index * 2, true) / 32768;
+    const buffer = this.toPcmBuffer(bytes, event.sample_rate);
+
+    if (!this.playbackStarted) {
+      this.pendingPcmBuffers.push(buffer);
+      this.pendingSeconds += this.adjustedDuration(buffer);
+      if (this.pendingSeconds < STREAM_PREBUFFER_SECONDS) {
+        return 'prebuffering';
+      }
+
+      this.playbackStarted = true;
+      this.flushPendingBuffers(this.context.currentTime + STREAM_SCHEDULE_JITTER_SECONDS);
+      return 'started';
     }
 
-    const buffer = this.context.createBuffer(1, samples.length, event.sample_rate);
-    buffer.copyToChannel(samples, 0);
-    const source = this.context.createBufferSource();
-    const gain = this.context.createGain();
-    source.buffer = buffer;
-    source.playbackRate.value = clamp(this.speed, 0.75, 1.35);
-    gain.gain.value = clamp(this.volume, 0, 1);
-    source.connect(gain).connect(this.context.destination);
-
-    const startAt = Math.max(this.context.currentTime + 0.035, this.nextStartTime);
-    source.start(startAt);
-    this.nextStartTime = startAt + buffer.duration / source.playbackRate.value;
-    this.sources.push(source);
-    source.onended = () => {
-      this.sources = this.sources.filter((candidate) => candidate !== source);
-    };
-    return 'streamed';
+    const status: StreamPushStatus = this.remainingSeconds < STREAM_LOW_BUFFER_SECONDS ? 'rebuffering' : 'streamed';
+    const earliestStart = this.context.currentTime + (status === 'rebuffering' ? STREAM_REBUFFER_SECONDS : STREAM_SCHEDULE_JITTER_SECONDS);
+    this.scheduleBuffer(buffer, Math.max(this.nextStartTime, earliestStart));
+    if (status === 'rebuffering') this.didRebuffer = true;
+    return status;
   }
 
   get remainingSeconds() {
+    if (!this.playbackStarted) return this.pendingSeconds;
     return Math.max(0, this.nextStartTime - this.context.currentTime);
+  }
+
+  get elapsedSeconds() {
+    if (!this.playbackStarted) return 0;
+    return Math.max(0, this.context.currentTime - this.playbackStartTime);
+  }
+
+  get estimatedDurationSeconds() {
+    return this.scheduledSeconds + this.pendingSeconds;
+  }
+
+  get health(): TTSBufferHealth {
+    if (this.chunks.length > 0) return 'buffered-fallback';
+    if (!this.playbackStarted) return 'prebuffering';
+    if (this.remainingSeconds < STREAM_LOW_BUFFER_SECONDS) return this.didRebuffer ? 'rebuffering' : 'low';
+    return 'healthy';
+  }
+
+  startPendingPcm(): boolean {
+    if (this.chunks.length > 0 || this.playbackStarted || this.pendingPcmBuffers.length === 0) return false;
+    this.playbackStarted = true;
+    this.flushPendingBuffers(this.context.currentTime + STREAM_SCHEDULE_JITTER_SECONDS);
+    return true;
   }
 
   toObjectUrl(fallbackFormat = 'wav'): string | null {
@@ -125,7 +159,52 @@ class ProgressiveAudioSink {
       }
     }
     this.sources = [];
-    void this.context.close();
+    if (this.context.state !== 'closed') void this.context.close();
+  }
+
+  private toPcmBuffer(bytes: Uint8Array, sampleRate: number): AudioBuffer {
+    const samples = new Float32Array(Math.floor(bytes.byteLength / 2));
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = view.getInt16(index * 2, true) / 32768;
+    }
+
+    const buffer = this.context.createBuffer(1, samples.length, sampleRate);
+    buffer.copyToChannel(samples, 0);
+    return buffer;
+  }
+
+  private flushPendingBuffers(startAt: number) {
+    let scheduledAt = startAt;
+    for (const buffer of this.pendingPcmBuffers) {
+      scheduledAt = this.scheduleBuffer(buffer, scheduledAt);
+    }
+    this.pendingPcmBuffers = [];
+    this.pendingSeconds = 0;
+  }
+
+  private scheduleBuffer(buffer: AudioBuffer, startAt: number): number {
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = clamp(this.speed, 0.75, 1.35);
+    gain.gain.value = clamp(this.volume, 0, 1);
+    source.connect(gain).connect(this.context.destination);
+
+    source.start(startAt);
+    const adjustedDuration = this.adjustedDuration(buffer);
+    if (this.playbackStartTime === 0) this.playbackStartTime = startAt;
+    this.nextStartTime = startAt + adjustedDuration;
+    this.scheduledSeconds += adjustedDuration;
+    this.sources.push(source);
+    source.onended = () => {
+      this.sources = this.sources.filter((candidate) => candidate !== source);
+    };
+    return this.nextStartTime;
+  }
+
+  private adjustedDuration(buffer: AudioBuffer): number {
+    return buffer.duration / clamp(this.speed, 0.75, 1.35);
   }
 }
 
@@ -143,6 +222,8 @@ class TTSStore {
   error = $state<string | null>(null);
   announcement = $state('Speech is ready.');
   streamedChunks = $state(0);
+  bufferHealth = $state<TTSBufferHealth>('idle');
+  bufferedSeconds = $state(0);
 
   private activeAudio: ActiveAudio | null = null;
   private activeSink: ProgressiveAudioSink | null = null;
@@ -287,13 +368,19 @@ class TTSStore {
   }
 
   pause() {
-    if (!this.activeAudio || this.playbackState !== 'playing') return;
+    if (this.activeAudio && this.playbackState === 'playing') {
+      this.activeAudio.element.pause();
+      this.playbackState = 'paused';
+      this.announcement = 'Speech paused.';
+      this.stopProgressTimer();
+      this.updateProgressFromAudio();
+      return;
+    }
 
-    this.activeAudio.element.pause();
-    this.playbackState = 'paused';
-    this.announcement = 'Speech paused.';
-    this.stopProgressTimer();
-    this.updateProgressFromAudio();
+    if (this.activeSink && this.playbackState === 'playing') {
+      this.stopActiveAudio({ clearQueue: false, announce: false });
+      this.announcement = 'Speech stream paused.';
+    }
   }
 
   stop() {
@@ -341,6 +428,8 @@ class TTSStore {
       let doneAudioFormat = 'wav';
       let doneVoiceId = nextItem.voiceId;
       this.streamedChunks = 0;
+      this.bufferHealth = 'idle';
+      this.bufferedSeconds = 0;
 
       await ttsService.streamSpeech(
         {
@@ -366,11 +455,19 @@ class TTSStore {
             if (token !== this.runToken || controller.signal.aborted) return;
             this.streamedChunks = event.sequence;
             const mode = await sink.push(bytes, event);
-            if (mode === 'streamed' && !streamedProgressively) {
+            this.bufferedSeconds = sink.remainingSeconds;
+            this.bufferHealth = sink.health;
+
+            if ((mode === 'started' || mode === 'streamed') && !streamedProgressively) {
               streamedProgressively = true;
               this.playbackState = 'playing';
               this.announcement = `Speaking with ${toFriendlyVoiceName(event.voice_id ?? nextItem.voiceId, nextItem.voiceName)}.`;
               this.startProgressTimer();
+            } else if (mode === 'prebuffering') {
+              this.playbackState = 'loading';
+              this.announcement = `Pre-buffering voice… ${sink.remainingSeconds.toFixed(1)}s ready.`;
+            } else if (mode === 'rebuffering') {
+              this.announcement = 'Voice stream is catching up to avoid stutter.';
             } else if (!streamedProgressively) {
               this.announcement = `Receiving voice audio… ${event.sequence} chunk${event.sequence === 1 ? '' : 's'}.`;
             }
@@ -378,8 +475,9 @@ class TTSStore {
           onDone: (event) => {
             doneAudioFormat = event.audio_format;
             doneVoiceId = event.voice_id;
-            this.duration = event.duration_seconds ?? this.duration;
-            if (this.duration === 0) this.duration = sink.remainingSeconds;
+            this.duration = event.duration_seconds ?? Math.max(this.duration, sink.estimatedDurationSeconds);
+            this.bufferedSeconds = sink.remainingSeconds;
+            this.bufferHealth = sink.health;
           }
         },
         { signal: controller.signal }
@@ -388,6 +486,14 @@ class TTSStore {
       if (token !== this.runToken || controller.signal.aborted) {
         sink.stop();
         return;
+      }
+
+      const flushedShortStream = sink.startPendingPcm();
+      if (flushedShortStream && !streamedProgressively) {
+        streamedProgressively = true;
+        this.playbackState = 'playing';
+        this.announcement = `Speaking with ${toFriendlyVoiceName(doneVoiceId ?? nextItem.voiceId, nextItem.voiceName)}.`;
+        this.startProgressTimer();
       }
 
       fallbackObjectUrl = sink.toObjectUrl(doneAudioFormat);
@@ -410,11 +516,13 @@ class TTSStore {
         this.announcement = `Speaking with ${toFriendlyVoiceName(doneVoiceId ?? nextItem.voiceId, nextItem.voiceName)}.`;
         this.startProgressTimer();
       } else {
-        const finishDelayMs = Math.max(250, sink.remainingSeconds * 1000);
+        const finishDelayMs = Math.max(250, sink.remainingSeconds * 1000 + 120);
         globalThis.setTimeout(() => {
-          if (this.activeSink === sink) this.activeSink = null;
+          if (token === this.runToken) {
+            this.finishCurrentLine();
+            return;
+          }
           sink.stop();
-          if (token === this.runToken) this.finishCurrentLine();
         }, finishDelayMs);
       }
     } catch (error) {
@@ -443,11 +551,24 @@ class TTSStore {
   }
 
   private updateProgressFromAudio() {
-    if (!this.activeAudio) return;
+    if (this.activeAudio) {
+      const { element } = this.activeAudio;
+      this.currentTime = Number.isFinite(element.currentTime) ? element.currentTime : 0;
+      this.duration = Number.isFinite(element.duration) ? element.duration : this.duration;
+      return;
+    }
 
-    const { element } = this.activeAudio;
-    this.currentTime = Number.isFinite(element.currentTime) ? element.currentTime : 0;
-    this.duration = Number.isFinite(element.duration) ? element.duration : this.duration;
+    if (this.activeSink) {
+      this.currentTime = this.activeSink.elapsedSeconds;
+      this.duration = Math.max(this.duration, this.activeSink.estimatedDurationSeconds);
+      this.bufferedSeconds = this.activeSink.remainingSeconds;
+      this.bufferHealth = this.activeSink.health;
+      if (this.bufferHealth === 'low') {
+        this.announcement = 'Voice buffer is low; smoothing playback.';
+      } else if (this.bufferHealth === 'rebuffering') {
+        this.announcement = 'Voice stream is catching up to avoid stutter.';
+      }
+    }
   }
 
   private startProgressTimer() {
@@ -483,6 +604,8 @@ class TTSStore {
     this.current = null;
     this.currentTime = 0;
     this.duration = 0;
+    this.bufferHealth = 'idle';
+    this.bufferedSeconds = 0;
     this.playbackState = this.queue.length > 0 ? 'queued' : 'idle';
 
     if (options.announce) {
@@ -492,6 +615,8 @@ class TTSStore {
 
   private finishCurrentLine() {
     this.updateProgressFromAudio();
+    this.activeSink?.stop();
+    this.activeSink = null;
     this.cleanupActiveAudio();
     this.playbackState = this.queue.length > 0 ? 'queued' : 'idle';
     this.announcement = this.queue.length > 0 ? 'Continuing queued speech.' : 'Speech finished.';

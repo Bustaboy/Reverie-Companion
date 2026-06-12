@@ -201,7 +201,12 @@ export class TTSService {
 
   private async handleStreamLine(line: string, callbacks: TTSStreamCallbacks): Promise<void> {
     if (!line.trim()) return;
-    const event = JSON.parse(line) as TTSStreamEvent;
+    let event: TTSStreamEvent;
+    try {
+      event = JSON.parse(line) as TTSStreamEvent;
+    } catch (error) {
+      throw new TTSServiceError('The local voice stream returned malformed audio metadata.', { cause: error });
+    }
     if (event.type === 'start') {
       callbacks.onStart?.(event);
       return;

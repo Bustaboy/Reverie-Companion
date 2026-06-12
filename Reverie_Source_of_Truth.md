@@ -351,6 +351,8 @@ Reverie now supports a stronger local voice pipeline on top of the Task 2A-2E TT
 - **Zero-shot voice cloning UI**: voice settings include a warm dark “Clone Voice” section where users can record or upload a short 6-15 second reference, preview it, and create a local voice profile.
 - **VoiceManager cloning integration**: reference audio is stored locally under the voice data directory, profiles are marked as Orpheus zero-shot ready, and optional character assignment metadata is persisted without preloading or training any large model.
 - **8GB-friendly behavior**: cloning setup only stores a small reference clip and metadata; Orpheus remains lazy-loaded, Piper remains the fallback, and streaming failures degrade back to full generation instead of keeping extra heavyweight models resident.
+- **Streaming V2 polish**: frontend playback now pre-buffers roughly 0.7 seconds of PCM before starting, tracks buffer health during playback, and inserts a gentle rebuffer delay when chunks arrive too slowly so voices avoid harsh stutter while still playing progressively. The backend streaming response uses no-transform/no-buffer headers and a compact NDJSON event helper for robust chunk/error delivery.
+- **Local data hygiene**: default root-level runtime data such as cloned reference audio is ignored by git so private voice clips and generated local stores stay out of source control.
 
 Advanced mood sliders and richer per-character voice direction remain deferred to Task 2G.
 
