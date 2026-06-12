@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import { settingsStore } from '$lib/stores/settingsStore';
+import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import { visualNovelStore } from '$lib/stores/visualNovelStore';
 import type { ChatMessage, GrowthNotification, MemoryContext, MessageTTSMetadata } from '$lib/types/chat';
@@ -256,6 +257,7 @@ function createChatStore() {
 
           const completedMessage = get(store).messages.find((message) => message.id === assistantMessage.id);
           if (completedMessage?.content.trim()) {
+            imageGenerationStore.maybeAutoGenerateFromAssistant(completedMessage);
             ttsStore.enqueueFromDone({
               messageId: completedMessage.id,
               visibleText: completedMessage.content,

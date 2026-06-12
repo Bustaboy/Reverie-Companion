@@ -18,6 +18,7 @@ export interface MemoryReflectionSettings {
   ttsVolume: number;
   ttsSpeed: number;
   ttsLatencyPreset: TTSLatencyPreset;
+  imageAutoGenerateOnAssistant: boolean;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -41,7 +42,8 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   ttsAutoPlay: true,
   ttsVolume: 0.86,
   ttsSpeed: 1,
-  ttsLatencyPreset: 'balanced'
+  ttsLatencyPreset: 'balanced',
+  imageAutoGenerateOnAssistant: false
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -93,6 +95,10 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   ttsLatencyPreset: isTTSLatencyPreset(value.ttsLatencyPreset)
     ? value.ttsLatencyPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsLatencyPreset,
+  imageAutoGenerateOnAssistant: toBoolean(
+    value.imageAutoGenerateOnAssistant,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateOnAssistant
+  ),
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -124,6 +130,7 @@ const persistSettings = (state: SettingsState) => {
     ttsVolume: state.ttsVolume,
     ttsSpeed: state.ttsSpeed,
     ttsLatencyPreset: state.ttsLatencyPreset,
+    imageAutoGenerateOnAssistant: state.imageAutoGenerateOnAssistant,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -179,6 +186,9 @@ function createSettingsStore() {
     },
     setTTSLatencyPreset(ttsLatencyPreset: TTSLatencyPreset) {
       save({ ttsLatencyPreset });
+    },
+    setImageAutoGenerateOnAssistant(imageAutoGenerateOnAssistant: boolean) {
+      save({ imageAutoGenerateOnAssistant });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);
