@@ -25,6 +25,13 @@ export interface TTSGenerateRequest {
   audio_format?: TTSAudioFormat;
 }
 
+export interface TTSStreamResult {
+  objectUrl: string;
+  audio_format: TTSAudioFormat;
+  request_id?: string;
+  streamed: boolean;
+}
+
 export interface TTSGenerateResponse {
   request_id: string;
   backend: 'orpheus' | 'piper';
@@ -110,6 +117,133 @@ export class TTSService {
       globalThis.clearTimeout(timeout);
       cancelExternalAbort();
     }
+  }
+
+
+  async streamSpeech(request: TTSGenerateRequest, options: { signal?: AbortSignal } = {}): Promise<TTSStreamResult> {
+    const url = `${this.baseUrl}/api/tts/generate`;
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+    const cancelExternalAbort = this.forwardAbort(options.signal, controller);
+
+    try {
+      const response = await this.fetcher(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'audio/wav, application/json'
+        },
+        body: JSON.stringify({ ...request, stream: true, audio_format: request.audio_format ?? 'wav' }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const body = await this.parseJsonResponse<BackendErrorBody>(response);
+        throw this.toServiceError(response, body);
+      }
+
+      const audioFormat = request.audio_format ?? 'wav';
+      const requestId = response.headers.get('X-Request-ID') ?? undefined;
+
+      if (!response.body) {
+        const blob = await response.blob();
+        return {
+          objectUrl: URL.createObjectURL(blob),
+          audio_format: audioFormat,
+          request_id: requestId,
+          streamed: false
+        };
+      }
+
+      const mediaSourceUrl = this.tryCreateProgressiveMediaSourceUrl(response.body, audioFormat, controller.signal);
+      if (mediaSourceUrl) {
+        return {
+          objectUrl: mediaSourceUrl,
+          audio_format: audioFormat,
+          request_id: requestId,
+          streamed: true
+        };
+      }
+
+      const chunks: ArrayBuffer[] = [];
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value.slice().buffer as ArrayBuffer);
+      }
+
+      return {
+        objectUrl: URL.createObjectURL(new Blob(chunks, { type: `audio/${audioFormat}` })),
+        audio_format: audioFormat,
+        request_id: requestId,
+        streamed: response.headers.get('X-TTS-Streaming') === 'true'
+      };
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+      cancelExternalAbort();
+    }
+  }
+
+
+  private tryCreateProgressiveMediaSourceUrl(body: ReadableStream<Uint8Array>, audioFormat: TTSAudioFormat, signal: AbortSignal): string | null {
+    const mediaSourceType = `audio/${audioFormat}`;
+    const maybeMediaSource = globalThis.MediaSource;
+    if (!maybeMediaSource || !maybeMediaSource.isTypeSupported(mediaSourceType)) {
+      return null;
+    }
+
+    const mediaSource = new maybeMediaSource();
+    const objectUrl = URL.createObjectURL(mediaSource);
+
+    mediaSource.addEventListener(
+      'sourceopen',
+      () => {
+        const sourceBuffer = mediaSource.addSourceBuffer(mediaSourceType);
+        const reader = body.getReader();
+        const queue: ArrayBuffer[] = [];
+        let done = false;
+
+        const appendNext = () => {
+          if (sourceBuffer.updating || queue.length === 0) {
+            if (done && !sourceBuffer.updating && mediaSource.readyState === 'open') {
+              mediaSource.endOfStream();
+            }
+            return;
+          }
+          const next = queue.shift();
+          if (next) sourceBuffer.appendBuffer(next);
+        };
+
+        sourceBuffer.addEventListener('updateend', appendNext);
+
+        const pump = async () => {
+          try {
+            while (!signal.aborted) {
+              const { done: readDone, value } = await reader.read();
+              if (readDone) break;
+              if (value) {
+                queue.push(value.slice().buffer as ArrayBuffer);
+                appendNext();
+              }
+            }
+            done = true;
+            appendNext();
+          } catch {
+            if (mediaSource.readyState === 'open') {
+              mediaSource.endOfStream('decode');
+            }
+          }
+        };
+
+        void pump();
+      },
+      { once: true }
+    );
+
+    return objectUrl;
   }
 
   private async parseJsonResponse<T>(response: Response): Promise<T> {

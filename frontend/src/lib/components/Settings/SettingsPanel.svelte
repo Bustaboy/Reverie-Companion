@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { voiceService, VoiceServiceError } from '$lib/api/voiceService';
   import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset } from '$lib/stores/settingsStore';
 
   const reflectionFrequencyOptions: Array<{
@@ -93,6 +94,29 @@
     }
   ];
 
+
+  let cloneName = $state('');
+  let cloneCharacterId = $state('');
+  let referenceFile = $state<File | null>(null);
+  let recordedBlob = $state<Blob | null>(null);
+  let recordingStartedAt = 0;
+  let recordedDurationSeconds = $state<number | null>(null);
+  let mediaRecorder = $state<MediaRecorder | null>(null);
+  let cloneBusy = $state(false);
+  let cloneStatus = $state('Record or upload 6–15 seconds of clear speech. Stored locally.');
+  let cloneError = $state<string | null>(null);
+  let recordingChunks: BlobPart[] = [];
+
+  const selectedReferenceLabel = $derived.by(() => {
+    if (recordedBlob) {
+      return `Recording ready${recordedDurationSeconds ? ` · ${recordedDurationSeconds.toFixed(1)}s` : ''}`;
+    }
+    if (referenceFile) {
+      return `${referenceFile.name} · ${(referenceFile.size / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    return 'No reference audio selected yet.';
+  });
+
   const savedLabel = $derived(
     $settingsStore.savedAt
       ? `Saved locally ${$settingsStore.savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
@@ -126,6 +150,104 @@
   const handleTTSSpeedChange = (event: Event) => {
     settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
   };
+
+  const handleReferenceUpload = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    referenceFile = input.files?.[0] ?? null;
+    recordedBlob = null;
+    recordedDurationSeconds = null;
+    cloneError = null;
+    cloneStatus = referenceFile ? 'Reference audio selected. Create a profile when ready.' : 'Record or upload 6–15 seconds of clear speech.';
+  };
+
+  const startVoiceRecording = async () => {
+    cloneError = null;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      cloneError = 'This browser cannot record audio here. Upload a short WAV, WebM, OGG, or MP3 instead.';
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingChunks = [];
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        recordedDurationSeconds = (Date.now() - recordingStartedAt) / 1000;
+        recordedBlob = new Blob(recordingChunks, { type: recorder.mimeType || 'audio/webm' });
+        referenceFile = null;
+        mediaRecorder = null;
+        cloneStatus = 'Recording captured. Create a voice profile when ready.';
+      };
+      mediaRecorder = recorder;
+      recordingStartedAt = Date.now();
+      recorder.start();
+      cloneStatus = 'Recording… aim for 6–15 seconds of natural speech.';
+    } catch (error) {
+      cloneError = error instanceof Error ? error.message : 'Microphone access was not available.';
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  };
+
+  const createVoiceProfile = async () => {
+    cloneError = null;
+    const audio = recordedBlob ?? referenceFile;
+    if (!audio) {
+      cloneError = 'Add a short reference recording first.';
+      return;
+    }
+    if (!cloneName.trim()) {
+      cloneError = 'Name the voice profile before saving it.';
+      return;
+    }
+    if (recordedDurationSeconds !== null && (recordedDurationSeconds < 6 || recordedDurationSeconds > 15)) {
+      cloneError = 'Please keep recordings between 6 and 15 seconds for clean zero-shot cloning.';
+      return;
+    }
+
+    cloneBusy = true;
+    cloneStatus = 'Saving reference audio locally…';
+    try {
+      const audio_base64 = await blobToBase64(audio);
+      const response = await voiceService.createClone({
+        name: cloneName.trim(),
+        character_id: cloneCharacterId.trim() || undefined,
+        mime_type: audio.type || 'audio/wav',
+        duration_seconds: recordedDurationSeconds ?? undefined,
+        audio_base64
+      });
+      cloneStatus = `${response.profile.name} is ready for local Orpheus zero-shot playback.`;
+      cloneName = '';
+      cloneCharacterId = '';
+      referenceFile = null;
+      recordedBlob = null;
+      recordedDurationSeconds = null;
+    } catch (error) {
+      cloneError = error instanceof VoiceServiceError ? error.message : 'Voice profile could not be created.';
+      cloneStatus = 'Reference audio is still on this device; try again when ready.';
+    } finally {
+      cloneBusy = false;
+    }
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        resolve(result.includes(',') ? result.split(',')[1] : result);
+      };
+      reader.readAsDataURL(blob);
+    });
 </script>
 
 <section class="settings-panel" aria-labelledby="settings-title">
@@ -326,6 +448,47 @@
           </button>
         {/each}
       </div>
+
+      <section class="voice-clone-section" aria-labelledby="voice-clone-title">
+        <div class="setting-copy compact">
+          <span class="setting-kicker">Clone Voice</span>
+          <h3 id="voice-clone-title">Zero-shot voice profile</h3>
+          <p>Record or upload a 6–15 second reference. Reverie stores it locally and passes it to Orpheus only when that profile speaks.</p>
+        </div>
+
+        <div class="voice-clone-grid">
+          <label class="range-setting voice-clone-field">
+            <span>Profile name</span>
+            <input type="text" bind:value={cloneName} placeholder="Tara warm reference" disabled={cloneBusy} />
+          </label>
+          <label class="range-setting voice-clone-field">
+            <span>Character ID <small>(optional)</small></span>
+            <input type="text" bind:value={cloneCharacterId} placeholder="tara" disabled={cloneBusy} />
+          </label>
+        </div>
+
+        <div class="voice-reference-card">
+          <div>
+            <strong>{selectedReferenceLabel}</strong>
+            <p aria-live="polite">{cloneError ?? cloneStatus}</p>
+          </div>
+          <div class="voice-reference-actions">
+            {#if mediaRecorder}
+              <button type="button" class="secondary-button recording" onclick={stopVoiceRecording}>Stop recording</button>
+            {:else}
+              <button type="button" class="secondary-button" disabled={cloneBusy} onclick={startVoiceRecording}>Record 6–15s</button>
+            {/if}
+            <label class="secondary-button upload-button">
+              Upload audio
+              <input type="file" accept="audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mpeg,audio/mp3" disabled={cloneBusy || Boolean(mediaRecorder)} onchange={handleReferenceUpload} />
+            </label>
+          </div>
+        </div>
+
+        <button type="button" class="primary-voice-action" disabled={cloneBusy || Boolean(mediaRecorder)} onclick={createVoiceProfile}>
+          {cloneBusy ? 'Creating voice profile…' : 'Create Voice Profile from Recording'}
+        </button>
+      </section>
     </article>
 
     <aside class="settings-trust-note" aria-label="Memory and reflection trust note">

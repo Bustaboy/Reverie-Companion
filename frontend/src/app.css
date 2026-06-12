@@ -2548,3 +2548,143 @@ h1 {
     animation: none;
   }
 }
+
+.voice-clone-section {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.8rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.1rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 175, 166, 0.045));
+}
+
+.voice-clone-section h3 {
+  margin: 0.12rem 0;
+  color: #fff3ef;
+}
+
+.voice-clone-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.voice-clone-field input {
+  width: 100%;
+  min-height: 2.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 0.72rem;
+  background: rgba(22, 15, 22, 0.76);
+  color: #fff7f2;
+  padding: 0 0.75rem;
+}
+
+.voice-clone-field input:focus-visible {
+  outline: 2px solid rgba(255, 182, 176, 0.72);
+  outline-offset: 2px;
+}
+
+.voice-reference-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(14, 10, 16, 0.48);
+}
+
+.voice-reference-card strong {
+  color: #ffe0dc;
+}
+
+.voice-reference-card p {
+  margin: 0.25rem 0 0;
+  color: #d9c4d5;
+  font-size: 0.84rem;
+}
+
+.voice-reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.secondary-button,
+.primary-voice-action {
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  color: #fff0ed;
+  cursor: pointer;
+  font-weight: 700;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0 0.9rem;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible,
+.primary-voice-action:hover,
+.primary-voice-action:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(255, 190, 184, 0.45);
+}
+
+.secondary-button.recording {
+  background: rgba(255, 110, 120, 0.18);
+  border-color: rgba(255, 150, 158, 0.42);
+}
+
+.upload-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.primary-voice-action {
+  justify-self: start;
+  min-height: 2.55rem;
+  padding: 0 1rem;
+  background: linear-gradient(135deg, rgba(255, 151, 137, 0.92), rgba(201, 108, 255, 0.62));
+  box-shadow: 0 16px 34px rgba(255, 126, 137, 0.14);
+}
+
+.secondary-button:disabled,
+.primary-voice-action:disabled,
+.voice-clone-field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+@media (max-width: 720px) {
+  .voice-clone-grid,
+  .voice-reference-card {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-reference-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .voice-reference-actions {
+    justify-content: flex-start;
+  }
+}

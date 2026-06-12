@@ -84,3 +84,33 @@ class VoiceProfileUpdate(BaseModel):
         if "\x00" in stripped:
             raise ValueError("reference_audio_path cannot contain null bytes.")
         return stripped
+
+class VoiceCloneRequest(BaseModel):
+    """Create a local zero-shot voice profile from short reference audio."""
+
+    name: str = Field(..., min_length=1, max_length=MAX_VOICE_NAME_LENGTH)
+    audio_base64: str = Field(..., min_length=1)
+    mime_type: str = Field(default="audio/wav", max_length=120)
+    character_id: str | None = Field(default=None, min_length=1, max_length=120)
+    duration_seconds: float | None = Field(default=None, ge=0.0, le=60.0)
+
+    @field_validator("name", "mime_type", "character_id")
+    @classmethod
+    def strip_clone_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value cannot be empty.")
+        if "\x00" in stripped:
+            raise ValueError("value cannot contain null bytes.")
+        return stripped
+
+
+class VoiceCloneResponse(BaseModel):
+    """Voice profile returned after storing reference audio locally."""
+
+    profile: VoiceProfile
+    assigned_character_id: str | None = None
+    cloning_backend: str = "orpheus_zero_shot"
+    message: str

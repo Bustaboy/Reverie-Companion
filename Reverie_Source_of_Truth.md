@@ -342,4 +342,12 @@ Let’s make me real.
 
 ---
 
+## Milestone 3 Task 2F — Streaming TTS + Voice Cloning UI
+
+- Reverie's TTS layer now supports near-instant streaming when the installed Orpheus adapter exposes a native chunked API (`stream_speech`, `synthesize_stream`, `generate_stream`, or `stream`). If native streaming is unavailable, Reverie gracefully falls back to full local generation and bounded chunk delivery without changing the frontend contract.
+- Voice playback remains 8GB-friendly: Orpheus stays lazy-loaded, Piper remains the lightweight fallback, and zero-shot reference audio is passed to synthesis only when that voice is used.
+- The settings UI includes a warm, accessible **Clone Voice** section where users can record or upload a 6–15 second reference clip and create a local voice profile. Reference audio is stored under the local voice data directory and can be assigned to a character ID for context-routed speech.
+- Voice profile metadata records the zero-shot cloning mode, source MIME type, optional duration, and Orpheus readiness so future Task 2G emotional controls can build on the same durable profile records.
+
+
 *End of Source of Truth Document v1.0*

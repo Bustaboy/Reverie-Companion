@@ -24,6 +24,7 @@ from typing import Protocol
 
 from app.core.config import Settings
 from app.models.tts import TTSContext
+from app.models.voice import VoiceProfile
 from app.services.emotion_engine import emotion_engine
 from app.services.tts_context_router import TTSContextRouter
 from app.services.voice_manager import VoiceManager, VoiceManagerError
@@ -75,6 +76,20 @@ class TTSGenerationResult:
         return base64.b64encode(self.audio_bytes).decode("ascii")
 
 
+@dataclass(frozen=True)
+class PreparedTTSRequest:
+    """Normalized text and voice routing shared by full and streaming TTS."""
+
+    visible_text: str
+    normalized_text: str
+    backend_voice_id: str
+    response_voice_id: str
+    voice_profile: VoiceProfile
+    routing_reason: str
+    routing_mode: str
+    is_narration: bool
+
+
 class TTSBackend(Protocol):
     """Protocol implemented by local TTS adapters."""
 
@@ -87,6 +102,7 @@ class TTSBackend(Protocol):
         voice_id: str,
         audio_format: str,
         request_id: str | None,
+        reference_audio_path: str | None = None,
     ) -> TTSGenerationResult:
         """Generate speech audio for text."""
 
@@ -114,6 +130,7 @@ class OrpheusBackend:
         voice_id: str,
         audio_format: str,
         request_id: str | None,
+        reference_audio_path: str | None = None,
     ) -> TTSGenerationResult:
         if audio_format != "wav":
             raise TTSBackendUnavailable(
@@ -127,7 +144,7 @@ class OrpheusBackend:
         start = perf_counter()
         try:
             audio_bytes = await asyncio.to_thread(
-                self._generate_with_model, model, text, voice_id
+                self._generate_with_model, model, text, voice_id, reference_audio_path
             )
         except TTSServiceError:
             raise
@@ -156,6 +173,62 @@ class OrpheusBackend:
             sample_rate=self._settings.tts_sample_rate,
             duration_seconds=perf_counter() - start,
         )
+
+    async def stream(
+        self,
+        *,
+        text: str,
+        voice_id: str,
+        audio_format: str,
+        request_id: str | None,
+        reference_audio_path: str | None = None,
+    ) -> AsyncIterator[bytes]:
+        """Yield native Orpheus audio chunks when the installed adapter supports it."""
+
+        if audio_format != "wav":
+            raise TTSBackendUnavailable(
+                "Orpheus currently streams WAV audio in Reverie.",
+                code="tts_format_not_supported",
+                retryable=False,
+                details={"requested_format": audio_format},
+            )
+
+        model = await self._get_model(request_id=request_id)
+        iterator = await asyncio.to_thread(
+            self._stream_with_model, model, text, voice_id, reference_audio_path
+        )
+        try:
+            for chunk in iterator:
+                if isinstance(chunk, bytes):
+                    yield chunk
+                elif isinstance(chunk, bytearray):
+                    yield bytes(chunk)
+                elif hasattr(chunk, "read"):
+                    data = chunk.read()
+                    if data:
+                        yield data
+                else:
+                    raise TTSBackendUnavailable(
+                        "Installed Orpheus streaming API returned unsupported chunks.",
+                        code="tts_orpheus_stream_chunk_unsupported",
+                        retryable=True,
+                    )
+        except RuntimeError as exc:
+            message = str(exc).lower()
+            if "cuda" in message and ("out of memory" in message or "oom" in message):
+                self.unload()
+                raise TTSInsufficientVRAM(
+                    "Orpheus ran out of GPU memory while streaming; retrying fallback.",
+                    code="tts_insufficient_vram",
+                    retryable=True,
+                    details={"backend": self.name},
+                ) from exc
+            raise TTSServiceError(
+                "Orpheus TTS streaming failed.",
+                code="tts_orpheus_stream_failed",
+                retryable=True,
+                details={"backend": self.name},
+            ) from exc
 
     async def _get_model(self, *, request_id: str | None) -> object:
         """Load Orpheus once, guarded by a lock so concurrent requests share it."""
@@ -247,14 +320,17 @@ class OrpheusBackend:
                 details={"free_vram_mb": free_mb, "min_free_vram_mb": min_free_mb},
             )
 
-    def _generate_with_model(self, model: object, text: str, voice_id: str) -> bytes:
+    def _generate_with_model(
+        self, model: object, text: str, voice_id: str, reference_audio_path: str | None
+    ) -> bytes:
         """Call common Orpheus package generation APIs and normalize to bytes."""
 
         for method_name in ("synthesize", "generate_speech", "generate"):
             method = getattr(model, method_name, None)
             if method is None:
                 continue
-            audio = method(prompt=text, voice=voice_id)
+            kwargs = self._orpheus_kwargs(text, voice_id, reference_audio_path)
+            audio = method(**kwargs)
             if isinstance(audio, bytes):
                 return audio
             if hasattr(audio, "read"):
@@ -266,6 +342,31 @@ class OrpheusBackend:
             code="tts_orpheus_api_unsupported",
             retryable=False,
         )
+
+    def _stream_with_model(
+        self, model: object, text: str, voice_id: str, reference_audio_path: str | None
+    ) -> object:
+        """Return a native Orpheus chunk iterator when present."""
+
+        for method_name in ("stream_speech", "synthesize_stream", "generate_stream", "stream"):
+            method = getattr(model, method_name, None)
+            if method is None:
+                continue
+            return method(**self._orpheus_kwargs(text, voice_id, reference_audio_path))
+        raise TTSBackendUnavailable(
+            "Installed Orpheus backend does not expose a streaming API.",
+            code="tts_orpheus_stream_unsupported",
+            retryable=True,
+        )
+
+    @staticmethod
+    def _orpheus_kwargs(
+        text: str, voice_id: str, reference_audio_path: str | None
+    ) -> dict[str, str]:
+        kwargs = {"prompt": text, "voice": voice_id}
+        if reference_audio_path:
+            kwargs["reference_audio"] = reference_audio_path
+        return kwargs
 
     def _resolved_device(self) -> str:
         """Resolve auto/cuda/cpu selection without importing torch unless needed."""
@@ -312,6 +413,7 @@ class PiperBackend:
         voice_id: str,
         audio_format: str,
         request_id: str | None,
+        reference_audio_path: str | None = None,
     ) -> TTSGenerationResult:
         if audio_format != "wav":
             raise TTSBackendUnavailable(
@@ -433,54 +535,32 @@ class TTSService:
     ) -> TTSGenerationResult:
         """Generate speech from text using context-aware voice routing and tags."""
 
-        visible_text = emotion_engine.strip_emotion_tags(text.strip())
-        normalized_text = (
-            tts_text.strip()
-            if tts_text and tts_text.strip()
-            else emotion_engine.analyze_and_tag(
-                text=visible_text, tts_context=context
-            ).tts_text
+        prepared = self._prepare_request(
+            text=text,
+            voice_id=voice_id,
+            character_id=character_id,
+            context=context,
+            tts_text=tts_text,
         )
-        try:
-            routing = self._context_router.route(
-                text=visible_text or normalized_text,
-                context=context,
-                voice_id=voice_id,
-                character_id=character_id,
-            )
-        except VoiceManagerError as exc:
-            raise TTSServiceError(
-                "Requested voice profile could not be resolved.",
-                code=exc.code,
-                retryable=False,
-                details=exc.details,
-            ) from exc
-        resolved_voice_id = routing.backend_voice_id
-        response_voice_id = routing.voice_profile.voice_id
-        if len(normalized_text) > self._settings.tts_max_text_chars:
-            raise TTSServiceError(
-                "TTS text exceeds the configured maximum length.",
-                code="tts_text_too_long",
-                retryable=False,
-                details={"max_chars": self._settings.tts_max_text_chars},
-            )
+        reference_audio_path = prepared.voice_profile.reference_audio_path
 
         errors: list[dict[str, object]] = []
         for backend, fallback_used in self._backend_order():
             try:
                 result = await asyncio.wait_for(
                     backend.generate(
-                        text=normalized_text,
-                        voice_id=resolved_voice_id,
+                        text=prepared.normalized_text,
+                        voice_id=prepared.backend_voice_id,
                         audio_format=audio_format,
                         request_id=request_id,
+                        reference_audio_path=reference_audio_path,
                     ),
                     timeout=self._timeout_for_backend(backend.name),
                 )
                 result = TTSGenerationResult(
                     audio_bytes=result.audio_bytes,
                     backend=result.backend,
-                    voice_id=response_voice_id,
+                    voice_id=prepared.response_voice_id,
                     audio_format=result.audio_format,
                     sample_rate=result.sample_rate,
                     duration_seconds=result.duration_seconds,
@@ -492,9 +572,9 @@ class TTSService:
                         "request_id": request_id,
                         "backend": result.backend,
                         "voice_id": result.voice_id,
-                        "tts_context_mode": routing.context.mode,
-                        "tts_is_narration": routing.is_narration,
-                        "tts_route_reason": routing.reason,
+                        "tts_context_mode": prepared.routing_mode,
+                        "tts_is_narration": prepared.is_narration,
+                        "tts_route_reason": prepared.routing_reason,
                         "fallback_used": result.fallback_used,
                         "audio_bytes": len(result.audio_bytes),
                     },
@@ -541,12 +621,46 @@ class TTSService:
         request_id: str | None = None,
         tts_text: str | None = None,
     ) -> AsyncIterator[bytes]:
-        """Yield generated audio bytes.
+        """Yield audio chunks, using native Orpheus streaming when available."""
 
-        Current local backends synthesize complete files, so this foundation
-        streams the resulting bytes in bounded chunks. Future Orpheus streaming
-        APIs can replace this without changing the route contract.
-        """
+        prepared = self._prepare_request(
+            text=text,
+            voice_id=voice_id,
+            character_id=character_id,
+            context=context,
+            tts_text=tts_text,
+        )
+        reference_audio_path = prepared.voice_profile.reference_audio_path
+        errors: list[dict[str, object]] = []
+
+        if self._settings.tts_primary_backend == "orpheus":
+            try:
+                async for chunk in self._orpheus.stream(
+                    text=prepared.normalized_text,
+                    voice_id=prepared.backend_voice_id,
+                    audio_format=audio_format,
+                    request_id=request_id,
+                    reference_audio_path=reference_audio_path,
+                ):
+                    yield chunk
+                logger.info(
+                    "Streamed TTS audio with native Orpheus chunks",
+                    extra={
+                        "request_id": request_id,
+                        "backend": "orpheus",
+                        "voice_id": prepared.response_voice_id,
+                        "tts_route_reason": prepared.routing_reason,
+                    },
+                )
+                return
+            except TTSServiceError as exc:
+                errors.append(
+                    {"backend": "orpheus", "code": exc.code, "details": exc.details}
+                )
+                logger.warning(
+                    "Native Orpheus streaming unavailable; falling back to generated chunks",
+                    extra={"request_id": request_id, "code": exc.code},
+                )
 
         result = await self.generate_speech(
             text=text,
@@ -561,6 +675,59 @@ class TTSService:
         with io.BytesIO(result.audio_bytes) as audio:
             while chunk := audio.read(chunk_size):
                 yield chunk
+
+    def _prepare_request(
+        self,
+        *,
+        text: str,
+        voice_id: str | None,
+        character_id: str | None,
+        context: TTSContext | None,
+        tts_text: str | None,
+    ) -> PreparedTTSRequest:
+        """Normalize text once and resolve the durable voice profile."""
+
+        visible_text = emotion_engine.strip_emotion_tags(text.strip())
+        normalized_text = (
+            tts_text.strip()
+            if tts_text and tts_text.strip()
+            else emotion_engine.analyze_and_tag(
+                text=visible_text, tts_context=context
+            ).tts_text
+        )
+        try:
+            routing = self._context_router.route(
+                text=visible_text or normalized_text,
+                context=context,
+                voice_id=voice_id,
+                character_id=character_id,
+            )
+        except VoiceManagerError as exc:
+            raise TTSServiceError(
+                "Requested voice profile could not be resolved.",
+                code=exc.code,
+                retryable=False,
+                details=exc.details,
+            ) from exc
+
+        if len(normalized_text) > self._settings.tts_max_text_chars:
+            raise TTSServiceError(
+                "TTS text exceeds the configured maximum length.",
+                code="tts_text_too_long",
+                retryable=False,
+                details={"max_chars": self._settings.tts_max_text_chars},
+            )
+
+        return PreparedTTSRequest(
+            visible_text=visible_text,
+            normalized_text=normalized_text,
+            backend_voice_id=routing.backend_voice_id,
+            response_voice_id=routing.voice_profile.voice_id,
+            voice_profile=routing.voice_profile,
+            routing_reason=routing.reason,
+            routing_mode=routing.context.mode,
+            is_narration=routing.is_narration,
+        )
 
     def _backend_order(self) -> list[tuple[TTSBackend, bool]]:
         primary = self._settings.tts_primary_backend

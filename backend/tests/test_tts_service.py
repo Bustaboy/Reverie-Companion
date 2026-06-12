@@ -307,3 +307,32 @@ def test_generate_speech_adds_fallback_tags_from_context(tmp_path) -> None:
         assert "I want you close" in service._piper.last_kwargs["text"]
 
     asyncio.run(run_test())
+
+
+def test_stream_speech_uses_native_orpheus_stream_when_available(tmp_path) -> None:
+    class FakeStreamingOrpheus(FakeBackend):
+        async def stream(self, **kwargs):
+            self.calls += 1
+            self.last_kwargs = kwargs
+            yield b"chunk-1"
+            yield b"chunk-2"
+
+    async def run_test() -> None:
+        service = make_service(tmp_path)
+        service._orpheus = FakeStreamingOrpheus("orpheus")  # type: ignore[assignment]
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", error=AssertionError("fallback not expected")
+        )
+
+        chunks = [
+            chunk
+            async for chunk in service.stream_speech(
+                text="Hello", voice_id="tara", request_id="req_stream"
+            )
+        ]
+
+        assert chunks == [b"chunk-1", b"chunk-2"]
+        assert service._orpheus.last_kwargs["voice_id"] == "tara_backend"
+        assert service._orpheus.last_kwargs["reference_audio_path"] == "voices/tara.wav"
+
+    asyncio.run(run_test())

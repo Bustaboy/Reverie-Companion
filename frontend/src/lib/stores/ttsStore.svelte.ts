@@ -40,17 +40,6 @@ const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
-const createObjectUrl = (audioBase64: string, format: string): string => {
-  const binary = atob(audioBase64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return URL.createObjectURL(new Blob([bytes], { type: `audio/${format}` }));
-};
-
 const normalizeAudioError = (error: unknown): string => {
   if (error instanceof TTSServiceError && error.code === 'tts_cancelled') {
     return 'Speech playback was cancelled.';
@@ -266,36 +255,35 @@ class TTSStore {
     this.generationController = controller;
 
     try {
-      const response = await ttsService.generateSpeech(
-        {
-          text: nextItem.visibleText ?? nextItem.text,
-          tts_text: nextItem.text,
-          voice_id: nextItem.voiceId,
-          context: nextItem.ttsContext
-            ? {
-                character_id: nextItem.ttsContext.characterId,
-                is_narration: nextItem.ttsContext.isNarration,
-                mode: nextItem.ttsContext.mode,
-                emotion_hint: nextItem.ttsContext.emotionHint,
-                intensity: nextItem.ttsContext.intensity
-              }
-            : undefined,
-          emotion: nextItem.emotion
-        },
-        { signal: controller.signal }
-      );
+      const request = {
+        text: nextItem.visibleText ?? nextItem.text,
+        tts_text: nextItem.text,
+        voice_id: nextItem.voiceId,
+        context: nextItem.ttsContext
+          ? {
+              character_id: nextItem.ttsContext.characterId,
+              is_narration: nextItem.ttsContext.isNarration,
+              mode: nextItem.ttsContext.mode,
+              emotion_hint: nextItem.ttsContext.emotionHint,
+              intensity: nextItem.ttsContext.intensity
+            }
+          : undefined,
+        emotion: nextItem.emotion
+      };
+
+      const streamResponse = await ttsService.streamSpeech(request, { signal: controller.signal });
 
       if (token !== this.runToken || controller.signal.aborted) {
+        URL.revokeObjectURL(streamResponse.objectUrl);
         return;
       }
 
-      const objectUrl = createObjectUrl(response.audio_base64, response.audio_format);
-      const element = new Audio(objectUrl);
-      this.activeAudio = { element, objectUrl, item: nextItem };
+      const element = new Audio(streamResponse.objectUrl);
+      this.activeAudio = { element, objectUrl: streamResponse.objectUrl, item: nextItem };
       this.applyPlaybackSettings();
 
       element.onloadedmetadata = () => {
-        this.duration = Number.isFinite(element.duration) ? element.duration : response.duration_seconds ?? 0;
+        this.duration = Number.isFinite(element.duration) ? element.duration : 0;
       };
       element.ontimeupdate = () => this.updateProgressFromAudio();
       element.onerror = () => {
@@ -313,7 +301,9 @@ class TTSStore {
 
       await element.play();
       this.playbackState = 'playing';
-      this.announcement = `Speaking with ${toFriendlyVoiceName(response.voice_id ?? nextItem.voiceId, nextItem.voiceName)}.`;
+      this.announcement = streamResponse.streamed
+        ? `Speaking now with ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`
+        : `Speaking with ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`;
       this.startProgressTimer();
     } catch (error) {
       if (token !== this.runToken) {

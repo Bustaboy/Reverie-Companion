@@ -1,7 +1,6 @@
 """Text-to-speech API routes."""
 
 import logging
-from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
 
@@ -44,8 +43,8 @@ async def generate_tts(
     """Generate speech audio from text.
 
     Non-streaming requests return base64 WAV audio in JSON for easy early
-    clients. Streaming requests return audio bytes directly; current backends
-    synthesize whole files first and stream in bounded chunks.
+    clients. Streaming requests return audio bytes directly from native Orpheus
+    chunk generation when available, with full-generation chunk fallback.
     """
 
     request_id = str(uuid4())
@@ -69,6 +68,25 @@ async def generate_tts(
     )
 
     try:
+        if request.stream:
+            return StreamingResponse(
+                tts_service.stream_speech(
+                    text=request.text,
+                    voice_id=voice_id,
+                    character_id=request.character_id,
+                    context=context,
+                    audio_format=request.audio_format,
+                    request_id=request_id,
+                    tts_text=request.tts_text,
+                ),
+                media_type=f"audio/{request.audio_format}",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Request-ID": request_id,
+                    "X-TTS-Streaming": "true",
+                },
+            )
+
         result = await tts_service.generate_speech(
             text=request.text,
             voice_id=voice_id,
@@ -103,20 +121,6 @@ async def generate_tts(
             },
         ) from exc
 
-    if request.stream:
-        return StreamingResponse(
-            _iter_audio_chunks(
-                result.audio_bytes,
-                chunk_size=tts_service.settings.tts_stream_chunk_size_bytes,
-            ),
-            media_type=f"audio/{request.audio_format}",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Request-ID": request_id,
-                "X-TTS-Backend": result.backend,
-            },
-        )
-
     return TTSGenerateResponse(
         request_id=request_id,
         backend=result.backend,  # type: ignore[arg-type]
@@ -127,13 +131,6 @@ async def generate_tts(
         duration_seconds=result.duration_seconds,
         fallback_used=result.fallback_used,
     )
-
-
-async def _iter_audio_chunks(
-    audio_bytes: bytes, *, chunk_size: int
-) -> AsyncIterator[bytes]:
-    for start in range(0, len(audio_bytes), chunk_size):
-        yield audio_bytes[start : start + chunk_size]
 
 
 def _tts_http_exception(
