@@ -12,7 +12,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from app.core.config import Settings, get_settings
-from app.models.image import ImageGenerateRequest, ImageGenerateResponse, ImageJobRead
+from app.models.image import (
+    ImageGenerateRequest,
+    ImageGenerateResponse,
+    ImageHistoryResponse,
+    ImageJobRead,
+    ImageSaveToAssetsRequest,
+    ImageSaveToAssetsResponse,
+)
 from app.services.image_generation_service import (
     ImageGenerationError,
     ImageGenerationService,
@@ -68,6 +75,47 @@ async def generate_image(
         },
     )
     return ImageGenerateResponse(request_id=request_id, job=job)
+
+
+@router.get("/history/{conversation_id}", response_model=ImageHistoryResponse)
+async def get_image_history(
+    conversation_id: str,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+) -> ImageHistoryResponse:
+    return service.list_history(conversation_id)
+
+
+@router.delete("/history/{job_id}", response_model=ImageHistoryResponse)
+async def delete_image_history_item(
+    job_id: str,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+) -> ImageHistoryResponse:
+    try:
+        return await service.delete_history_item(job_id)
+    except ImageGenerationError as exc:
+        raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+
+
+@router.post("/{job_id}/save-to-assets", response_model=ImageSaveToAssetsResponse)
+async def save_image_to_character_assets(
+    job_id: str,
+    request: ImageSaveToAssetsRequest,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+) -> ImageSaveToAssetsResponse:
+    try:
+        return await service.save_to_character_assets(
+            job_id,
+            character_id=request.character_id,
+            output_index=request.output_index,
+            asset_label=request.asset_label,
+        )
+    except ImageGenerationError as exc:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if not exc.retryable
+            else status.HTTP_409_CONFLICT
+        )
+        raise _image_http_exception(exc, status_code=status_code) from exc
 
 
 @router.get("/{job_id}", response_model=ImageJobRead)

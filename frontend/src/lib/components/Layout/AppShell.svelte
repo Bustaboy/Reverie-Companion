@@ -2,6 +2,7 @@
   import { ChatWindow } from '$lib/components/Chat';
   import { JournalPanel } from '$lib/components/Journal';
   import { PersonalLoRAPanel } from '$lib/components/Growth';
+  import { ImageGallery } from '$lib/components/ImageGeneration';
   import { SettingsPanel } from '$lib/components/Settings';
   import { VisualNovelStage } from '$lib/components/VisualNovel';
   import { visualNovelStore } from '$lib/stores/visualNovelStore';
@@ -34,6 +35,8 @@
       <SettingsPanel />
     {:else if activeSection === 'visual-novel'}
       <VisualNovelStage onReturnToChat={returnToChat} />
+    {:else if activeSection === 'images'}
+      <ImageGallery />
     {:else}
       <ChatWindow />
     {/if}

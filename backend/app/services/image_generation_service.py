@@ -25,6 +25,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -37,10 +39,13 @@ from uuid import uuid4
 from app.core.config import Settings
 from app.models.image import (
     ImageGenerateRequest,
+    ImageHistoryItem,
+    ImageHistoryResponse,
     ImageJobEvent,
     ImageJobRead,
     ImageJobStatus,
     ImageQualityPreset,
+    ImageSaveToAssetsResponse,
 )
 from app.services.image_prompt_engine import ImagePromptEngine
 from app.services.resource_coordinator import (
@@ -135,6 +140,9 @@ class ImageJob:
     prompt: str
     negative_prompt: str
     context: dict[str, Any] | None
+    conversation_id: str
+    source: str | None
+    source_message_id: str | None
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -152,6 +160,7 @@ class ImageJob:
     sequence: int = 0
     cancel_requested: bool = False
     comfy_prompt_id: str | None = None
+    saved_to_assets: bool = False
     events: list[ImageJobEvent] = field(default_factory=list)
     watchers: set[asyncio.Queue[ImageJobEvent]] = field(default_factory=set)
 
@@ -174,6 +183,10 @@ class ImageJob:
             resource_mode=self.resource_mode,
             vram_free_mb=self.vram_free_mb,
             vram_required_mb=self.vram_required_mb,
+            conversation_id=self.conversation_id,
+            source=self.source,
+            source_message_id=self.source_message_id,
+            saved_to_assets=self.saved_to_assets,
         )
 
 
@@ -322,6 +335,9 @@ class ImageGenerationService:
         self._adapter = adapter or ComfyUIFluxAdapter(settings)
         self._prompt_engine = prompt_engine or ImagePromptEngine()
         self._jobs: dict[str, ImageJob] = {}
+        self._history_path = Path(settings.image_generation_history_path)
+        self._history_path.parent.mkdir(parents=True, exist_ok=True)
+        self._history: dict[str, ImageHistoryItem] = self._load_history()
         self._queue: asyncio.Queue[str] = asyncio.Queue(
             maxsize=settings.image_generation_max_queue_size
         )
@@ -360,6 +376,9 @@ class ImageGenerationService:
             prompt=engineered.prompt,
             negative_prompt=engineered.negative_prompt,
             context=enriched_context,
+            conversation_id=request.conversation_id,
+            source=request.source,
+            source_message_id=request.source_message_id,
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )
@@ -372,6 +391,87 @@ class ImageGenerationService:
 
     def get_job(self, job_id: str) -> ImageJobRead:
         return self._require_job(job_id).to_read()
+
+    def list_history(self, conversation_id: str = "default") -> ImageHistoryResponse:
+        items = [
+            item
+            for item in self._history.values()
+            if item.conversation_id == conversation_id
+        ]
+        items.sort(key=lambda item: item.completed_at, reverse=True)
+        return ImageHistoryResponse(items=items)
+
+    async def delete_history_item(self, job_id: str) -> ImageHistoryResponse:
+        item = self._history.pop(job_id, None)
+        if item is None:
+            raise ImageGenerationError(
+                "Image was not found in this gallery.",
+                code="image_history_not_found",
+                retryable=False,
+                details={"job_id": job_id},
+            )
+        self._write_history()
+        job = self._jobs.get(job_id)
+        if job is not None:
+            job.output_paths = []
+        return self.list_history(item.conversation_id)
+
+    async def save_to_character_assets(
+        self,
+        job_id: str,
+        *,
+        character_id: str,
+        output_index: int = 0,
+        asset_label: str | None = None,
+    ) -> ImageSaveToAssetsResponse:
+        item = self._require_history_item(job_id)
+        reference = self.get_output_reference(job_id, output_index)
+        if reference.local_path is None:
+            raise ImageGenerationError(
+                "This image is not available as a local file yet, so it cannot be saved to character assets.",
+                code="image_asset_source_unavailable",
+                retryable=True,
+                details={"job_id": job_id, "output_index": output_index},
+            )
+        safe_character_id = self._safe_slug(character_id)
+        asset_dir = (
+            Path(self._settings.character_assets_dir)
+            / safe_character_id
+            / "assets"
+            / "images"
+        )
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        extension = reference.local_path.suffix or ".png"
+        asset_path = asset_dir / f"{job_id}_{output_index}{extension}"
+        shutil.copy2(reference.local_path, asset_path)
+        manifest_path = asset_dir.parent / "manifest.json"
+        manifest = self._read_json_file(manifest_path, default={"images": []})
+        images = manifest.setdefault("images", [])
+        images.append(
+            {
+                "job_id": job_id,
+                "label": asset_label or item.prompt_summary,
+                "path": str(asset_path),
+                "source_prompt": item.prompt,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "preset": item.active_preset.value,
+            }
+        )
+        self._write_json_file(manifest_path, manifest)
+        updated = item.model_copy(
+            update={
+                "saved_to_assets": True,
+                "asset_manifest_path": str(manifest_path),
+                "metadata": {**item.metadata, "last_saved_asset_path": str(asset_path)},
+            }
+        )
+        self._history[job_id] = updated
+        if job_id in self._jobs:
+            self._jobs[job_id].saved_to_assets = True
+        self._write_history()
+        return ImageSaveToAssetsResponse(
+            item=updated, asset_path=str(asset_path), manifest_path=str(manifest_path)
+        )
 
     def get_output_reference(
         self, job_id: str, output_index: int
@@ -386,8 +486,8 @@ class ImageGenerationService:
         same attached output.
         """
 
-        job = self._require_job(job_id)
-        if output_index < 0 or output_index >= len(job.output_paths):
+        output_paths = self._output_paths_for_job_or_history(job_id)
+        if output_index < 0 or output_index >= len(output_paths):
             raise ImageGenerationError(
                 "Image output was not found for that job.",
                 code="image_output_not_found",
@@ -395,7 +495,7 @@ class ImageGenerationService:
                 details={"job_id": job_id, "output_index": output_index},
             )
 
-        output_path = job.output_paths[output_index]
+        output_path = output_paths[output_index]
         return ImageOutputReference(
             output_path=output_path,
             local_path=self._resolve_local_output_path(output_path),
@@ -710,6 +810,7 @@ class ImageGenerationService:
                 message="Image generation completed.",
                 output_paths=outputs,
             )
+            self._record_history_item(job)
             return
         self._fail(
             job,
@@ -806,6 +907,10 @@ class ImageGenerationService:
             fallback_used=job.fallback_used,
             vram_free_mb=job.vram_free_mb,
             vram_required_mb=job.vram_required_mb,
+            conversation_id=job.conversation_id,
+            source=job.source,
+            source_message_id=job.source_message_id,
+            saved_to_assets=job.saved_to_assets,
         )
         job.events.append(payload)
         for watcher in list(job.watchers):
@@ -813,6 +918,111 @@ class ImageGenerationService:
                 watcher.put_nowait(payload)
             except asyncio.QueueFull:
                 job.watchers.discard(watcher)
+
+    def _output_paths_for_job_or_history(self, job_id: str) -> list[str]:
+        job = self._jobs.get(job_id)
+        if job is not None:
+            return job.output_paths
+        item = self._history.get(job_id)
+        if item is not None:
+            return item.output_paths
+        raise ImageGenerationError(
+            "Image job was not found.",
+            code="image_job_not_found",
+            retryable=False,
+            details={"job_id": job_id},
+        )
+
+    def _require_history_item(self, job_id: str) -> ImageHistoryItem:
+        item = self._history.get(job_id)
+        if item is not None:
+            return item
+        job = self._jobs.get(job_id)
+        if job is not None and job.status == ImageJobStatus.completed:
+            self._record_history_item(job)
+            return self._history[job_id]
+        raise ImageGenerationError(
+            "Image was not found in this gallery.",
+            code="image_history_not_found",
+            retryable=False,
+            details={"job_id": job_id},
+        )
+
+    def _record_history_item(self, job: ImageJob) -> None:
+        if not job.output_paths:
+            return
+        item = ImageHistoryItem(
+            job_id=job.job_id,
+            conversation_id=job.conversation_id,
+            source=job.source,
+            source_message_id=job.source_message_id,
+            prompt=job.prompt,
+            prompt_summary=self._summarize_prompt(job.prompt),
+            negative_prompt=job.negative_prompt,
+            requested_preset=job.requested_preset,
+            active_preset=job.active_preset,
+            created_at=job.created_at,
+            completed_at=job.updated_at,
+            output_paths=list(job.output_paths),
+            thumbnail_paths=list(job.output_paths[:1]),
+            fallback_used=job.fallback_used,
+            saved_to_assets=job.saved_to_assets,
+            metadata={
+                "resource_mode": job.resource_mode,
+                "vram_free_mb": job.vram_free_mb,
+                "vram_required_mb": job.vram_required_mb,
+                "8gb_note": "Stored metadata only; images stay lazy-loaded by URL.",
+            },
+        )
+        self._history[job.job_id] = item
+        self._write_history()
+
+    def _load_history(self) -> dict[str, ImageHistoryItem]:
+        raw = self._read_json_file(self._history_path, default={"items": []})
+        items: dict[str, ImageHistoryItem] = {}
+        for value in raw.get("items", []):
+            try:
+                item = ImageHistoryItem.model_validate(value)
+            except Exception:
+                logger.warning("Skipping unreadable image history item")
+                continue
+            items[item.job_id] = item
+        return items
+
+    def _write_history(self) -> None:
+        items = sorted(
+            self._history.values(), key=lambda item: item.completed_at, reverse=True
+        )
+        self._write_json_file(
+            self._history_path,
+            {"items": [item.model_dump(mode="json") for item in items]},
+        )
+
+    def _read_json_file(
+        self, path: Path, *, default: dict[str, Any]
+    ) -> dict[str, Any]:
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return default
+
+    def _write_json_file(self, path: Path, payload: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+    def _safe_slug(self, value: str) -> str:
+        slug = (
+            re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
+        )
+        return slug or "default"
+
+    def _summarize_prompt(self, prompt: str) -> str:
+        normalized = " ".join(prompt.split())
+        return normalized if len(normalized) <= 96 else f"{normalized[:93].rstrip()}..."
 
 
 _image_service: ImageGenerationService | None = None

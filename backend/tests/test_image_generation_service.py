@@ -64,6 +64,8 @@ def make_service(
 ) -> ImageGenerationService:
     settings = Settings(
         image_generation_output_dir=str(tmp_path / "images"),
+        image_generation_history_path=str(tmp_path / "history.json"),
+        character_assets_dir=str(tmp_path / "characters"),
         image_generation_resume_poll_seconds=0.01,
         image_generation_comfy_timeout_seconds=2.0,
     )
@@ -234,5 +236,64 @@ def test_image_output_reference_rejects_unattached_or_unsafe_paths(tmp_path) -> 
             assert exc.code == "image_output_not_found"
         else:  # pragma: no cover - defensive assertion clarity.
             raise AssertionError("Unattached output index should be rejected")
+
+    asyncio.run(run_test())
+
+
+def test_image_history_persists_completed_jobs_per_conversation(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                conversation_id="conv-a",
+                prompt="warm candlelit portrait",
+                source="chat-message",
+                source_message_id="msg-1",
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        history = service.list_history("conv-a")
+        assert len(history.items) == 1
+        assert history.items[0].job_id == job.job_id
+        assert history.items[0].source_message_id == "msg-1"
+        assert service.list_history("other").items == []
+
+        reloaded = make_service(tmp_path, coordinator, adapter)
+        assert reloaded.list_history("conv-a").items[0].job_id == job.job_id
+
+    asyncio.run(run_test())
+
+
+def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(ImageGenerateRequest(conversation_id="conv-a", prompt="asset portrait"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        output_file = tmp_path / "images" / f"{job.job_id}.png"
+        output_file.write_bytes(b"fake png")
+
+        saved = await service.save_to_character_assets(job.job_id, character_id="Mira", asset_label="Portrait")
+        assert saved.item.saved_to_assets is True
+        assert "mira" in saved.asset_path
+        assert "manifest.json" in saved.manifest_path
+
+        remaining = await service.delete_history_item(job.job_id)
+        assert remaining.items == []
 
     asyncio.run(run_test())

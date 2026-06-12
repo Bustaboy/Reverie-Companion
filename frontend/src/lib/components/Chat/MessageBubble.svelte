@@ -120,7 +120,14 @@
       {#if imageJobs.length > 0}
         <div class="message-image-stack" aria-live="polite">
           {#each imageJobs as job (job.job_id)}
-            <ImageJobCard {job} onCancel={() => cancelImage(job.job_id)} />
+            <ImageJobCard
+              {job}
+              onCancel={() => cancelImage(job.job_id)}
+              onRetry={() => imageGenerationStore.regenerate(job)}
+              onVary={() => imageGenerationStore.vary(job)}
+              onSave={() => imageGenerationStore.saveToCharacterAssets(job)}
+              onDelete={() => imageGenerationStore.deleteImage(job.job_id)}
+            />
           {/each}
         </div>
       {/if}

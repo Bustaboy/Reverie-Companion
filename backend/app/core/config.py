@@ -151,6 +151,8 @@ class Settings(BaseSettings):
     image_generation_enabled: bool = True
     image_generation_comfyui_url: str = "http://127.0.0.1:8188"
     image_generation_output_dir: str = "./data/images/generated"
+    image_generation_history_path: str = "./data/images/history.json"
+    character_assets_dir: str = "./data/characters"
     image_generation_default_preset: str = Field(
         default="preview_8gb", pattern="^(preview_8gb|balanced_8gb|high_8gb)$"
     )

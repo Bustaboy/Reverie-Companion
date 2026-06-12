@@ -1,10 +1,17 @@
-import { imageService, ImageServiceError, type ImageJobEvent, type ImageJobRead, type ImageQualityPreset } from '$lib/api/imageService';
+import {
+  imageService,
+  ImageServiceError,
+  type ImageHistoryItem,
+  type ImageJobEvent,
+  type ImageJobRead,
+  type ImageQualityPreset
+} from '$lib/api/imageService';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
 
-export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat';
+export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery';
 
 export interface ImageGenerationJob extends ImageJobRead {
   source: ImageGenerationSource;
@@ -15,6 +22,11 @@ export interface ImageGenerationJob extends ImageJobRead {
   submittedAt: Date;
 }
 
+export interface ImageGalleryItem extends ImageHistoryItem {
+  imageUrls: string[];
+  thumbnailUrls: string[];
+}
+
 interface QueueImageInput {
   source: ImageGenerationSource;
   prompt: string;
@@ -22,10 +34,12 @@ interface QueueImageInput {
   sourceMessageId?: string;
   context?: Record<string, unknown>;
   qualityPreset?: ImageQualityPreset;
+  conversationId?: string;
 }
 
 const MAX_VISIBLE_JOBS = 8;
 const PROMPT_SOFT_LIMIT = 900;
+const DEFAULT_CONVERSATION_ID = 'default';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -41,6 +55,7 @@ const normalizeError = (error: unknown): string => {
   if (error instanceof ImageServiceError) {
     if (error.code === 'image_generation_disabled') return 'Image generation is disabled in the local backend settings.';
     if (error.code === 'image_queue_full') return 'The local image queue is full. Wait for one scene to finish, then try again.';
+    if (error.code === 'image_asset_source_unavailable') return 'That image is not available as a local file yet. Open ComfyUI or regenerate, then save again.';
     if (error.retryable) return `${error.message} You can try again in a moment.`;
     return error.message;
   }
@@ -70,7 +85,17 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   vram_free_mb: event.vram_free_mb,
   vram_required_mb: event.vram_required_mb,
   updated_at: event.timestamp,
+  saved_to_assets: event.saved_to_assets,
   imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
+});
+
+const galleryItemFromHistory = (item: ImageHistoryItem): ImageGalleryItem => ({
+  ...item,
+  imageUrls: item.output_paths.map((_, index) => imageService.resolveOutputUrl(item.job_id, index)).filter(Boolean),
+  thumbnailUrls: (item.thumbnail_paths.length ? item.thumbnail_paths : item.output_paths)
+    .slice(0, 1)
+    .map((_, index) => imageService.resolveOutputUrl(item.job_id, index))
+    .filter(Boolean)
 });
 
 const contextFromMessage = (message: ChatMessage): Record<string, unknown> => ({
@@ -101,15 +126,20 @@ const contextFromScene = (scene: ResolvedVisualNovelScene, latestDialogue: strin
 
 class ImageGenerationStore {
   jobs = $state<ImageGenerationJob[]>([]);
+  gallery = $state<ImageGalleryItem[]>([]);
+  galleryLoading = $state(false);
   error = $state<string | null>(null);
   announcement = $state('Images are ready when you ask.');
   autoGenerateOnAssistant = $state(settingsStore.getSnapshot().imageAutoGenerateOnAssistant);
+  defaultPreset = $state<ImageQualityPreset>(settingsStore.getSnapshot().imageDefaultPreset);
+  currentConversationId = $state(DEFAULT_CONVERSATION_ID);
 
   private controllers = new Map<string, AbortController>();
 
   constructor() {
     settingsStore.subscribe((settings) => {
       this.autoGenerateOnAssistant = settings.imageAutoGenerateOnAssistant;
+      this.defaultPreset = settings.imageDefaultPreset;
     });
   }
 
@@ -167,7 +197,7 @@ class ImageGenerationStore {
       sourceLabel: message.role === 'assistant' ? 'Chat reply' : 'User message',
       prompt: promptFromMessage(message),
       context: contextFromMessage(message),
-      qualityPreset: 'preview_8gb'
+      qualityPreset: this.defaultPreset
     });
   }
 
@@ -186,7 +216,7 @@ class ImageGenerationStore {
       sourceLabel: 'Visual novel scene',
       prompt,
       context: contextFromScene(scene, dialogue),
-      qualityPreset: 'preview_8gb'
+      qualityPreset: this.defaultPreset
     });
   }
 
@@ -196,6 +226,75 @@ class ImageGenerationStore {
     this.generateFromMessage(message, 'auto-chat');
   }
 
+  regenerate(jobOrItem: ImageGenerationJob | ImageGalleryItem) {
+    void this.queueImage({
+      source: 'gallery',
+      sourceLabel: 'Regenerated image',
+      sourceMessageId: 'sourceMessageId' in jobOrItem ? jobOrItem.sourceMessageId : jobOrItem.source_message_id ?? undefined,
+      prompt: 'displayPrompt' in jobOrItem ? jobOrItem.displayPrompt : jobOrItem.prompt,
+      context: { source: 'regenerate', original_job_id: jobOrItem.job_id },
+      qualityPreset: jobOrItem.requested_preset ?? this.defaultPreset,
+      conversationId: jobOrItem.conversation_id ?? this.currentConversationId
+    });
+  }
+
+  vary(jobOrItem: ImageGenerationJob | ImageGalleryItem) {
+    const prompt = 'displayPrompt' in jobOrItem ? jobOrItem.displayPrompt : jobOrItem.prompt;
+    void this.queueImage({
+      source: 'gallery',
+      sourceLabel: 'Image variation',
+      sourceMessageId: 'sourceMessageId' in jobOrItem ? jobOrItem.sourceMessageId : jobOrItem.source_message_id ?? undefined,
+      prompt: clipPrompt(`${prompt} Subtle variation: keep the same character identity and scene mood, but change composition, lighting, pose, or camera angle.`),
+      context: { source: 'variation', original_job_id: jobOrItem.job_id },
+      qualityPreset: jobOrItem.requested_preset ?? this.defaultPreset,
+      conversationId: jobOrItem.conversation_id ?? this.currentConversationId
+    });
+  }
+
+  async loadGallery(conversationId = this.currentConversationId) {
+    this.galleryLoading = true;
+    this.error = null;
+    this.currentConversationId = conversationId;
+    try {
+      const response = await imageService.listHistory(conversationId);
+      this.gallery = response.items.map(galleryItemFromHistory);
+      this.announcement = this.gallery.length ? `Loaded ${this.gallery.length} saved images.` : 'No saved images for this conversation yet.';
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    } finally {
+      this.galleryLoading = false;
+    }
+  }
+
+  async deleteImage(jobId: string) {
+    try {
+      const response = await imageService.deleteHistoryItem(jobId);
+      this.gallery = response.items.map(galleryItemFromHistory);
+      this.jobs = this.jobs.filter((job) => job.job_id !== jobId);
+      this.announcement = 'Image removed from this conversation gallery.';
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
+  }
+
+  async saveToCharacterAssets(jobOrItem: ImageGenerationJob | ImageGalleryItem, characterId = 'default') {
+    try {
+      const response = await imageService.saveToCharacterAssets(jobOrItem.job_id, {
+        characterId,
+        assetLabel: 'prompt_summary' in jobOrItem ? jobOrItem.prompt_summary : jobOrItem.displayPrompt,
+        outputIndex: 0
+      });
+      this.gallery = this.gallery.map((item) => (item.job_id === response.item.job_id ? galleryItemFromHistory(response.item) : item));
+      this.jobs = this.jobs.map((job) => (job.job_id === response.item.job_id ? { ...job, saved_to_assets: true } : job));
+      this.announcement = 'Saved image to the character asset manifest.';
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
+  }
+
   async cancel(jobId: string) {
     this.controllers.get(jobId)?.abort();
     try {
@@ -203,6 +302,11 @@ class ImageGenerationStore {
       this.patchJob(jobId, (job) => ({
         ...job,
         ...cancelled,
+        source: job.source,
+        sourceMessageId: job.sourceMessageId,
+        sourceLabel: job.sourceLabel,
+        displayPrompt: job.displayPrompt,
+        submittedAt: job.submittedAt,
         imageUrls: cancelled.output_paths.map((_, index) => imageService.resolveOutputUrl(cancelled.job_id, index)).filter(Boolean)
       }));
       this.announcement = 'Image generation cancelled.';
@@ -220,6 +324,10 @@ class ImageGenerationStore {
     settingsStore.setImageAutoGenerateOnAssistant(enabled);
   }
 
+  setDefaultPreset(preset: ImageQualityPreset) {
+    settingsStore.setImageDefaultPreset(preset);
+  }
+
   private async queueImage(input: QueueImageInput) {
     const prompt = clipPrompt(input.prompt);
     if (!prompt) return;
@@ -231,9 +339,12 @@ class ImageGenerationStore {
 
     try {
       const response = await imageService.generateImage({
+        conversation_id: input.conversationId ?? this.currentConversationId,
+        source: input.source,
+        source_message_id: input.sourceMessageId,
         prompt,
         context: input.context,
-        quality_preset: input.qualityPreset ?? 'preview_8gb'
+        quality_preset: input.qualityPreset ?? this.defaultPreset
       });
       const job = jobFromRead(response.job, { ...input, prompt });
       this.upsertJob(job);
@@ -254,6 +365,7 @@ class ImageGenerationStore {
           onEvent: (event) => {
             this.patchJob(event.job_id, (job) => jobFromEvent(job, event));
             this.announcement = event.message;
+            if (event.status === 'completed') void this.loadGallery(event.conversation_id ?? this.currentConversationId);
             if (event.error?.message) this.error = event.error.message;
           }
         },

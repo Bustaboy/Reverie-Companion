@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset } from '$lib/stores/settingsStore';
+  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset } from '$lib/stores/settingsStore';
   import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
 
   const reflectionFrequencyOptions: Array<{
@@ -71,6 +71,16 @@
       description: 'Allows a little more remembered context when your system has headroom.',
       detail: 'More context when idle'
     }
+  ];
+
+  const imagePresetOptions: Array<{
+    value: ImageDefaultPreset;
+    label: string;
+    description: string;
+  }> = [
+    { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops.' },
+    { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail when VRAM is available; falls back safely.' },
+    { value: 'high_8gb', label: 'High', description: 'Best local detail, still queued and 8GB-gated.' }
   ];
 
   const ttsLatencyOptions: Array<{
@@ -170,6 +180,10 @@
 
   const handleImageAutoGenerateChange = (event: Event) => {
     settingsStore.setImageAutoGenerateOnAssistant((event.currentTarget as HTMLInputElement).checked);
+  };
+
+  const handleImageDefaultPresetChange = (preset: ImageDefaultPreset) => {
+    settingsStore.setImageDefaultPreset(preset);
   };
 
   const handleTTSVolumeChange = (event: Event) => {
@@ -420,6 +434,19 @@
         />
         <span>{ $settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images' }</span>
       </label>
+      <div class="option-grid compact-options" role="radiogroup" aria-label="Default image generation preset">
+        {#each imagePresetOptions as option}
+          <button
+            type="button"
+            class:active={$settingsStore.imageDefaultPreset === option.value}
+            aria-pressed={$settingsStore.imageDefaultPreset === option.value}
+            onclick={() => handleImageDefaultPresetChange(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </button>
+        {/each}
+      </div>
     </article>
 
     <article class="settings-card settings-wide voice-settings-card">

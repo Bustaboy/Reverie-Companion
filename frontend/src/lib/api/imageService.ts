@@ -5,6 +5,9 @@ export type ImageQualityPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
 export type ImageJobStatus = 'queued' | 'waiting_for_resources' | 'paused' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface ImageGenerateRequest {
+  conversation_id?: string;
+  source?: string;
+  source_message_id?: string;
   prompt: string;
   context?: Record<string, unknown> | null;
   negative_prompt?: string;
@@ -36,11 +39,45 @@ export interface ImageJobRead {
   resource_mode?: string;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  conversation_id?: string;
+  source?: string | null;
+  source_message_id?: string | null;
+  saved_to_assets?: boolean;
 }
 
 export interface ImageGenerateResponse {
   request_id: string;
   job: ImageJobRead;
+}
+
+export interface ImageHistoryItem {
+  job_id: string;
+  conversation_id: string;
+  source?: string | null;
+  source_message_id?: string | null;
+  prompt: string;
+  prompt_summary: string;
+  negative_prompt: string;
+  requested_preset: ImageQualityPreset;
+  active_preset: ImageQualityPreset;
+  created_at: string;
+  completed_at: string;
+  output_paths: string[];
+  thumbnail_paths: string[];
+  fallback_used?: boolean;
+  saved_to_assets?: boolean;
+  asset_manifest_path?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ImageHistoryResponse {
+  items: ImageHistoryItem[];
+}
+
+export interface ImageSaveToAssetsResponse {
+  item: ImageHistoryItem;
+  asset_path: string;
+  manifest_path: string;
 }
 
 export interface ImageJobEvent {
@@ -58,6 +95,10 @@ export interface ImageJobEvent {
   fallback_used?: boolean;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  conversation_id?: string;
+  source?: string | null;
+  source_message_id?: string | null;
+  saved_to_assets?: boolean;
 }
 
 export interface ImageEventCallbacks {
@@ -177,6 +218,40 @@ export class ImageService {
     } catch (error) {
       throw this.toUserFriendlyError(error);
     }
+  }
+
+  async listHistory(conversationId = 'default'): Promise<ImageHistoryResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}`, {
+      headers: { Accept: 'application/json' }
+    });
+    const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as ImageHistoryResponse;
+  }
+
+  async deleteHistoryItem(jobId: string): Promise<ImageHistoryResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' }
+    });
+    const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as ImageHistoryResponse;
+  }
+
+  async saveToCharacterAssets(jobId: string, input: { characterId?: string; assetLabel?: string; outputIndex?: number } = {}): Promise<ImageSaveToAssetsResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/images/${encodeURIComponent(jobId)}/save-to-assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        character_id: input.characterId ?? 'default',
+        asset_label: input.assetLabel,
+        output_index: input.outputIndex ?? 0
+      })
+    });
+    const body = await this.parseJsonResponse<ImageSaveToAssetsResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as ImageSaveToAssetsResponse;
   }
 
   resolveOutputUrl(jobId: string, outputIndex: number): string {
