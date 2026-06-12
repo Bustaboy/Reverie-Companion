@@ -19,7 +19,7 @@ export interface VisualNovelState {
   failedAssetUrls: string[];
 }
 
-const FAILED_ASSET_CACHE_LIMIT = 16;
+const FAILED_ASSET_CACHE_LIMIT = 8;
 const MIN_GROWTH_MODIFIER_MS = 30_000;
 const MAX_GROWTH_MODIFIER_MS = 60_000;
 const DEFAULT_GROWTH_MODIFIER_MS = 45_000;
