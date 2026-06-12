@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.tts import TTSContext
 
 MAX_IMAGE_PROMPT_CHARS = 1200
+MAX_IMAGE_NEGATIVE_PROMPT_CHARS = 1200
 
 
 class ImageQualityPreset(StrEnum):
@@ -33,18 +34,24 @@ class ImageGenerateRequest(BaseModel):
     """Request accepted by POST /api/images/generate."""
 
     prompt: str = Field(..., min_length=1, max_length=MAX_IMAGE_PROMPT_CHARS)
-    context: TTSContext | dict[str, Any] | None = Field(
+    context: dict[str, Any] | TTSContext | None = Field(
         default=None,
-        description="Compact TTSContext-style or scene metadata for later prompt enrichment.",
+        description="Compact TTSContext-style or scene metadata for deterministic prompt enrichment.",
+    )
+    negative_prompt: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_IMAGE_NEGATIVE_PROMPT_CHARS,
+        description="Optional negative prompt merged with Reverie safety/quality negatives.",
     )
     quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
 
-    @field_validator("prompt")
+    @field_validator("prompt", "negative_prompt")
     @classmethod
     def prompt_must_not_be_blank(cls, value: str) -> str:
-        if not value.strip():
+        if value is not None and not value.strip():
             raise ValueError("Image prompt cannot be empty.")
-        return value.strip()
+        return value.strip() if value is not None else value
 
 
 class ImageJobRead(BaseModel):
@@ -53,6 +60,7 @@ class ImageJobRead(BaseModel):
     job_id: str
     status: ImageJobStatus
     prompt: str
+    negative_prompt: str
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime
