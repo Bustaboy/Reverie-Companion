@@ -113,6 +113,26 @@ class Settings(BaseSettings):
     personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
     personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
 
+    # TTS defaults are local-first and 8GB-aware. Orpheus TTS 3B is the
+    # primary high-quality emotional backend and is loaded lazily with 4-bit
+    # quantization by default; Piper stays available as a fast CPU fallback.
+    tts_enabled: bool = True
+    tts_primary_backend: str = Field(default="orpheus", pattern="^(orpheus|piper)$")
+    tts_orpheus_model_id: str = "canopylabs/orpheus-3b-0.1-ft"
+    tts_orpheus_model_path: str | None = None
+    tts_orpheus_timeout_seconds: float = Field(default=20.0, gt=0)
+    tts_piper_binary_path: str | None = None
+    tts_piper_voice_dir: str = "./models/piper"
+    tts_piper_model_path: str | None = None
+    tts_piper_timeout_seconds: float = Field(default=8.0, gt=0)
+    tts_device: str = Field(default="auto", pattern="^(auto|cuda|cpu)$")
+    tts_quantization: str = Field(default="4bit", pattern="^(4bit|8bit|none)$")
+    tts_min_free_vram_mb: int = Field(default=3600, ge=0, le=8192)
+    tts_default_voice_id: str = "reverie_default"
+    tts_sample_rate: int = Field(default=24000, gt=0)
+    tts_max_text_chars: int = Field(default=2000, gt=0, le=8000)
+    tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)
+
 
 @lru_cache
 def get_settings() -> Settings:

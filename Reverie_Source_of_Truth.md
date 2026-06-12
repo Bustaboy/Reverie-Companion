@@ -102,7 +102,7 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
 | Self-Learning / LoRA Training | Unsloth | Fastest and most VRAM-efficient LoRA trainer available in 2026. Runs comfortably in background on 8GB |
 | Database | SQLite + LanceDB | Zero-config, fully local, fast queries for characters, journals, memories |
 | Image / VN Mode | ComfyUI nodes or Flux/SD via local API | Direct future compatibility with Futa-Vision pipeline |
-| TTS | Piper TTS or Coqui TTS (emotional) | High-quality offline voice |
+| TTS | Orpheus TTS 3B primary + Piper fallback | High-quality offline voice with 8GB-friendly fallback |
 
 **Why not full Rust backend?**  
 Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision, mem0/Cognee Python libraries, and rapid AI experimentation. Performance-critical hot paths can later be accelerated with Rust (PyO3) or separate micro-services if profiling shows need. For MVP and the first 6–12 months, Python + FastAPI + async is the correct pragmatic choice.
@@ -146,7 +146,19 @@ Milestone 3 introduces a minimal, 8GB-friendly Visual Novel foundation that stay
 
 Task 1A–1C now complete the approved Visual Novel foundation bridge between chat-first companion behavior and future Futa-Vision/reactive visual work: chat can emit lightweight visual metadata, the frontend resolves deterministic layered visuals with graceful degradation, and the UI provides polished, accessible, reduced-motion-aware immersion without adding resident LLMs to the normal chat path. Future work can add richer authored asset packs, manifest import/editing, Live2D/video integrations, or generated media behind the existing lightweight boundaries.
 
-### 3.4 Futa-Vision Integration Vision (Future)
+### 3.4 TTS Backend Foundation (Milestone 3 Task 2A)
+
+Milestone 3 Task 2A establishes Reverie's local-first TTS backend foundation:
+
+- **TTSService** owns speech generation workflow behind a typed service boundary. It accepts plain `text`, a simple `voice_id`, requested audio format, and optional streaming mode without introducing multi-character voice profiles, emotion routing, or context-aware voice selection yet.
+- **Orpheus TTS 3B** is the primary quality backend for emotionally richer voice. It is lazily imported and loaded only on the first TTS request, supports `auto`/`cuda`/`cpu` device selection, defaults to 4-bit quantization for RTX 4070 8GB mobile safety, checks free CUDA VRAM before loading, unloads after CUDA OOM paths, and reports stable error codes when dependencies, model paths, or VRAM are unavailable.
+- **Piper TTS** is the fast CPU-friendly fallback. When Orpheus is unavailable, too slow, missing dependencies, missing model files, or over the configured VRAM budget, Reverie attempts Piper through the local binary and configured voice model path.
+- **Configuration** now exposes TTS model IDs/paths, Piper binary/voice paths, backend choice, timeouts, device selection, quantization level, free-VRAM guardrails, default voice ID, sample rate, text length limit, and streaming chunk size under the existing `REVERIE_` environment prefix.
+- **API surface** adds `POST /api/tts/generate`, returning base64 WAV audio for simple non-streaming clients or bounded audio-byte streaming for early voice playback. The route stays thin, logs request metadata without raw private text, and returns structured errors for UI handling.
+
+This foundation intentionally avoids Task 2B–2D scope: no durable voice-profile system, no emotion tags, no memory/reflection-driven prosody, and no character/context routing. Future work can layer those features on top of the same service and router contracts while preserving the 8GB-first lazy-loading and fallback behavior.
+
+### 3.5 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
