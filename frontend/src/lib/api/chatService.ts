@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
-import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { GrowthNotification, MemoryContext, MemoryContextItem, VisualStateMetadata } from '$lib/types/chat';
+import { expressionManager } from '$lib/visual-novel/expressionManager';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -45,6 +46,8 @@ export interface ChatResponse {
   memoryContext?: MemoryContext;
   /** Optional subtle note that a journaled growth signal is available. */
   growthNotification?: GrowthNotification;
+  /** Optional normalized visual state for lightweight VN sprite updates. */
+  visualState?: VisualStateMetadata;
 }
 
 export interface ChatStreamOptions {
@@ -59,6 +62,7 @@ export interface ChatStreamMessageEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  visualState?: VisualStateMetadata;
 }
 
 export interface ChatStreamMemoryEvent {
@@ -80,6 +84,7 @@ export interface ChatStreamDoneEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  visualState?: VisualStateMetadata;
 }
 
 export type ChatStreamEvent =
@@ -113,6 +118,8 @@ interface RawSseEvent {
 interface BackendGrowthNotificationBody {
   growth_notification?: unknown;
   growthNotification?: unknown;
+  visual_state?: unknown;
+  visualState?: unknown;
 }
 
 interface BackendMemoryContextBody extends BackendGrowthNotificationBody {
@@ -363,7 +370,8 @@ export class ChatService {
     return {
       ...body,
       memoryContext: this.extractMemoryContext(body),
-      growthNotification: this.extractGrowthNotification(body)
+      growthNotification: this.extractGrowthNotification(body),
+      visualState: this.extractVisualState(body, 'done')
     };
   }
 
@@ -467,7 +475,8 @@ export class ChatService {
         model: typeof body.model === 'string' ? body.model : undefined,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body, 'chat')
       };
     }
 
@@ -492,7 +501,8 @@ export class ChatService {
         done: typeof body.done === 'boolean' ? body.done : true,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body, 'done')
       };
     }
 
@@ -508,6 +518,14 @@ export class ChatService {
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
     };
+  }
+
+  private extractVisualState(
+    body: BackendGrowthNotificationBody | Record<string, unknown>,
+    source: VisualStateMetadata['source']
+  ): VisualStateMetadata | undefined {
+    const raw = body.visual_state ?? body.visualState;
+    return expressionManager.normalizeVisualState(raw, source);
   }
 
   private extractGrowthNotification(body: BackendGrowthNotificationBody | Record<string, unknown>): GrowthNotification | undefined {

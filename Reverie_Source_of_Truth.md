@@ -107,6 +107,18 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
 **Why not full Rust backend?**  
 Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision, mem0/Cognee Python libraries, and rapid AI experimentation. Performance-critical hot paths can later be accelerated with Rust (PyO3) or separate micro-services if profiling shows need. For MVP and the first 6–12 months, Python + FastAPI + async is the correct pragmatic choice.
 
+
+### 3.4 Minimal Visual Novel Foundation (Milestone 3 Task 1A)
+
+The first Visual Novel implementation is a lightweight, Svelte-native foundation rather than a heavy renderer. It uses a typed `CharacterVisualManifest` for character sprite, expression, pose, and background slots; a `CharacterVisualResolver` that always falls back to neutral expression, idle pose, and a default background when assets or manifest entries are missing; and a small bounded asset cache to avoid unnecessary image re-decoding on 8GB systems.
+
+Frontend ownership is split cleanly:
+- `visualNovelStore` owns VN mode state, immersive/full-scene state, the active manifest, and the latest normalized visual state.
+- `ExpressionManager` normalizes backend `visual_state` metadata from chat SSE `message` and `done` events into basic expression, pose, background, and character identifiers.
+- `VisualNovelPanel`, `VNScene`, `ExpressionSprite`, and `DialogueBox` render the warm dark VN experience with basic ARIA labels and manual expression/pose controls.
+
+This foundation intentionally supports only single-image slot switching for now. It excludes weighted emotion inference, growth visual modifiers, decay timers, layered base/expression/clothing composition, Live2D, and advanced reactivity until Task 1B or later milestones authorize those additions.
+
 ### 3.2 High-Level Data Flow (Chat → Growth → Global Improvement)
 
 1. **User sends message** → Tauri frontend → FastAPI endpoint.

@@ -1,3 +1,5 @@
+import type { VisualStateMetadata } from '$lib/types/visualNovel';
+
 export type ChatRole = 'user' | 'assistant';
 
 export type ChatMessageStatus = 'complete' | 'streaming' | 'error';
@@ -33,6 +35,8 @@ export interface GrowthNotification {
   controls?: string[];
 }
 
+export type { VisualStateMetadata };
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -41,4 +45,5 @@ export interface ChatMessage {
   status?: ChatMessageStatus;
   error?: string;
   memoryContext?: MemoryContext;
+  visualState?: VisualStateMetadata;
 }
