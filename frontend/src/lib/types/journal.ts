@@ -70,3 +70,16 @@ export interface JournalEntriesResponse {
   entries: JournalEntry[];
   count: number;
 }
+
+export interface JournalReflectionMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface JournalReflectionRequest {
+  messages: JournalReflectionMessage[];
+}
+
+export interface JournalReflectionResponse {
+  entry: JournalEntry;
+}

@@ -249,7 +249,22 @@ Milestone 3 Task 4A adds the central Growth Dashboard as Reverie's warm relation
 
 Task 4A establishes the emotional command center for self-learning: users can see how the character's feelings, tone, and behavior are evolving from local evidence, while detailed editing/review/rollback workflows remain reserved for Journal, Memory, Training, and later Growth-control tasks.
 
-### 3.12 Futa-Vision Integration Vision (Future)
+
+### 3.12 Diary-Style Self-Reflection Journal (Milestone 3 Task 4B)
+
+Milestone 3 Task 4B turns the Journal destination into Reverie's intimate diary reader while keeping it tied to the transparent growth system:
+
+- **Navigation and purpose**: `Journal` remains a first-class sidebar destination beside Growth and Training. Growth summarizes how the relationship is changing; Journal shows the dated reflection pages and evidence details behind that visibility; Training remains the explicit consent/action area for Personal LoRA artifacts.
+- **Diary presentation**: entries are shown as a chronological reflection timeline with warm dark parchment cards, rose accents, paper-texture overlays, emotional first-person summaries, and a quiet modal reading mode. The prose is presentation-only; structured facts, insights, confidence, privacy tags, and promotion metadata remain visible for trust.
+- **Search and filters**: the Journal view supports lightweight local filtering by keyword, theme, character metadata, pinned/favorite pages, growth-linked entries, and needs-review entries. Filtering uses already-loaded bounded journal entries and does not start embeddings, inference, filesystem scans, or memory-browser work.
+- **Pins/favorites**: users can pin important entries locally in the UI to keep meaningful emotional milestones easy to revisit without changing backend memory state or treating a pin as training consent.
+- **Manual reflection**: the Journal includes a `New reflection` action that sends a bounded recent chat window to `POST /journal/reflect`, creating a local journal entry through `ReflectionManager` before any memory promotion side effects. Empty conversations are rejected in the UI with warm copy.
+- **Growth integration**: each page exposes whether it stayed journal-only, linked/promoted to memory, or needs training review. Growth hypotheses and promoted-memory status are surfaced in the reader so the Growth Dashboard's relationship overview can be traced back to specific journal pages.
+- **Privacy and scope**: the feature is still not a full editable memory browser, rollback console, or LoRA training UI. It keeps the MVP promise of local-first transparency while leaving deeper review/edit/delete/branching controls for later Memory, Training, and Growth-control tasks.
+
+Task 4B makes self-learning feel emotionally alive instead of administrative: users can read what the character believes she learned, search and pin important moments, manually ask for a reflection, and understand how those pages feed growth visibility without surrendering control.
+
+### 3.13 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

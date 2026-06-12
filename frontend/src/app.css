@@ -3725,3 +3725,357 @@ h1 {
     padding: 0.95rem;
   }
 }
+
+/* Milestone 3 Task 4B: diary-style self-reflection journal polish. */
+.diary-hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(255, 190, 168, 0.17), transparent 19rem),
+    linear-gradient(135deg, rgba(54, 28, 45, 0.74), rgba(24, 18, 30, 0.58));
+}
+
+.diary-hero::after,
+.diary-page::before,
+.journal-modal::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  opacity: 0.18;
+  background-image:
+    linear-gradient(rgba(255, 235, 213, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 235, 213, 0.04) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mix-blend-mode: screen;
+}
+
+.journal-actions {
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.primary-diary-button {
+  border: 1px solid rgba(255, 196, 180, 0.46);
+  border-radius: 999px;
+  padding: 0.72rem 1rem;
+  color: #23151b;
+  background: linear-gradient(135deg, #ffd0be, #f09a9f 48%, #d78fae);
+  box-shadow: 0 16px 34px rgba(240, 154, 159, 0.22);
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease,
+    opacity 160ms ease;
+}
+
+.primary-diary-button:hover:not(:disabled),
+.primary-diary-button:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.primary-diary-button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.journal-toolbar,
+.journal-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 0;
+}
+
+.journal-toolbar label {
+  display: grid;
+  gap: 0.34rem;
+  min-width: 12rem;
+  color: var(--dim);
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.journal-toolbar .journal-search {
+  flex: 1 1 18rem;
+}
+
+.journal-toolbar input,
+.journal-toolbar select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 0.72rem 0.82rem;
+  color: var(--text);
+  background: rgba(16, 12, 20, 0.58);
+  outline: none;
+}
+
+.journal-toolbar input:focus,
+.journal-toolbar select:focus {
+  border-color: rgba(255, 176, 166, 0.44);
+  box-shadow: 0 0 0 3px rgba(240, 154, 159, 0.1);
+}
+
+.journal-filter-chips {
+  padding-top: 0.7rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.journal-filter-chips button,
+.viewer-topline button,
+.read-more-button,
+.journal-modal footer button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.5rem 0.7rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.045);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.journal-filter-chips button.active,
+.viewer-topline button.pinned,
+.journal-modal footer button.pinned {
+  color: #ffe7e4;
+  border-color: rgba(255, 176, 166, 0.4);
+  background: rgba(240, 154, 159, 0.16);
+}
+
+.journal-filter-chips button.reset {
+  margin-left: auto;
+}
+
+.diary-content {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.timeline-list {
+  position: relative;
+  padding-left: 1.45rem;
+}
+
+.timeline-list::before {
+  position: absolute;
+  top: 1.2rem;
+  bottom: 1.2rem;
+  left: 1.25rem;
+  width: 1px;
+  content: '';
+  background: linear-gradient(180deg, transparent, rgba(255, 176, 166, 0.42), transparent);
+}
+
+.diary-page-tab {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(68, 42, 48, 0.42), rgba(255, 255, 255, 0.035)),
+    rgba(255, 248, 232, 0.025);
+}
+
+.diary-page-tab.pinned {
+  border-color: rgba(255, 176, 166, 0.44);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(240, 154, 159, 0.16), transparent 10rem),
+    rgba(255, 255, 255, 0.06);
+}
+
+.timeline-dot {
+  position: absolute;
+  top: 1.2rem;
+  left: -1.02rem;
+  width: 0.56rem;
+  height: 0.56rem;
+  border: 2px solid rgba(255, 216, 206, 0.86);
+  border-radius: 999px;
+  background: #503145;
+  box-shadow: 0 0 0 4px rgba(28, 18, 29, 0.95);
+}
+
+.card-actions,
+.viewer-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card-actions {
+  color: var(--dim);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.pin-indicator {
+  color: var(--accent-strong);
+}
+
+.diary-page {
+  position: relative;
+  background:
+    radial-gradient(circle at 100% 3%, rgba(255, 222, 184, 0.08), transparent 22rem),
+    linear-gradient(90deg, rgba(255, 226, 202, 0.035), transparent 11rem);
+}
+
+.parchment-hero {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 219, 196, 0.18);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 211, 176, 0.14), transparent 22rem),
+    linear-gradient(135deg, rgba(72, 42, 45, 0.62), rgba(43, 28, 43, 0.54)),
+    rgba(255, 248, 232, 0.045);
+}
+
+.viewer-topline {
+  position: relative;
+  z-index: 1;
+}
+
+.read-more-button {
+  position: relative;
+  z-index: 1;
+  margin-top: 1rem;
+  color: #ffe4e1;
+}
+
+.journal-list-empty {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0.25rem;
+  padding: 1rem;
+  color: var(--muted);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.journal-list-empty strong {
+  color: var(--text);
+}
+
+.journal-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(8, 5, 10, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.journal-modal {
+  position: relative;
+  overflow: hidden;
+  width: min(45rem, 100%);
+  max-height: min(42rem, 88vh);
+  border: 1px solid rgba(255, 219, 196, 0.22);
+  border-radius: 1.6rem;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 211, 176, 0.16), transparent 25rem),
+    linear-gradient(180deg, rgba(61, 39, 43, 0.98), rgba(27, 20, 31, 0.98));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+}
+
+.journal-modal header,
+.journal-modal footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.journal-modal header span,
+.journal-modal footer span {
+  color: var(--dim);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.journal-modal h2 {
+  margin: 0.28rem 0 0;
+}
+
+.journal-modal header > button {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.journal-modal-prose {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1rem;
+  max-height: 27rem;
+  overflow-y: auto;
+  padding: 1.3rem;
+  color: #f1e0dd;
+  font-size: 1.08rem;
+  line-height: 1.85;
+  scrollbar-width: thin;
+}
+
+.journal-modal-prose p {
+  margin: 0;
+}
+
+.journal-modal footer {
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 0;
+}
+
+@media (max-width: 980px) {
+  .timeline-list::before {
+    display: none;
+  }
+
+  .timeline-dot {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .journal-actions,
+  .journal-filter-chips button.reset {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .journal-actions > button,
+  .journal-filter-chips button {
+    flex: 1 1 auto;
+  }
+
+  .journal-modal footer,
+  .viewer-topline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.journal-panel {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
