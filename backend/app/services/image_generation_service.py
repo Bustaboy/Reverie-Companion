@@ -126,6 +126,8 @@ TERMINAL_STATUSES = {
 
 IMAGE_HISTORY_SCHEMA_VERSION = 2
 CHARACTER_ASSET_MANIFEST_VERSION = 2
+MAX_RETAINED_RUNTIME_JOBS = 32
+MAX_JOB_EVENTS = 80
 
 
 @dataclass(frozen=True)
@@ -385,6 +387,7 @@ class ImageGenerationService:
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )
+        self._prune_runtime_jobs()
         self._jobs[job_id] = job
         self._emit(
             job, event="job.queued", message="Image job queued behind chat and TTS."
@@ -696,8 +699,16 @@ class ImageGenerationService:
             snapshot = self._coordinator.snapshot_vram()
             preset = self._select_safe_preset(job, snapshot.free_mb)
             required = PRESET_CONFIGS[preset].min_free_vram_mb
+            decision = self._resource_decision(required=required, snapshot=snapshot)
             job.vram_free_mb = snapshot.free_mb
             job.vram_required_mb = required
+            recommended = self._coerce_image_preset(decision.recommended_image_preset)
+            if PRESET_ORDER.index(recommended) < PRESET_ORDER.index(preset):
+                preset = recommended
+                required = PRESET_CONFIGS[preset].min_free_vram_mb
+                job.vram_required_mb = required
+                decision = self._resource_decision(required=required, snapshot=snapshot)
+
             if (
                 snapshot.free_mb is None
                 and self._settings.image_generation_allow_unknown_vram
@@ -714,7 +725,8 @@ class ImageGenerationService:
                     message="VRAM telemetry is unavailable; using the preview 8GB preset for safety.",
                 )
                 return
-            if snapshot.free_mb is not None and snapshot.free_mb >= required:
+
+            if decision.can_start:
                 if preset != job.active_preset:
                     job.active_preset = preset
                     job.fallback_used = True
@@ -722,18 +734,35 @@ class ImageGenerationService:
                     job,
                     status=ImageJobStatus.waiting_for_resources,
                     phase="resource_ready",
-                    resource_mode="vram_ready",
+                    resource_mode=(
+                        "vram_ready" if not decision.should_downgrade else "degraded"
+                    ),
                     progress=0.08,
-                    message="Image resources are available; starting queued generation.",
+                    message=(
+                        decision.message
+                        if decision.should_downgrade
+                        else "Image resources are available; starting queued generation."
+                    ),
                 )
                 return
+
+            if decision.should_unload_optional_models:
+                logger.info(
+                    "Deferring image generation under high VRAM pressure",
+                    extra={
+                        "job_id": job.job_id,
+                        "free_vram_mb": snapshot.free_mb,
+                        "required_vram_mb": required,
+                        "pressure": decision.level.value,
+                    },
+                )
             self._update(
                 job,
                 status=ImageJobStatus.waiting_for_resources,
                 phase="low_vram",
                 resource_mode="waiting_for_vram",
                 progress=0.03,
-                message="Waiting for enough free VRAM before starting image generation.",
+                message=f"{decision.message} Waiting for enough free VRAM before starting image generation.",
             )
             await asyncio.sleep(self._settings.image_generation_resume_poll_seconds)
 
@@ -752,6 +781,30 @@ class ImageGenerationService:
             if free_vram_mb >= required:
                 return preset
         return ImageQualityPreset.preview_8gb
+
+    def _resource_decision(self, *, required: int, snapshot):
+        if hasattr(self._coordinator, "evaluate_vram_for_workload"):
+            return self._coordinator.evaluate_vram_for_workload(
+                workload="image_generation",
+                required_free_mb=required,
+                snapshot=snapshot,
+            )
+
+        class LegacyDecision:
+            level = type("LegacyLevel", (), {"value": "normal"})()
+            can_start = snapshot.free_mb is None or snapshot.free_mb >= required
+            should_downgrade = False
+            should_unload_optional_models = False
+            recommended_image_preset = "preview_8gb"
+            message = "Image resources are available; starting queued generation."
+
+        return LegacyDecision()
+
+    def _coerce_image_preset(self, value: str) -> ImageQualityPreset:
+        try:
+            return ImageQualityPreset(value)
+        except ValueError:
+            return ImageQualityPreset.preview_8gb
 
     async def _attempt_generation_with_tts_preemption(self, job: ImageJob) -> None:
         max_attempts = 2
@@ -952,11 +1005,35 @@ class ImageGenerationService:
             saved_to_assets=job.saved_to_assets,
         )
         job.events.append(payload)
+        if len(job.events) > MAX_JOB_EVENTS:
+            del job.events[: len(job.events) - MAX_JOB_EVENTS]
         for watcher in list(job.watchers):
             try:
                 watcher.put_nowait(payload)
             except asyncio.QueueFull:
                 job.watchers.discard(watcher)
+
+    def _prune_runtime_jobs(self) -> None:
+        if len(self._jobs) < MAX_RETAINED_RUNTIME_JOBS:
+            return
+        retained: dict[str, ImageJob] = {}
+        terminal = [
+            job
+            for job in self._jobs.values()
+            if job.status in TERMINAL_STATUSES and not job.watchers
+        ]
+        terminal.sort(key=lambda item: item.updated_at, reverse=True)
+        keep_terminal_ids = {
+            job.job_id for job in terminal[: MAX_RETAINED_RUNTIME_JOBS // 2]
+        }
+        for job_id, job in self._jobs.items():
+            if (
+                job.status not in TERMINAL_STATUSES
+                or job.watchers
+                or job_id in keep_terminal_ids
+            ):
+                retained[job_id] = job
+        self._jobs = retained
 
     def _output_paths_for_job_or_history(self, job_id: str) -> list[str]:
         job = self._jobs.get(job_id)
@@ -1157,11 +1234,8 @@ class ImageGenerationService:
             "saved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-
     def _safe_slug(self, value: str) -> str:
-        slug = (
-            re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
-        )
+        slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
         return slug or "default"
 
     def _summarize_prompt(self, prompt: str) -> str:

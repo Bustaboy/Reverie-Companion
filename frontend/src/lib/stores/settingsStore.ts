@@ -6,6 +6,8 @@ export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
 export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
 export type TTSLatencyPreset = 'quality' | 'balanced' | 'speed';
 export type ImageDefaultPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
+export type PerformancePreset = 'quiet_8gb' | 'balanced_8gb' | 'quality_8gb';
+export type BackgroundTaskLimit = 'minimal' | 'balanced' | 'roomy';
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -21,6 +23,9 @@ export interface MemoryReflectionSettings {
   ttsLatencyPreset: TTSLatencyPreset;
   imageAutoGenerateOnAssistant: boolean;
   imageDefaultPreset: ImageDefaultPreset;
+  performancePreset: PerformancePreset;
+  backgroundTaskLimit: BackgroundTaskLimit;
+  proactiveResourceWarnings: boolean;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -46,7 +51,10 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   ttsSpeed: 1,
   ttsLatencyPreset: 'balanced',
   imageAutoGenerateOnAssistant: false,
-  imageDefaultPreset: 'preview_8gb'
+  imageDefaultPreset: 'preview_8gb',
+  performancePreset: 'balanced_8gb',
+  backgroundTaskLimit: 'balanced',
+  proactiveResourceWarnings: true
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -68,6 +76,12 @@ const isTTSLatencyPreset = (value: unknown): value is TTSLatencyPreset =>
 
 const isImageDefaultPreset = (value: unknown): value is ImageDefaultPreset =>
   value === 'preview_8gb' || value === 'balanced_8gb' || value === 'high_8gb';
+
+const isPerformancePreset = (value: unknown): value is PerformancePreset =>
+  value === 'quiet_8gb' || value === 'balanced_8gb' || value === 'quality_8gb';
+
+const isBackgroundTaskLimit = (value: unknown): value is BackgroundTaskLimit =>
+  value === 'minimal' || value === 'balanced' || value === 'roomy';
 
 const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -108,6 +122,16 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   imageDefaultPreset: isImageDefaultPreset(value.imageDefaultPreset)
     ? value.imageDefaultPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.imageDefaultPreset,
+  performancePreset: isPerformancePreset(value.performancePreset)
+    ? value.performancePreset
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.performancePreset,
+  backgroundTaskLimit: isBackgroundTaskLimit(value.backgroundTaskLimit)
+    ? value.backgroundTaskLimit
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit,
+  proactiveResourceWarnings: toBoolean(
+    value.proactiveResourceWarnings,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.proactiveResourceWarnings
+  ),
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -141,6 +165,9 @@ const persistSettings = (state: SettingsState) => {
     ttsLatencyPreset: state.ttsLatencyPreset,
     imageAutoGenerateOnAssistant: state.imageAutoGenerateOnAssistant,
     imageDefaultPreset: state.imageDefaultPreset,
+    performancePreset: state.performancePreset,
+    backgroundTaskLimit: state.backgroundTaskLimit,
+    proactiveResourceWarnings: state.proactiveResourceWarnings,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -202,6 +229,29 @@ function createSettingsStore() {
     },
     setImageDefaultPreset(imageDefaultPreset: ImageDefaultPreset) {
       save({ imageDefaultPreset });
+    },
+    setPerformancePreset(performancePreset: PerformancePreset) {
+      const patch: Partial<MemoryReflectionSettings> = { performancePreset };
+      if (performancePreset === 'quiet_8gb') {
+        patch.ttsLatencyPreset = 'speed';
+        patch.imageDefaultPreset = 'preview_8gb';
+        patch.backgroundTaskLimit = 'minimal';
+      } else if (performancePreset === 'quality_8gb') {
+        patch.ttsLatencyPreset = 'quality';
+        patch.imageDefaultPreset = 'balanced_8gb';
+        patch.backgroundTaskLimit = 'balanced';
+      } else {
+        patch.ttsLatencyPreset = 'balanced';
+        patch.imageDefaultPreset = 'preview_8gb';
+        patch.backgroundTaskLimit = 'balanced';
+      }
+      save(patch);
+    },
+    setBackgroundTaskLimit(backgroundTaskLimit: BackgroundTaskLimit) {
+      save({ backgroundTaskLimit });
+    },
+    setProactiveResourceWarnings(proactiveResourceWarnings: boolean) {
+      save({ proactiveResourceWarnings });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

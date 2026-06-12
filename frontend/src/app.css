@@ -4596,3 +4596,37 @@ textarea:disabled {
     transform: none;
   }
 }
+
+.app-error-boundary {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: radial-gradient(circle at top, rgba(185, 132, 255, 0.18), transparent 45%), #111018;
+  color: #f7ecff;
+}
+
+.app-error-boundary .error-card {
+  max-width: 44rem;
+  padding: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 28px;
+  background: rgba(24, 20, 34, 0.88);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+}
+
+.app-error-boundary pre {
+  overflow: auto;
+  max-height: 12rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.22);
+  white-space: pre-wrap;
+}
+
+.app-error-boundary a {
+  display: inline-flex;
+  margin-top: 1rem;
+  color: #ffd6f6;
+  font-weight: 700;
+}

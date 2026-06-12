@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset } from '$lib/stores/settingsStore';
+  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset, type PerformancePreset, type BackgroundTaskLimit } from '$lib/stores/settingsStore';
   import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
 
   const reflectionFrequencyOptions: Array<{
@@ -105,6 +105,39 @@
     }
   ];
 
+
+  const performancePresetOptions: Array<{
+    value: PerformancePreset;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: 'quiet_8gb',
+      label: 'Quiet 8GB',
+      description: 'Maximum stability: preview images, speed voice, and minimal background work.'
+    },
+    {
+      value: 'balanced_8gb',
+      label: 'Balanced 8GB',
+      description: 'Recommended RTX 4070 laptop default: voice first, preview images, conservative queues.'
+    },
+    {
+      value: 'quality_8gb',
+      label: 'Quality 8GB',
+      description: 'More expressive voice and balanced images when VRAM telemetry says there is room.'
+    }
+  ];
+
+  const backgroundTaskOptions: Array<{
+    value: BackgroundTaskLimit;
+    label: string;
+    description: string;
+  }> = [
+    { value: 'minimal', label: 'Minimal', description: 'Only essential memory/reflection work while chatting.' },
+    { value: 'balanced', label: 'Balanced', description: 'Allow one low-priority media or growth task at a time.' },
+    { value: 'roomy', label: 'Roomy', description: 'Let optional work run more often when the machine is idle.' }
+  ];
+
   let cloneName = $state('');
   let cloneFile = $state<File | null>(null);
   let cloneRecording = $state<Blob | null>(null);
@@ -184,6 +217,10 @@
 
   const handleImageDefaultPresetChange = (preset: ImageDefaultPreset) => {
     settingsStore.setImageDefaultPreset(preset);
+  };
+
+  const handleResourceWarningsChange = (event: Event) => {
+    settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked);
   };
 
   const handleTTSVolumeChange = (event: Event) => {
@@ -418,6 +455,55 @@
           </button>
         {/each}
       </div>
+    </article>
+
+
+
+    <article class="settings-card settings-wide performance-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Performance</span>
+        <h2>8GB optimization preset</h2>
+        <p>Choose how aggressively Reverie protects VRAM. Presets tune voice latency, image quality, and optional background work without changing memory privacy.</p>
+      </div>
+      <div class="option-grid" role="radiogroup" aria-label="8GB performance preset">
+        {#each performancePresetOptions as option}
+          <button
+            type="button"
+            class:active={$settingsStore.performancePreset === option.value}
+            aria-pressed={$settingsStore.performancePreset === option.value}
+            onclick={() => settingsStore.setPerformancePreset(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </button>
+        {/each}
+      </div>
+
+      <div class="option-grid compact-options" role="radiogroup" aria-label="Background task limit">
+        {#each backgroundTaskOptions as option}
+          <button
+            type="button"
+            class:active={$settingsStore.backgroundTaskLimit === option.value}
+            aria-pressed={$settingsStore.backgroundTaskLimit === option.value}
+            onclick={() => settingsStore.setBackgroundTaskLimit(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+          </button>
+        {/each}
+      </div>
+
+      <label class="inline-toggle">
+        <input
+          type="checkbox"
+          checked={$settingsStore.proactiveResourceWarnings}
+          onchange={handleResourceWarningsChange}
+        />
+        <span>{ $settingsStore.proactiveResourceWarnings ? 'Show proactive VRAM warnings' : 'Hide proactive VRAM warnings' }</span>
+      </label>
+      <p class="resource-note">
+        Backend media queues still enforce safe priority even if warnings are hidden: TTS can preempt images, ComfyUI work stays serialized, and preview mode is used near VRAM limits.
+      </p>
     </article>
 
     <article class="settings-card settings-wide image-settings-card">

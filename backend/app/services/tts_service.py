@@ -612,8 +612,15 @@ class TTSService:
         response_voice_id = routing.voice_profile.voice_id
 
         errors: list[dict[str, object]] = []
+        resource_decision = resource_coordinator.evaluate_vram_for_workload(
+            workload="tts", required_free_mb=self._settings.tts_min_free_vram_mb
+        )
+        if resource_decision.should_unload_optional_models:
+            self._orpheus.unload()
         async with resource_coordinator.tts_priority_section(request_id=request_id):
-            for backend, fallback_used in self._backend_order():
+            for backend, fallback_used in self._backend_order(
+                resource_decision.recommended_tts_backend
+            ):
                 try:
                     result = await asyncio.wait_for(
                         backend.generate(
@@ -737,8 +744,16 @@ class TTSService:
         )
         errors: list[dict[str, object]] = []
 
-        if self._settings.tts_primary_backend == "orpheus" and hasattr(
-            self._orpheus, "stream_generate"
+        resource_decision = resource_coordinator.evaluate_vram_for_workload(
+            workload="tts", required_free_mb=self._settings.tts_min_free_vram_mb
+        )
+        if resource_decision.should_unload_optional_models:
+            self._orpheus.unload()
+
+        if (
+            self._settings.tts_primary_backend == "orpheus"
+            and resource_decision.recommended_tts_backend != "piper"
+            and hasattr(self._orpheus, "stream_generate")
         ):
             try:
                 async with resource_coordinator.tts_priority_section(
@@ -846,10 +861,12 @@ class TTSService:
             details={"max_chars": max_chars, "actual_chars": len(text)},
         )
 
-    def _backend_order(self) -> list[tuple[TTSBackend, bool]]:
+    def _backend_order(
+        self, recommended_backend: str | None = None
+    ) -> list[tuple[TTSBackend, bool]]:
         primary = self._settings.tts_primary_backend
-        if primary == "piper":
-            return [(self._piper, False)]
+        if primary == "piper" or recommended_backend == "piper":
+            return [(self._piper, primary != "piper")]
         return [(self._orpheus, False), (self._piper, True)]
 
     def _timeout_for_backend(self, backend_name: str) -> float:

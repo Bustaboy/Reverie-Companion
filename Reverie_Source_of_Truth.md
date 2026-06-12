@@ -565,4 +565,15 @@ Accessibility decisions are now part of the core UI contract: the app shell incl
 8GB and performance decisions remain conservative: Task 5A is CSS/Svelte UI polish only. It adds no resident models, no new dependencies, no background workers, no extra backend calls, and no unbounded rendering paths. Animations are transform/opacity based, short-lived, and reduced-motion aware so chat, voice, image jobs, and growth surfaces remain responsive on the RTX 4070 8GB mobile target. **Task 5A is complete.**
 
 
+### Milestone 3 Task 5B — Performance, Reliability & 8GB Optimization
+
+Task 5B completes a senior performance and reliability pass for the current Milestone 3 feature set. Reverie now centralizes 8GB VRAM policy in a shared resource coordinator that classifies GPU pressure, reserves explicit headroom, recommends safe image/TTS fallbacks, and exposes a lightweight `/api/resources/status` route for user-facing diagnostics. TTS remains the highest-priority media workload: Orpheus is unloaded or skipped under high pressure, Piper becomes the safe fallback, and image generation waits, downgrades, or resumes from preview settings rather than competing with speech.
+
+Image generation keeps the ComfyUI/Flux GGUF lowvram contract from Task 3, but the queue now consumes the same proactive pressure decisions as the rest of the app. Jobs auto-downgrade toward `preview_8gb` when free VRAM approaches the configured headroom, wait under critical pressure, bound retained runtime job/event history, and keep completed gallery metadata lazy so VN/chat/voice surfaces do not retain heavy image data in memory.
+
+The Settings panel now includes clear 8GB performance presets, background task limits, and proactive warning controls. Presets communicate the practical tradeoffs between Quiet 8GB stability, Balanced 8GB default behavior, and Quality 8GB media detail while preserving the underlying backend safety gates. A Svelte route-level recovery screen provides graceful degradation when a panel fails, making optional systems such as ComfyUI, image history, or voice cloning recoverable without losing the core companion shell.
+
+Task 5B's implementation decisions preserve the global target: chat, memory, growth, voice, VN mode, and image generation coexist on RTX 4070-class 8GB laptops by serializing heavyweight work, preferring speech/chat over optional media, reserving driver/compositor headroom, keeping browser audio/image objects bounded, and giving users plain-language controls for speed versus quality. **Task 5B is complete.**
+
+
 *End of Source of Truth Document v1.0*
