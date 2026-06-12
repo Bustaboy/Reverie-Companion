@@ -3,6 +3,7 @@
   import { JournalPanel } from '$lib/components/Journal';
   import { GrowthDashboard, PersonalLoRAPanel } from '$lib/components/Growth';
   import { ImageGallery } from '$lib/components/ImageGeneration';
+  import { MemoryBrowser } from '$lib/components/Memory';
   import { SettingsPanel } from '$lib/components/Settings';
   import { VisualNovelStage } from '$lib/components/VisualNovel';
   import { visualNovelStore } from '$lib/stores/visualNovelStore';
@@ -33,6 +34,8 @@
       <JournalPanel />
     {:else if activeSection === 'training'}
       <PersonalLoRAPanel />
+    {:else if activeSection === 'memory'}
+      <MemoryBrowser />
     {:else if activeSection === 'settings'}
       <SettingsPanel />
     {:else if activeSection === 'visual-novel'}

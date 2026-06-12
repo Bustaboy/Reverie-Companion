@@ -61,6 +61,10 @@ class _LanceTable(Protocol):
 
     def search(self, query: list[float]) -> Any: ...
 
+    def delete(self, where: str) -> None: ...
+
+    def to_pandas(self) -> Any: ...
+
 
 @dataclass
 class Mem0LanceDBSearchResult:
@@ -381,6 +385,21 @@ class MemoryManager:
     or prompt builders.
     """
 
+    _BROWSER_IMMUTABLE_METADATA_KEYS = {
+        "created_at",
+        "journal_entry_id",
+        "linked_journal_ids",
+        "provenance",
+        "rollback_id",
+        "source",
+        "source_message_ids",
+        "source_turn_indices",
+        "stored_by",
+        "user_id",
+        "session_id",
+        "memory_type",
+    }
+
     def __init__(self, config: MemoryManagerConfig | None = None) -> None:
         self._config = config or MemoryManagerConfig.from_settings()
         self._ollama = Client(host=self._config.ollama_host)
@@ -496,6 +515,143 @@ class MemoryManager:
             },
         )
         return results
+
+    def list_memories(
+        self,
+        *,
+        query: str = "",
+        character: str = "",
+        theme: str = "",
+        source: str = "",
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """Return paginated memories for the user-facing Memory Browser.
+
+        This intentionally avoids embedding the query. The browser is an audit and
+        control surface, so keyword/metadata filtering is predictable, low-cost,
+        and safe for large local libraries on 8GB systems.
+        """
+
+        if not self._config.enabled:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        safe_page = max(1, page)
+        safe_page_size = min(max(5, page_size), 50)
+        rows = self._read_all_rows()
+        memories = [self._row_to_result(row) for row in rows]
+        filtered = [
+            memory
+            for memory in memories
+            if self._memory_matches_browser_filters(
+                memory,
+                query=query,
+                character=character,
+                theme=theme,
+                source=source,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        ]
+        filtered.sort(key=lambda memory: memory.get("created_at", ""), reverse=True)
+        total = len(filtered)
+        offset = (safe_page - 1) * safe_page_size
+        items = filtered[offset : offset + safe_page_size]
+        return {
+            "items": items,
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_page_size,
+        }
+
+    def get_memory(self, memory_id: str) -> MemorySearchResult | None:
+        """Return one memory by id, or None when it is absent."""
+
+        for row in self._read_all_rows():
+            if str(row.get("id", "")) == memory_id:
+                return self._row_to_result(row)
+        return None
+
+    def update_memory(
+        self,
+        memory_id: str,
+        *,
+        text: str,
+        tags: list[str] | None = None,
+        importance: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemorySearchResult:
+        """Update editable browser fields and re-embed changed text."""
+
+        existing = self.get_memory(memory_id)
+        if existing is None:
+            raise KeyError(memory_id)
+
+        normalized_text = self._normalize_text(text)
+        existing_metadata = dict(existing.get("metadata", {}))
+        merged_metadata = self._merge_browser_edit_metadata(
+            existing_metadata,
+            metadata or {},
+            tags=tags,
+            importance=importance,
+            previous_text=str(existing.get("text") or ""),
+            previous_updated_at=str(existing.get("updated_at") or ""),
+            text_changed=normalized_text != str(existing.get("text") or ""),
+        )
+
+        record = MemoryRecord(
+            id=memory_id,
+            text=normalized_text,
+            vector=self._embed(normalized_text),
+            metadata=merged_metadata,
+            created_at=str(
+                existing.get("created_at")
+                or merged_metadata.get("created_at")
+                or self._utc_now()
+            ),
+            updated_at=self._utc_now(),
+            user_id=str(merged_metadata.get("user_id") or self._config.user_id),
+            session_id=merged_metadata.get("session_id") or self._config.session_id,
+            memory_type=str(merged_metadata.get("memory_type") or "long_term"),
+            source=str(
+                merged_metadata.get("source")
+                or existing.get("source")
+                or "reverie"
+            ),
+        )
+        self._delete_from_lancedb(memory_id)
+        self._add_to_lancedb(record)
+        return self._record_to_result(record)
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Permanently remove a memory from local retrieval."""
+
+        if self.get_memory(memory_id) is None:
+            return False
+        self._delete_from_lancedb(memory_id)
+        return True
+
+    def bulk_delete_memories(
+        self, *, ids: list[str] | None = None, older_than: datetime | None = None
+    ) -> int:
+        """Delete memories by explicit ids and/or creation date threshold."""
+
+        id_set = {memory_id for memory_id in (ids or []) if memory_id}
+        rows = self._read_all_rows()
+        delete_ids: set[str] = set()
+        for row in rows:
+            memory_id = str(row.get("id", ""))
+            created_at = self._parse_datetime(row.get("created_at"))
+            if memory_id in id_set or (
+                older_than is not None
+                and created_at is not None
+                and created_at < self._coerce_aware_datetime(older_than)
+            ):
+                delete_ids.add(memory_id)
+        for memory_id in delete_ids:
+            self._delete_from_lancedb(memory_id)
+        return len(delete_ids)
 
     def get_relevant_context(self, query: str) -> str:
         """Format relevant memories as compact, instruction-safe LLM context.
@@ -864,6 +1020,187 @@ class MemoryManager:
         if limit <= 0:
             raise ValueError("limit must be greater than zero.")
         return min(limit, self._config.max_context_memories * 2, 50)
+
+    def _merge_browser_edit_metadata(
+        self,
+        existing_metadata: dict[str, Any],
+        patch_metadata: dict[str, Any],
+        *,
+        tags: list[str] | None,
+        importance: float | None,
+        previous_text: str,
+        previous_updated_at: str,
+        text_changed: bool,
+    ) -> dict[str, Any]:
+        """Merge editable fields without erasing original memory provenance.
+
+        Browser edits are corrections to the durable note, not a new source of
+        truth about where the note came from. Immutable provenance fields keep
+        pointing at the original conversation/journal evidence while edit audit
+        metadata records that a user reviewed or changed the browser copy.
+        """
+
+        if not isinstance(patch_metadata, dict):
+            raise ValueError("metadata must be a dictionary.")
+
+        preserved = dict(existing_metadata)
+        attempted_immutable_changes = sorted(
+            key
+            for key in patch_metadata
+            if key in self._BROWSER_IMMUTABLE_METADATA_KEYS
+            and patch_metadata.get(key) != existing_metadata.get(key)
+        )
+        editable_patch = {
+            key: value
+            for key, value in patch_metadata.items()
+            if key not in self._BROWSER_IMMUTABLE_METADATA_KEYS
+        }
+        merged_metadata = {**preserved, **editable_patch}
+        if tags is not None:
+            merged_metadata["tags"] = self._normalize_tags(tags)
+        if importance is not None:
+            merged_metadata["importance"] = round(float(importance), 3)
+
+        edited_at = self._utc_now()
+        edit_history = merged_metadata.get("edit_history")
+        if not isinstance(edit_history, list):
+            edit_history = []
+        changed_field_set = set(editable_patch)
+        if text_changed:
+            changed_field_set.add("text")
+        if tags is not None:
+            changed_field_set.add("tags")
+        if importance is not None:
+            changed_field_set.add("importance")
+        changed_fields = sorted(changed_field_set)
+        edit_history.append(
+            {
+                "edited_at": edited_at,
+                "edited_by": "MemoryBrowser",
+                "previous_updated_at": previous_updated_at or None,
+                "previous_text_hash": self._text_hash(previous_text),
+                "changed_fields": changed_fields,
+                "ignored_provenance_keys": attempted_immutable_changes,
+            }
+        )
+        merged_metadata["edit_history"] = edit_history[-25:]
+        merged_metadata["edited_at"] = edited_at
+        merged_metadata["edited_by"] = "MemoryBrowser"
+        merged_metadata["content_version"] = self._next_content_version(
+            merged_metadata.get("content_version")
+        )
+        if attempted_immutable_changes:
+            merged_metadata["last_ignored_provenance_patch_keys"] = (
+                attempted_immutable_changes
+            )
+        else:
+            merged_metadata.pop("last_ignored_provenance_patch_keys", None)
+        return merged_metadata
+
+    def _next_content_version(self, value: Any) -> int:
+        try:
+            return int(value or 1) + 1
+        except (TypeError, ValueError):
+            return 2
+
+    def _text_hash(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+    def _read_all_rows(self) -> list[dict[str, Any]]:
+        """Read all memory rows for paginated browser filtering."""
+
+        try:
+            table = self._get_table(required=True)
+        except FileNotFoundError:
+            return []
+        try:
+            records = table.to_pandas().to_dict("records")
+        except Exception as exc:
+            logger.exception("Failed to read local memory table for browser")
+            raise MemoryStoreError("Failed to read local memory store.") from exc
+        return [dict(record) for record in records]
+
+    def _delete_from_lancedb(self, memory_id: str) -> None:
+        try:
+            table = self._get_table(required=True)
+            table.delete(f"id = '{self._escape_sql_literal(memory_id)}'")
+        except FileNotFoundError as exc:
+            raise MemoryStoreError("Memory table does not exist yet.") from exc
+        except Exception as exc:
+            logger.exception("Failed to delete memory", extra={"memory_id": memory_id})
+            raise MemoryStoreError("Failed to delete memory from local store.") from exc
+        self._table = None
+
+    def _memory_matches_browser_filters(
+        self,
+        memory: MemorySearchResult,
+        *,
+        query: str,
+        character: str,
+        theme: str,
+        source: str,
+        date_from: datetime | None,
+        date_to: datetime | None,
+    ) -> bool:
+        metadata = memory.get("metadata", {})
+        haystack_parts = [
+            memory.get("text", ""),
+            memory.get("id", ""),
+            memory.get("source", ""),
+            str(metadata.get("source", "")),
+            str(metadata.get("character", "")),
+            str(metadata.get("character_id", "")),
+            str(metadata.get("theme", "")),
+            " ".join(str(item) for item in metadata.get("themes", []) if item),
+            " ".join(str(item) for item in metadata.get("tags", []) if item),
+            str(metadata.get("journal_entry_id", "")),
+            str(metadata.get("provenance", "")),
+            memory.get("created_at", ""),
+        ]
+        haystack = " ".join(haystack_parts).lower()
+        if query and query.strip().lower() not in haystack:
+            return False
+        if character and character.strip().lower() not in haystack:
+            return False
+        if theme and theme.strip().lower() not in haystack:
+            return False
+        if source and source.strip().lower() not in haystack:
+            return False
+        created_at = self._parse_datetime(memory.get("created_at"))
+        if date_from is not None and created_at is not None:
+            if created_at < self._coerce_aware_datetime(date_from):
+                return False
+        if date_to is not None and created_at is not None:
+            if created_at > self._coerce_aware_datetime(date_to):
+                return False
+        return True
+
+    def _parse_datetime(self, value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return self._coerce_aware_datetime(parsed)
+
+    def _coerce_aware_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def _normalize_tags(self, tags: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for tag in tags:
+            clean = " ".join(str(tag).strip().lower().split())
+            if clean and clean not in seen:
+                normalized.append(clean[:48])
+                seen.add(clean)
+        return normalized[:20]
+
+    def _escape_sql_literal(self, value: str) -> str:
+        return value.replace("'", "''")
 
     def _decode_metadata(self, raw_metadata: Any) -> dict[str, Any]:
         if not raw_metadata:
