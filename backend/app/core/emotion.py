@@ -1,9 +1,8 @@
 """Low-cost weighted emotion inference for visual reactivity.
 
-This module deliberately avoids model calls. It turns already-available chat,
-memory, reflection, and growth-notice signals into compact visual_state metadata
-only after a streamed turn finishes, keeping the normal token path light for 8GB
-local systems.
+The engine uses only already-available chat, memory, reflection, and growth
+metadata. It performs no model calls and is invoked only when a streamed turn is
+complete, keeping the normal 8GB local chat path light and predictable.
 """
 
 from __future__ import annotations
@@ -19,28 +18,35 @@ VisualExpression = Literal[
     "neutral", "happy", "sad", "thinking", "flirty", "surprised", "concerned"
 ]
 VisualPose = Literal["idle", "listening", "speaking", "leaning"]
+SourceName = Literal[
+    "latest_user", "assistant_response", "memory", "reflection", "growth"
+]
 
-_SOURCE_WEIGHTS = {
+_SOURCE_WEIGHTS: dict[SourceName, float] = {
     "latest_user": 0.30,
     "assistant_response": 0.25,
     "memory": 0.20,
     "reflection": 0.15,
     "growth": 0.10,
 }
-_LOW_CONFIDENCE_THRESHOLD = 0.32
+_LOW_CONFIDENCE_THRESHOLD = 0.24
 _GROWTH_PRIORITY_BOOST = 1.25
 _DEFAULT_DECAY_MS = 45_000
 _MAX_TEXT_CHARS = 2_000
+_STRONG_HIT_COUNT = 3
 
 _EMOTION_KEYWORDS: dict[VisualExpression, tuple[str, ...]] = {
     "happy": (
         "happy",
         "glad",
         "joy",
+        "joyful",
         "relieved",
         "safe",
+        "safety",
         "comfort",
         "comforted",
+        "reassurance",
         "proud",
         "trust",
         "warm",
@@ -106,16 +112,43 @@ _EMOTION_KEYWORDS: dict[VisualExpression, tuple[str, ...]] = {
         "sudden",
         "unexpected",
         "wow",
-        "really?",
+        "really",
     ),
 }
 
 _GROWTH_CUE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("relationship_trust", ("trust", "safe", "steadier", "reassurance", "comfort")),
+    (
+        "relationship_trust",
+        ("trust", "safe", "safety", "steadier", "reassurance", "comfort"),
+    ),
     ("repair_attention", ("repair", "boundary", "pacing", "promise", "apology")),
     ("reflective_growth", ("learn", "learned", "noticed", "reflection", "pattern", "insight")),
     ("memory_recall", ("remember", "memory", "recall", "prefers", "preference")),
 )
+
+
+@dataclass(frozen=True)
+class EmotionSource:
+    """One weighted evidence source for the final emotion vote."""
+
+    name: SourceName
+    text: str
+
+    @property
+    def weight(self) -> float:
+        return _SOURCE_WEIGHTS[self.name]
+
+    @property
+    def vote_multiplier(self) -> float:
+        if self.name == "growth" and self.text:
+            return _GROWTH_PRIORITY_BOOST
+        return 1.0
+
+
+@dataclass(frozen=True)
+class ToneMatch:
+    expression: VisualExpression
+    strength: float
 
 
 @dataclass(frozen=True)
@@ -154,52 +187,39 @@ class EmotionInferenceEngine:
         reflection_entries: list[JournalEntry] | None = None,
         growth_notification: GrowthNotification | None = None,
     ) -> EmotionInferenceResult:
-        votes: defaultdict[VisualExpression, float] = defaultdict(float)
-        total_weight = 0.0
-        intensity_signals: list[float] = []
-
-        latest_user = self._latest_message_text(messages, role="user")
-        sources = [
-            ("latest_user", latest_user),
-            ("assistant_response", assistant_response),
-            ("memory", memory_context),
-            ("reflection", self._reflection_text(reflection_entries or [])),
-            ("growth", self._growth_text(growth_notification)),
-        ]
-
-        for source, text in sources:
-            tone, strength = self._classify_text(text)
-            if tone == "neutral" or strength <= 0:
-                continue
-            weight = _SOURCE_WEIGHTS[source]
-            if source == "growth" and growth_notification is not None:
-                weight *= _GROWTH_PRIORITY_BOOST
-            votes[tone] += weight * strength
-            total_weight += weight
-            intensity_signals.append(strength)
-
-        if not votes:
-            return EmotionInferenceResult(
-                expression="neutral", pose="idle", confidence=0.0, intensity=0.0
-            )
-
-        expression, score = max(votes.items(), key=lambda item: item[1])
-        confidence = score / max(total_weight, 0.001)
-        intensity = min(1.0, max(intensity_signals, default=0.0) * confidence)
+        entries = reflection_entries or []
         growth_cue = self._growth_cue(
             growth_notification=growth_notification,
             memory_context=memory_context,
-            reflection_entries=reflection_entries or [],
+            reflection_entries=entries,
         )
+        scores: defaultdict[VisualExpression, float] = defaultdict(float)
+        strongest_signal = 0.0
 
+        for source in self._sources(
+            messages=messages,
+            assistant_response=assistant_response,
+            memory_context=memory_context,
+            reflection_entries=entries,
+            growth_notification=growth_notification,
+        ):
+            match = self._classify_text(source.text)
+            if match.expression == "neutral" or match.strength <= 0:
+                continue
+            weighted_score = source.weight * source.vote_multiplier * match.strength
+            scores[match.expression] += weighted_score
+            strongest_signal = max(strongest_signal, match.strength)
+
+        if not scores:
+            return self._neutral_result(growth_cue=growth_cue)
+
+        expression, confidence = max(scores.items(), key=lambda item: item[1])
+        intensity = min(1.0, strongest_signal * (0.45 + confidence))
         if confidence < _LOW_CONFIDENCE_THRESHOLD:
-            return EmotionInferenceResult(
-                expression="neutral",
-                pose="idle",
+            return self._neutral_result(
                 confidence=confidence,
                 intensity=intensity,
                 growth_cue=growth_cue,
-                decay_ms=_DEFAULT_DECAY_MS if growth_cue else None,
             )
 
         return EmotionInferenceResult(
@@ -211,24 +231,65 @@ class EmotionInferenceEngine:
             decay_ms=_DEFAULT_DECAY_MS if growth_cue else None,
         )
 
-    def _classify_text(self, text: str) -> tuple[VisualExpression, float]:
+    def _neutral_result(
+        self,
+        *,
+        confidence: float = 0.0,
+        intensity: float = 0.0,
+        growth_cue: str | None = None,
+    ) -> EmotionInferenceResult:
+        return EmotionInferenceResult(
+            expression="neutral",
+            pose="idle",
+            confidence=confidence,
+            intensity=intensity,
+            growth_cue=growth_cue,
+            decay_ms=_DEFAULT_DECAY_MS if growth_cue else None,
+        )
+
+    def _sources(
+        self,
+        *,
+        messages: list[ChatMessage],
+        assistant_response: str,
+        memory_context: str,
+        reflection_entries: list[JournalEntry],
+        growth_notification: GrowthNotification | None,
+    ) -> tuple[EmotionSource, ...]:
+        return (
+            EmotionSource("latest_user", self._latest_message_text(messages, role="user")),
+            EmotionSource("assistant_response", assistant_response),
+            EmotionSource("memory", memory_context),
+            EmotionSource("reflection", self._reflection_text(reflection_entries)),
+            EmotionSource("growth", self._growth_text(growth_notification)),
+        )
+
+    def _classify_text(self, text: str) -> ToneMatch:
         normalized = self._normalize(text)[-_MAX_TEXT_CHARS:]
         if not normalized:
-            return "neutral", 0.0
+            return ToneMatch("neutral", 0.0)
 
-        scores: dict[VisualExpression, int] = {}
+        tokens = set(normalized.split())
+        ranked_matches: list[tuple[int, VisualExpression]] = []
         for emotion, keywords in _EMOTION_KEYWORDS.items():
-            hits = sum(1 for keyword in keywords if keyword in normalized)
+            hits = sum(
+                1
+                for keyword in keywords
+                if self._keyword_matches(keyword, normalized, tokens)
+            )
             if hits:
-                scores[emotion] = hits
+                ranked_matches.append((hits, emotion))
 
-        if not scores:
-            return "neutral", 0.0
+        if not ranked_matches:
+            return ToneMatch("neutral", 0.0)
 
-        emotion, hits = max(scores.items(), key=lambda item: item[1])
-        # Three matching cues is already strong for this compact heuristic; cap
-        # so repeated words cannot dominate every other weighted source.
-        return emotion, min(1.0, hits / 3)
+        hits, expression = max(ranked_matches, key=lambda item: item[0])
+        return ToneMatch(expression, min(1.0, hits / _STRONG_HIT_COUNT))
+
+    def _keyword_matches(self, keyword: str, normalized: str, tokens: set[str]) -> bool:
+        if " " in keyword:
+            return keyword in normalized
+        return keyword in tokens
 
     def _growth_cue(
         self,
@@ -248,8 +309,12 @@ class EmotionInferenceEngine:
         )
         if not growth_text:
             return None
+        growth_tokens = set(growth_text.split())
         for cue, keywords in _GROWTH_CUE_KEYWORDS:
-            if any(keyword in growth_text for keyword in keywords):
+            if any(
+                self._keyword_matches(keyword, growth_text, growth_tokens)
+                for keyword in keywords
+            ):
                 return cue
         return "reflective_growth" if growth_notification else None
 
@@ -296,7 +361,11 @@ class EmotionInferenceEngine:
         )
 
     def _normalize(self, text: str) -> str:
-        return " ".join(text.lower().split())
+        return " ".join(
+            "".join(
+                character.lower() if character.isalnum() else " " for character in text
+            ).split()
+        )
 
 
 emotion_inference_engine = EmotionInferenceEngine()

@@ -43,3 +43,24 @@ def test_weighted_engine_uses_memory_reflection_and_growth_cues() -> None:
     assert result.growth_cue == "relationship_trust"
     assert result.decay_ms == 45_000
     assert result.confidence >= 0.32
+
+
+def test_growth_priority_boost_can_tip_close_visual_tone() -> None:
+    result = EmotionInferenceEngine().infer_visual_state(
+        messages=[ChatMessage(role="user", content="I am anxious and worried, but listening.")],
+        assistant_response="I am thinking about what you said and what to remember.",
+        memory_context="Earlier memory: comfort and trust help this feel safe.",
+        reflection_entries=[{"themes": ["trust"], "character_summary": "Trust is warming."}],
+        growth_notification=GrowthNotification(
+            id="growth_2",
+            journal_entry_id="journal_2",
+            created_at="2026-06-11T00:00:00Z",
+            message="Reverie seems steadier in your trust.",
+            why="A private reflection noticed the user feels safe with reassurance.",
+            theme="trust",
+        ),
+    )
+
+    assert result.expression == "happy"
+    assert result.pose == "leaning"
+    assert result.growth_cue == "relationship_trust"

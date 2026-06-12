@@ -23,6 +23,8 @@ const FAILED_ASSET_CACHE_LIMIT = 16;
 const MIN_GROWTH_MODIFIER_MS = 30_000;
 const MAX_GROWTH_MODIFIER_MS = 60_000;
 const DEFAULT_GROWTH_MODIFIER_MS = 45_000;
+const DEFAULT_GROWTH_INTENSITY = 0.5;
+const MIN_GROWTH_INTENSITY = 0.2;
 
 const initialManifest = DEFAULT_CHARACTER_VISUAL_MANIFEST;
 const initialVisualState = expressionManager.normalizeState(initialManifest);
@@ -43,14 +45,28 @@ const addFailedAssetUrl = (urls: string[], url: string): string[] => {
   return [...withoutDuplicate, trimmedUrl].slice(-FAILED_ASSET_CACHE_LIMIT);
 };
 
-const clampDecayMs = (value: number | undefined): number => {
-  if (!value || !Number.isFinite(value)) return DEFAULT_GROWTH_MODIFIER_MS;
-  return Math.min(MAX_GROWTH_MODIFIER_MS, Math.max(MIN_GROWTH_MODIFIER_MS, Math.round(value)));
+const clampNumber = (value: number | undefined, fallback: number, min: number, max: number): number => {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
 };
 
-const normalizeIntensity = (value: number | undefined): number => {
-  if (value === undefined || !Number.isFinite(value)) return 0.5;
-  return Math.min(1, Math.max(0.2, value));
+const clampDecayMs = (value: number | undefined): number =>
+  Math.round(clampNumber(value, DEFAULT_GROWTH_MODIFIER_MS, MIN_GROWTH_MODIFIER_MS, MAX_GROWTH_MODIFIER_MS));
+
+const normalizeIntensity = (value: number | undefined): number =>
+  clampNumber(value, DEFAULT_GROWTH_INTENSITY, MIN_GROWTH_INTENSITY, 1);
+
+const createGrowthModifier = (metadata: VisualStateMetadata, now = Date.now()): VisualGrowthModifier | null => {
+  if (!metadata.growthCue) return null;
+
+  const decayMs = clampDecayMs(metadata.decayMs);
+  return {
+    cue: metadata.growthCue,
+    intensity: normalizeIntensity(metadata.intensity),
+    startedAt: now,
+    expiresAt: now + decayMs,
+    decayMs
+  };
 };
 
 function createVisualNovelStore() {
@@ -58,18 +74,17 @@ function createVisualNovelStore() {
   let growthDecayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   const clearGrowthDecayTimer = () => {
-    if (growthDecayTimer) {
-      globalThis.clearTimeout(growthDecayTimer);
-      growthDecayTimer = null;
-    }
+    if (!growthDecayTimer) return;
+    globalThis.clearTimeout(growthDecayTimer);
+    growthDecayTimer = null;
   };
 
-  const scheduleGrowthModifierDecay = (decayMs: number) => {
+  const scheduleGrowthModifierDecay = (modifier: VisualGrowthModifier) => {
     clearGrowthDecayTimer();
     growthDecayTimer = globalThis.setTimeout(() => {
-      store.update((state) => ({ ...state, growthModifier: null }));
+      store.update((state) => (state.growthModifier?.startedAt === modifier.startedAt ? { ...state, growthModifier: null } : state));
       growthDecayTimer = null;
-    }, decayMs);
+    }, modifier.decayMs);
   };
 
   const scene = derived(store, ($store): ResolvedVisualNovelScene => {
@@ -83,18 +98,7 @@ function createVisualNovelStore() {
     applyVisualState(metadata?: VisualStateMetadata | null) {
       if (!metadata) return;
 
-      const decayMs = clampDecayMs(metadata.decayMs);
-      const now = Date.now();
-      const growthModifier = metadata.growthCue
-        ? {
-            cue: metadata.growthCue,
-            intensity: normalizeIntensity(metadata.intensity),
-            startedAt: now,
-            expiresAt: now + decayMs,
-            decayMs
-          }
-        : undefined;
-
+      const growthModifier = createGrowthModifier(metadata);
       store.update((state) => ({
         ...state,
         currentVisualState: expressionManager.normalizeState(state.manifest, metadata),
@@ -102,7 +106,7 @@ function createVisualNovelStore() {
       }));
 
       if (growthModifier) {
-        scheduleGrowthModifierDecay(decayMs);
+        scheduleGrowthModifierDecay(growthModifier);
       }
     },
     setFullImmersive(enabled: boolean) {
