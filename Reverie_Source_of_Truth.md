@@ -277,7 +277,7 @@ Milestone 3 Task 2H closes the Task 2 TTS system as a complete lightweight voice
 
 **Nice to Have for Alpha**:
 - Visual Novel mode (basic sprite support).
-- Simple in-chat image generation hook.
+- ✅ Milestone 3 image generation system complete: queued local generation, prompt context, chat/VN display, persistent gallery, and user controls.
 - Personal LoRA training pipeline (even if manual approval + background job).
 
 **Explicitly Out of Scope for Phase 1**:
@@ -434,6 +434,29 @@ The Task 3C frontend integration was tightened after review:
 - **Reusable image job presentation**: chat and VN now share a dedicated image job card component for progress, cancellation, paused-for-voice, low-VRAM waiting, degraded preset, error, retry, and expandable preview states. This keeps later gallery/history work from duplicating status logic.
 - **Protected image output serving**: the backend now exposes job-indexed image output URLs. The frontend asks Reverie's API for `/api/images/{job_id}/outputs/{output_index}` instead of constructing arbitrary local or ComfyUI file URLs. The route serves local files only when the requested output index is attached to that job and resolves under the configured image output directory; otherwise it falls back to ComfyUI `/view` for that same attached output when safe.
 - **Polished resource feedback**: user-facing copy now distinguishes TTS pause/resume, low-VRAM waiting, unknown VRAM preview fallback, OOM/degraded preset fallback, and normal queued/running states while preserving the backend rule that TTS always has priority over image generation.
+
+
+## Milestone 3 Task 3D Update — Polish, History & Controls (Task 3 Complete)
+
+Task 3D completes the Milestone 3 image generation system as a polished, local-first media layer that remains subordinate to chat, voice, and 8GB VRAM safety:
+
+- **Persistent per-conversation history**: completed image jobs are now written to `REVERIE_IMAGE_GENERATION_HISTORY_PATH` as compact metadata (`job_id`, `conversation_id`, source message/context identifiers, prompt summary, presets, output references, fallback state, and asset-save state). The history stores metadata and lazy output references only; it does not preload image bytes into chat, memory, or the Svelte store.
+- **Gallery architecture**: `GET /api/images/history/{conversation_id}` returns the conversation gallery, and the frontend Images panel renders it as a lazy thumbnail grid with a zoom/lightbox view. Gallery loading is metadata-first and uses protected `/api/images/{job_id}/outputs/{output_index}` URLs, preserving the protected output-serving contract from Task 3C.
+- **User controls**: completed images support regenerate, create variation, save to character assets, and delete. Regenerate requeues the same prompt/context; variation appends a bounded instruction to preserve character identity and mood while changing composition/lighting/pose/camera. Delete removes the gallery record without granting arbitrary filesystem access. Save copies an attached local output into the character asset tree and appends a manifest entry with source prompt, preset, label, and save timestamp.
+- **Polished display**: chat image cards now include completed-image controls, clearer retry/error copy, lazy previews, and captions based on the prompt summary. Visual Novel mode can regenerate/vary/save/delete the latest scene image while keeping authored sprite layers as the fast default and generated imagery as an optional background enhancement.
+- **Settings**: image generation settings now include the off-by-default assistant auto-generation rule plus a default 8GB preset selector (`preview_8gb`, `balanced_8gb`, `high_8gb`). The backend still validates VRAM and can downgrade regardless of frontend preference, so user choice never overrides safety.
+- **8GB/TTS priority preserved**: no new resident model is introduced. History/gallery operations are JSON/file metadata work; thumbnails/images lazy-load through the existing output endpoint; generation remains queued at concurrency 1; TTS still pauses/preempts image jobs; and the UI treats low VRAM, paused voice priority, fallback, cancelled, and retryable errors as normal states.
+
+Short design summary: Milestone 3 image generation is now a complete optional local media workflow: deterministic chat/VN prompt context enters the safe queued backend; ComfyUI/Flux GGUF lowvram produces outputs under strict resource coordination; completed results become inspectable per-conversation gallery records; and users can regenerate, vary, save, or delete images without compromising chat responsiveness, voice priority, or local-first privacy. **Task 3 is complete.**
+
+
+### Task 3D Final Polish Round
+
+The final polish pass keeps the PR #80 gallery/navigation/lightbox integration intact while tightening persistence, asset manifests, and user feedback:
+
+- **History persistence hardening**: image history now writes a schema-versioned JSON payload with both grouped `conversations` and a compatibility `items` list, reloads legacy flat histories, skips malformed entries instead of failing the gallery, and writes JSON atomically through a temporary file replace.
+- **Character asset manifest polish**: saving generated images now normalizes the manifest, deduplicates by `job_id` + output index, records relative and absolute asset paths, source conversation/message metadata, prompt/negative prompt, presets, fallback state, and stable `asset_id`s.
+- **Clearer fallback UI**: gallery and image cards distinguish missing local output files from generation failures, disable save actions when the file is unavailable, and offer retry/regenerate guidance while preserving lazy loading and TTS/VRAM priority behavior.
 
 
 *End of Source of Truth Document v1.0*

@@ -8,9 +8,12 @@
     previewOpen?: boolean;
     onCancel?: (job: ImageGenerationJob) => void;
     onRetry?: (job: ImageGenerationJob) => void;
+    onVary?: (job: ImageGenerationJob) => void;
+    onDelete?: (job: ImageGenerationJob) => void;
+    onSave?: (job: ImageGenerationJob) => void;
   }
 
-  let { job, compact = false, showPreview = true, previewOpen = true, onCancel, onRetry }: Props = $props();
+  let { job, compact = false, showPreview = true, previewOpen = true, onCancel, onRetry, onVary, onDelete, onSave }: Props = $props();
 
   const isActive = $derived(job.status === 'queued' || job.status === 'waiting_for_resources' || job.status === 'paused' || job.status === 'running');
   const isPausedForTTS = $derived(job.status === 'paused' || job.resource_mode === 'paused_for_tts');
@@ -18,11 +21,14 @@
   const isDegraded = $derived(Boolean(job.fallback_used) || job.resource_mode === 'degraded' || job.phase === 'oom_fallback');
   const progressPercent = $derived(Math.round(job.progress * 100));
   const progressStyle = $derived(`--image-progress: ${(job.progress * 100).toFixed(1)}%`);
-  const previewUrl = $derived(job.status === 'completed' ? job.imageUrls[0] : undefined);
+  let previewFailed = $state(false);
+  const previewUrl = $derived(job.status === 'completed' && !previewFailed ? job.imageUrls[0] : undefined);
+  const completedWithoutPreview = $derived(job.status === 'completed' && (!job.imageUrls[0] || previewFailed));
 
   const statusLabel = $derived.by(() => {
+    if (completedWithoutPreview) return 'Image metadata saved · output unavailable';
     if (job.status === 'completed') return job.fallback_used ? 'Image ready · lighter 8GB preset used' : 'Image ready';
-    if (job.status === 'failed') return job.error?.message ?? 'Image generation failed';
+    if (job.status === 'failed') return job.error?.message ?? 'Image generation failed — chat and voice were not interrupted';
     if (job.status === 'cancelled') return 'Image generation cancelled';
     if (isPausedForTTS) return 'Paused for voice playback';
     if (isLowVram) return 'Waiting for VRAM headroom';
@@ -37,6 +43,7 @@
     if (job.phase === 'resource_check' && job.resource_mode === 'unknown_vram_preview') {
       return 'VRAM telemetry is unavailable, so Reverie is using the preview preset.';
     }
+    if (completedWithoutPreview) return 'The gallery kept the prompt and metadata, but the local output file is not reachable. Regenerate or reopen ComfyUI and retry.';
     if (isDegraded && job.status !== 'completed') return 'Using a lighter 8GB-safe preset to avoid memory pressure.';
     if (job.vram_free_mb !== null && job.vram_free_mb !== undefined && job.vram_required_mb) {
       return `${job.vram_free_mb} MiB free · ${job.vram_required_mb} MiB target.`;
@@ -73,6 +80,13 @@
       <button type="button" class="image-job-action" onclick={() => onCancel?.(job)}>Cancel</button>
     {:else if job.status === 'failed' && onRetry}
       <button type="button" class="image-job-action" onclick={() => onRetry?.(job)}>Try again</button>
+    {:else if job.status === 'completed'}
+      <div class="image-job-actions">
+        {#if onRetry}<button type="button" class="image-job-action" onclick={() => onRetry?.(job)}>Regenerate</button>{/if}
+        {#if onVary}<button type="button" class="image-job-action" onclick={() => onVary?.(job)}>Vary</button>{/if}
+        {#if onSave}<button type="button" class="image-job-action" disabled={completedWithoutPreview} onclick={() => onSave?.(job)}>{job.saved_to_assets ? 'Saved' : 'Save asset'}</button>{/if}
+        {#if onDelete}<button type="button" class="image-job-action danger" onclick={() => onDelete?.(job)}>Delete</button>{/if}
+      </div>
     {/if}
   </div>
 
@@ -93,8 +107,14 @@
 
   {#if showPreview && previewUrl}
     <details class="image-job-preview" open={previewOpen}>
-      <summary>View generated image</summary>
-      <img src={previewUrl} alt={`Generated image for ${job.sourceLabel}: ${job.displayPrompt}`} loading="lazy" decoding="async" />
+      <summary>{job.displayPrompt}</summary>
+      <img src={previewUrl} alt={`Generated image for ${job.sourceLabel}: ${job.displayPrompt}`} loading="lazy" decoding="async" onerror={() => (previewFailed = true)} />
     </details>
+    <p class="image-job-caption">{job.displayPrompt}</p>
+  {:else if completedWithoutPreview}
+    <div class="image-job-missing-preview" role="status">
+      <strong>Preview unavailable</strong>
+      <span>The image metadata is safe, but the generated file cannot be loaded locally.</span>
+    </div>
   {/if}
 </article>

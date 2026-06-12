@@ -236,7 +236,10 @@
           compact
           showPreview={false}
           onCancel={cancelVisualizeScene}
-          onRetry={visualizeScene}
+          onRetry={() => imageGenerationStore.regenerate(visualNovelImageJob)}
+          onVary={() => imageGenerationStore.vary(visualNovelImageJob)}
+          onSave={() => imageGenerationStore.saveToCharacterAssets(visualNovelImageJob)}
+          onDelete={() => imageGenerationStore.deleteImage(visualNovelImageJob.job_id)}
         />
       {/if}
       <AudioPlayer compact label="Visual novel voice playback" />

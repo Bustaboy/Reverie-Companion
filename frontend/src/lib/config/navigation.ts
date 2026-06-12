@@ -1,4 +1,4 @@
-export type NavigationItemId = 'chat' | 'journal' | 'training' | 'characters' | 'memory' | 'visual-novel' | 'settings';
+export type NavigationItemId = 'chat' | 'journal' | 'training' | 'characters' | 'memory' | 'visual-novel' | 'images' | 'settings';
 
 export interface NavigationItem {
   id: NavigationItemId;
@@ -16,5 +16,6 @@ export const navigationItems: NavigationItem[] = [
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
   { id: 'memory', label: 'Memory', hint: 'Long-term recall', enabled: false },
   { id: 'visual-novel', label: 'Visual Novel', hint: 'Immersive scene', enabled: true },
+  { id: 'images', label: 'Images', hint: 'Gallery & controls', enabled: true },
   { id: 'settings', label: 'Settings', hint: 'Memory controls', enabled: true }
 ];
