@@ -77,6 +77,8 @@ class ImageJobRead(BaseModel):
     resource_mode: str = "queued"
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    pressure: str = "unknown"
+    warning: str | None = None
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
@@ -103,6 +105,8 @@ class ImageJobEvent(BaseModel):
     fallback_used: bool = False
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    pressure: str = "unknown"
+    warning: str | None = None
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None

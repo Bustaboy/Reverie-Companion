@@ -6,6 +6,7 @@ export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
 export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
 export type TTSLatencyPreset = 'quality' | 'balanced' | 'speed';
 export type ImageDefaultPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
+export type PerformancePreset = '8gb_safe' | 'balanced' | 'quality';
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -21,6 +22,9 @@ export interface MemoryReflectionSettings {
   ttsLatencyPreset: TTSLatencyPreset;
   imageAutoGenerateOnAssistant: boolean;
   imageDefaultPreset: ImageDefaultPreset;
+  performancePreset: PerformancePreset;
+  backgroundTaskLimit: number;
+  proactiveResourceWarnings: boolean;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -46,7 +50,10 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   ttsSpeed: 1,
   ttsLatencyPreset: 'balanced',
   imageAutoGenerateOnAssistant: false,
-  imageDefaultPreset: 'preview_8gb'
+  imageDefaultPreset: 'preview_8gb',
+  performancePreset: '8gb_safe',
+  backgroundTaskLimit: 1,
+  proactiveResourceWarnings: true
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -68,6 +75,9 @@ const isTTSLatencyPreset = (value: unknown): value is TTSLatencyPreset =>
 
 const isImageDefaultPreset = (value: unknown): value is ImageDefaultPreset =>
   value === 'preview_8gb' || value === 'balanced_8gb' || value === 'high_8gb';
+
+const isPerformancePreset = (value: unknown): value is PerformancePreset =>
+  value === '8gb_safe' || value === 'balanced' || value === 'quality';
 
 const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -108,6 +118,19 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   imageDefaultPreset: isImageDefaultPreset(value.imageDefaultPreset)
     ? value.imageDefaultPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.imageDefaultPreset,
+  performancePreset: isPerformancePreset(value.performancePreset)
+    ? value.performancePreset
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.performancePreset,
+  backgroundTaskLimit: clampNumber(
+    value.backgroundTaskLimit,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit,
+    1,
+    3
+  ),
+  proactiveResourceWarnings: toBoolean(
+    value.proactiveResourceWarnings,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.proactiveResourceWarnings
+  ),
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -141,6 +164,9 @@ const persistSettings = (state: SettingsState) => {
     ttsLatencyPreset: state.ttsLatencyPreset,
     imageAutoGenerateOnAssistant: state.imageAutoGenerateOnAssistant,
     imageDefaultPreset: state.imageDefaultPreset,
+    performancePreset: state.performancePreset,
+    backgroundTaskLimit: state.backgroundTaskLimit,
+    proactiveResourceWarnings: state.proactiveResourceWarnings,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -202,6 +228,20 @@ function createSettingsStore() {
     },
     setImageDefaultPreset(imageDefaultPreset: ImageDefaultPreset) {
       save({ imageDefaultPreset });
+    },
+    setPerformancePreset(performancePreset: PerformancePreset) {
+      const patchByPreset: Record<PerformancePreset, Partial<MemoryReflectionSettings>> = {
+        '8gb_safe': { performancePreset, backgroundTaskLimit: 1, imageDefaultPreset: 'preview_8gb', contextBudgetPreset: 'gentle', ttsLatencyPreset: 'speed' },
+        balanced: { performancePreset, backgroundTaskLimit: 1, imageDefaultPreset: 'preview_8gb', contextBudgetPreset: 'balanced', ttsLatencyPreset: 'balanced' },
+        quality: { performancePreset, backgroundTaskLimit: 2, imageDefaultPreset: 'balanced_8gb', contextBudgetPreset: 'roomy', ttsLatencyPreset: 'quality' }
+      };
+      save(patchByPreset[performancePreset]);
+    },
+    setBackgroundTaskLimit(backgroundTaskLimit: number) {
+      save({ backgroundTaskLimit: Math.round(clampNumber(backgroundTaskLimit, DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit, 1, 3)) });
+    },
+    setProactiveResourceWarnings(proactiveResourceWarnings: boolean) {
+      save({ proactiveResourceWarnings });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

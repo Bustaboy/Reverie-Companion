@@ -337,3 +337,45 @@ def test_image_history_reloads_legacy_flat_items(tmp_path) -> None:
         assert reloaded.list_history("legacy-conv").items[0].job_id == job.job_id
 
     asyncio.run(run_test())
+
+
+def test_image_job_unloads_idle_auxiliary_models_before_generation(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        unloaded: list[str] = []
+        coordinator.unload_auxiliary_models = lambda reason: unloaded.append(reason) or ["orpheus_tts"]  # type: ignore[attr-defined]
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(ImageGenerateRequest(prompt="headroom portrait"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        assert unloaded == ["image_generation_start"]
+        phases = [event.phase for event in service._jobs[job.job_id].events]
+        assert "unloaded_auxiliary_models" in phases
+
+    asyncio.run(run_test())
+
+
+def test_image_job_exposes_resource_pressure_warning(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=1100)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(ImageGenerateRequest(prompt="tight vram portrait"))
+        await asyncio.sleep(0.03)
+        waiting = service.get_job(job.job_id)
+
+        assert waiting.status == ImageJobStatus.waiting_for_resources
+        assert waiting.pressure == "critical"
+        assert waiting.warning is not None
+        assert waiting.vram_free_mb == 1100
+
+        await service.cancel(job.job_id)
+
+    asyncio.run(run_test())

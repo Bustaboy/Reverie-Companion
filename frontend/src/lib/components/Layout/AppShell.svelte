@@ -8,6 +8,7 @@
   import { MemoryBrowser } from '$lib/components/Memory';
   import { SettingsPanel } from '$lib/components/Settings';
   import { VisualNovelStage } from '$lib/components/VisualNovel';
+  import { resourceStore } from '$lib/stores/resourceStore.svelte';
   import { visualNovelStore } from '$lib/stores/visualNovelStore';
   import { navigationItems, type NavigationItemId } from '$lib/config/navigation';
   import Sidebar from './Sidebar.svelte';
@@ -39,24 +40,41 @@
     <Sidebar activeSection={activeSection} onNavigate={navigate} />
   {/if}
   <main id="reverie-main" class="main-panel" tabindex="-1" aria-label="Reverie active workspace">
-    {#if activeSection === 'growth'}
-      <GrowthDashboard />
-    {:else if activeSection === 'journal'}
-      <JournalPanel />
-    {:else if activeSection === 'training'}
-      <PersonalLoRAPanel />
-    {:else if activeSection === 'encyclopedia'}
-      <CharacterEncyclopedia />
-    {:else if activeSection === 'memory'}
-      <MemoryBrowser />
-    {:else if activeSection === 'settings'}
-      <SettingsPanel />
-    {:else if activeSection === 'visual-novel'}
-      <VisualNovelStage onReturnToChat={returnToChat} />
-    {:else if activeSection === 'images'}
-      <ImageGallery />
-    {:else}
-      <ChatWindow />
+    {#if resourceStore.warningLabel}
+      <aside class="resource-warning" aria-live="polite">
+        <strong>8GB guardrail</strong>
+        <span>{resourceStore.warningLabel}</span>
+        <small>{resourceStore.compactLabel}</small>
+      </aside>
     {/if}
+    <svelte:boundary>
+      {#if activeSection === 'growth'}
+        <GrowthDashboard />
+      {:else if activeSection === 'journal'}
+        <JournalPanel />
+      {:else if activeSection === 'training'}
+        <PersonalLoRAPanel />
+      {:else if activeSection === 'encyclopedia'}
+        <CharacterEncyclopedia />
+      {:else if activeSection === 'memory'}
+        <MemoryBrowser />
+      {:else if activeSection === 'settings'}
+        <SettingsPanel />
+      {:else if activeSection === 'visual-novel'}
+        <VisualNovelStage onReturnToChat={returnToChat} />
+      {:else if activeSection === 'images'}
+        <ImageGallery />
+      {:else}
+        <ChatWindow />
+      {/if}
+      {#snippet failed(error, reset)}
+        <section class="panel-error" role="alert">
+          <p class="eyebrow">Graceful recovery</p>
+          <h2>This panel hit a local UI error.</h2>
+          <p>{error instanceof Error ? error.message : 'Reverie kept the app shell alive. Try reopening this panel or switching sections.'}</p>
+          <button type="button" onclick={reset}>Reload panel</button>
+        </section>
+      {/snippet}
+    </svelte:boundary>
   </main>
 </div>

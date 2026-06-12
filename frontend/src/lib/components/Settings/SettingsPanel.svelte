@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset } from '$lib/stores/settingsStore';
+  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset, type PerformancePreset } from '$lib/stores/settingsStore';
   import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
 
   const reflectionFrequencyOptions: Array<{
@@ -81,6 +81,32 @@
     { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops.' },
     { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail when VRAM is available; falls back safely.' },
     { value: 'high_8gb', label: 'High', description: 'Best local detail, still queued and 8GB-gated.' }
+  ];
+
+  const performancePresetOptions: Array<{
+    value: PerformancePreset;
+    label: string;
+    description: string;
+    detail: string;
+  }> = [
+    {
+      value: '8gb_safe',
+      label: '8GB Safe',
+      description: 'Prioritizes TTS responsiveness, preview images, gentle context, and one background task.',
+      detail: 'Best for RTX 4070 laptop defaults'
+    },
+    {
+      value: 'balanced',
+      label: 'Balanced',
+      description: 'Keeps the normal 8GB guardrails while allowing richer context when the machine is idle.',
+      detail: 'Recommended daily mode'
+    },
+    {
+      value: 'quality',
+      label: 'Quality',
+      description: 'Opts up to roomier context and more expressive voice/image quality after headroom checks.',
+      detail: 'Use when plugged in with thermal headroom'
+    }
   ];
 
   const ttsLatencyOptions: Array<{
@@ -635,6 +661,55 @@
           </div>
         </div>
       </section>
+    </article>
+
+    <article class="settings-card settings-wide performance-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Performance</span>
+        <h2>8GB resource mode</h2>
+        <p>Choose how aggressively Reverie protects VRAM when TTS, ComfyUI images, VN assets, and memory jobs coexist.</p>
+      </div>
+
+      <div class="option-grid" role="radiogroup" aria-label="Performance preset">
+        {#each performancePresetOptions as option}
+          <button
+            type="button"
+            class:active={$settingsStore.performancePreset === option.value}
+            aria-pressed={$settingsStore.performancePreset === option.value}
+            onclick={() => settingsStore.setPerformancePreset(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
+            <small>{option.detail}</small>
+          </button>
+        {/each}
+      </div>
+
+      <label class="range-setting">
+        <span>Background task limit <strong>{$settingsStore.backgroundTaskLimit}</strong></span>
+        <small>Caps non-interactive jobs like indexing, gallery refreshes, and media helpers so chat and voice stay responsive.</small>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="1"
+          value={$settingsStore.backgroundTaskLimit}
+          onchange={(event) => settingsStore.setBackgroundTaskLimit(Number((event.currentTarget as HTMLInputElement).value))}
+        />
+      </label>
+
+      <label class="checkbox-setting">
+        <input
+          type="checkbox"
+          checked={$settingsStore.proactiveResourceWarnings}
+          onchange={(event) => settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>Show proactive VRAM warnings and auto-downgrade explanations.</span>
+      </label>
+
+      <p class="performance-explainer">
+        TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.
+      </p>
     </article>
 
     <aside class="settings-trust-note" aria-label="Memory and reflection trust note">

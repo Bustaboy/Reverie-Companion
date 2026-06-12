@@ -581,6 +581,18 @@ class TTSService:
         self._context_router = TTSContextRouter(self._voice_manager)
         self._orpheus = OrpheusBackend(settings)
         self._piper = PiperBackend(settings)
+        resource_coordinator.register_auxiliary_unloader(
+            "orpheus_tts", self._unload_orpheus_for_headroom
+        )
+
+    def _unload_orpheus_for_headroom(self, reason: str) -> None:
+        """Release an idle Orpheus model when exclusive media needs VRAM."""
+
+        logger.info(
+            "Unloading idle Orpheus TTS model for local resource headroom",
+            extra={"reason": reason},
+        )
+        self._orpheus.unload()
 
     @property
     def settings(self) -> Settings:
