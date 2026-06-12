@@ -9,14 +9,17 @@
   let { compact = false, label = 'Voice playback' }: Props = $props();
 
   const statusLabel = $derived.by(() => {
-    if (!ttsStore.enabled) return 'TTS disabled';
-    if (ttsStore.bufferHealth === 'prebuffering') return `Pre-buffering · ${ttsStore.bufferedSeconds.toFixed(1)}s`;
+    if (ttsStore.bufferHealth === 'prebuffering') return `Pre-buffering · ${ttsStore.bufferedSeconds.toFixed(1)}s ready`;
     if (ttsStore.bufferHealth === 'rebuffering') return `Smoothing stream · ${ttsStore.currentVoiceName}`;
-    if (ttsStore.playbackState === 'loading') return 'Preparing voice';
-    if (ttsStore.playbackState === 'playing') return `Speaking · ${ttsStore.currentVoiceName}`;
-    if (ttsStore.playbackState === 'paused') return `Paused · ${ttsStore.currentVoiceName}`;
-    if (ttsStore.queueCount > 0) return `${ttsStore.queueCount} queued`;
-    return 'Voice ready';
+    return ttsStore.presenceLabel;
+  });
+
+  const detailLabel = $derived.by(() => {
+    if (ttsStore.error) return ttsStore.error;
+    if (ttsStore.bufferHealth === 'buffered-fallback') return 'Using safe buffered playback for this backend.';
+    if (ttsStore.bufferHealth === 'low') return 'Keeping the voice smooth while chunks arrive.';
+    if (ttsStore.queueCount > 0 && ttsStore.isBusy) return `${ttsStore.queueCount} more line${ttsStore.queueCount === 1 ? '' : 's'} waiting.`;
+    return ttsStore.announcement;
   });
 
   const progressStyle = $derived(`--tts-progress: ${(ttsStore.progress * 100).toFixed(1)}%`);
@@ -36,7 +39,13 @@
   };
 </script>
 
-<section class:compact class="audio-player" aria-label={label}>
+<section
+  class:compact
+  class:voice-active={ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing'}
+  class:voice-error={ttsStore.presenceState === 'error'}
+  class={`audio-player voice-state-${ttsStore.presenceState}`}
+  aria-label={label}
+>
   <div class:active={ttsStore.isSpeaking} class="voice-orb" aria-hidden="true">
     <span></span>
     <span></span>
@@ -45,7 +54,7 @@
 
   <div class:error={Boolean(ttsStore.error)} class="audio-player-copy">
     <p>{statusLabel}</p>
-    <small aria-live="polite">{ttsStore.error ?? ttsStore.announcement}</small>
+    <small aria-live="polite">{detailLabel}</small>
     <div class="tts-progress" aria-hidden="true" style={progressStyle}></div>
     {#if ttsStore.error}
       <button type="button" class="tts-error-action" onclick={() => ttsStore.clearError()}>Dismiss</button>
@@ -62,6 +71,8 @@
     >
       {#if ttsStore.playbackState === 'playing'}
         ❚❚
+      {:else if ttsStore.playbackState === 'loading'}
+        ◌
       {:else}
         ▶
       {/if}

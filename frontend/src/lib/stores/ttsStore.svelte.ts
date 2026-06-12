@@ -4,6 +4,7 @@ import { TTSServiceError, ttsService, type TTSStreamEvent } from '$lib/api/ttsSe
 import type { MessageTTSMetadata, TTSEmotionMetadata, TTSContextMetadata } from '$lib/types/chat';
 
 export type TTSPlaybackState = 'idle' | 'queued' | 'loading' | 'playing' | 'paused' | 'error';
+export type TTSPresenceState = 'off' | 'ready' | 'queued' | 'preparing' | 'speaking' | 'paused' | 'error';
 
 export interface TTSQueueItem {
   id: string;
@@ -26,6 +27,7 @@ interface ActiveAudio {
 
 const MAX_QUEUE_LENGTH = 3;
 const PROGRESS_TIMER_MS = 250;
+const FRONTEND_TTS_TEXT_SOFT_LIMIT = 1_800;
 
 const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
   if (voiceName?.trim()) return voiceName.trim();
@@ -40,6 +42,21 @@ const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
+const clipForSpeech = (text: string): { text: string; clipped: boolean } => {
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  if (normalized.length <= FRONTEND_TTS_TEXT_SOFT_LIMIT) {
+    return { text: normalized, clipped: false };
+  }
+
+  const boundary = Math.max(
+    normalized.lastIndexOf('.', FRONTEND_TTS_TEXT_SOFT_LIMIT),
+    normalized.lastIndexOf('!', FRONTEND_TTS_TEXT_SOFT_LIMIT),
+    normalized.lastIndexOf('?', FRONTEND_TTS_TEXT_SOFT_LIMIT)
+  );
+  const cutAt = boundary > FRONTEND_TTS_TEXT_SOFT_LIMIT * 0.55 ? boundary + 1 : FRONTEND_TTS_TEXT_SOFT_LIMIT;
+  return { text: `${normalized.slice(0, cutAt).trim()} …`, clipped: true };
+};
+
 const normalizeAudioError = (error: unknown): string => {
   if (error instanceof TTSServiceError && error.code === 'tts_cancelled') {
     return 'Speech playback was cancelled.';
@@ -47,10 +64,10 @@ const normalizeAudioError = (error: unknown): string => {
 
   if (error instanceof TTSServiceError) {
     if (error.code === 'tts_backend_unavailable') {
-      return 'No local voice backend is available right now. Text chat is safe; check Orpheus/Piper paths in settings.';
+      return 'No local voice backend is available right now. Text chat is safe; check Orpheus/Piper paths or let Piper handle fallback.';
     }
     if (error.code === 'tts_text_too_long') {
-      return 'That reply is too long for one voice line. Try playing a shorter message.';
+      return 'That reply is too long for one local voice line. Reverie kept the text intact; try a shorter passage.';
     }
     if (error.retryable) {
       return `${error.message} You can try again in a moment.`;
@@ -271,6 +288,35 @@ class TTSStore {
     return toFriendlyVoiceName(this.current?.voiceId, this.current?.voiceName);
   }
 
+  get presenceState(): TTSPresenceState {
+    if (!this.enabled) return 'off';
+    if (this.error || this.playbackState === 'error') return 'error';
+    if (this.playbackState === 'loading') return 'preparing';
+    if (this.playbackState === 'playing') return 'speaking';
+    if (this.playbackState === 'paused') return 'paused';
+    if (this.playbackState === 'queued' || this.queue.length > 0) return 'queued';
+    return 'ready';
+  }
+
+  get presenceLabel() {
+    switch (this.presenceState) {
+      case 'off':
+        return 'Voice off';
+      case 'preparing':
+        return `Voice warming · ${this.currentVoiceName}`;
+      case 'speaking':
+        return `Speaking · ${this.currentVoiceName}`;
+      case 'paused':
+        return `Voice paused · ${this.currentVoiceName}`;
+      case 'queued':
+        return `${this.queue.length} voice line${this.queue.length === 1 ? '' : 's'} queued`;
+      case 'error':
+        return 'Voice needs attention';
+      default:
+        return 'Voice ready';
+    }
+  }
+
   get queueCount() {
     return this.queue.length;
   }
@@ -336,8 +382,8 @@ class TTSStore {
   }
 
   enqueue(item: TTSQueueItem) {
-    const text = item.text.trim();
-    if (!this.enabled || !text) {
+    const clippedSpeech = clipForSpeech(item.text);
+    if (!this.enabled || !clippedSpeech.text) {
       return;
     }
 
@@ -346,8 +392,19 @@ class TTSStore {
     }
 
     this.error = null;
-    this.queue = [...this.queue, { ...item, text }].slice(-MAX_QUEUE_LENGTH);
-    this.announcement = `Queued speech with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`;
+    const clippedVisibleSpeech = item.visibleText ? clipForSpeech(item.visibleText) : null;
+    const queuedItem = {
+      ...item,
+      text: clippedSpeech.text,
+      visibleText: clippedVisibleSpeech?.text ?? item.visibleText
+    };
+    const withoutDuplicateMessage = queuedItem.messageId
+      ? this.queue.filter((candidate) => candidate.messageId !== queuedItem.messageId)
+      : this.queue;
+    this.queue = [...withoutDuplicateMessage, queuedItem].slice(-MAX_QUEUE_LENGTH);
+    this.announcement = clippedSpeech.clipped
+      ? `Queued the first part of this long reply with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`
+      : `Queued speech with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`;
 
     if (this.playbackState === 'idle' || this.playbackState === 'error') {
       void this.playNext();

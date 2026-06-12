@@ -222,7 +222,20 @@ Milestone 3 Task 2G completes the current Task 2 TTS arc with per-character fine
 
 Task 2A-2G summary: Reverie now has a local-first TTS architecture with Orpheus quality speech, Piper fallback, durable voice profiles and zero-shot clone references, context-aware speaker/narrator routing, deterministic emotion/prosody tagging, clean text vs. `tts_text` separation, streaming playback with buffer health, shared chat/VN AudioPlayer integration, per-character mood controls, and user-trust-focused fallback UX.
 
-### 3.10 Futa-Vision Integration Vision (Future)
+### 3.10 Final TTS Cleanup & Polish (Milestone 3 Task 2H)
+
+Milestone 3 Task 2H closes the Task 2 TTS system as a complete lightweight voice layer:
+
+- **Canonical request preparation** now lives behind one TTSService path for both normal and streaming synthesis, so visible-text cleaning, `tts_text` selection, context-aware routing, voice-profile resolution, deterministic tag injection, and configured text-length validation stay consistent. Overlong voice lines return stable `tts_text_too_long` details while chat text remains untouched.
+- **Rapid-message behavior** stays natural by keeping the frontend voice queue bounded, interrupting active speech on new auto-play responses, de-duplicating queued playback for the same message, and softly clipping very long replies before local synthesis so the UI stays responsive on 8GB systems.
+- **AudioPlayer polish** adds a shared voice presence state (`ready`, `queued`, `preparing`, `speaking`, `paused`, `error`), clearer backend/fallback/error copy, loading and stream-smoothing feedback, dismissible errors, and warm active styling without changing the underlying streaming/buffer-health architecture.
+- **Chat and VN feedback** now show subtle active-voice cues in the chat status pill, assistant message bubble, VN character layer, and VN dialogue panel. These cues remain CSS-only, respect the existing reduced-motion guards, and do not add any resident model or animation dependency.
+- **Voice settings integration** keeps clone setup and per-profile mood tuning in one local workflow: clone references remain lightweight local files, mood sliders explain what each scalar affects, and Piper fallback remains explicit for low-VRAM or unavailable-Orpheus paths.
+- **8GB robustness** remains preserved: no classifier model, no extra LLM pass, no startup voice model load, Orpheus still lazy-loads with VRAM guardrails, Piper remains the CPU fallback, streaming falls back to bounded WAV chunks, and frontend playback state is compact.
+
+**Task 2A–2H is complete.** Reverie’s final MVP TTS architecture is local-first, emotionally tagged, clean-text-safe, profile-aware, clone-ready, interruptible, fallback-safe, and polished across Chat, Settings, and Visual Novel mode while staying friendly to RTX 4070 8GB mobile hardware.
+
+### 3.11 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
@@ -366,7 +379,7 @@ Reverie now supports a stronger local voice pipeline on top of the Task 2A-2E TT
 - **Streaming V2 polish**: frontend playback now pre-buffers roughly 0.7 seconds of PCM before starting, tracks buffer health during playback, and inserts a gentle rebuffer delay when chunks arrive too slowly so voices avoid harsh stutter while still playing progressively. The backend streaming response uses no-transform/no-buffer headers and a compact NDJSON event helper for robust chunk/error delivery.
 - **Local data hygiene**: default root-level runtime data such as cloned reference audio is ignored by git so private voice clips and generated local stores stay out of source control.
 
-Advanced mood sliders and richer per-character voice direction remain deferred to Task 2G.
+Task 2G delivered advanced mood sliders; Task 2H completed final cleanup, active voice feedback, and robustness polish for the Task 2 TTS arc.
 
 ---
 

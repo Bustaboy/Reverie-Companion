@@ -184,6 +184,9 @@
       <div class="vn-speaker-row">
         <strong>{$visualNovelScene.manifest.characterName}</strong>
         <span>{growthModifier ? `${stateSummary} · ${growthCueLabel}` : stateSummary}</span>
+        {#if ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing'}
+          <em class="vn-voice-cue">{ttsStore.presenceLabel}</em>
+        {/if}
       </div>
       <p>{latestAssistantLine}</p>
       {#if $visualNovelScene.usedFallback}

@@ -493,7 +493,8 @@
                 </div>
 
                 <label class="range-setting mood-range">
-                  <span>Baseline Expressiveness <strong>{moodFor(profile).baseline_expressiveness.toFixed(2)}×</strong></span>
+                  <span>Baseline expressiveness <strong>{moodFor(profile).baseline_expressiveness.toFixed(2)}×</strong></span>
+                  <small>How animated this voice feels before scene emotion is added.</small>
                   <input
                     type="range"
                     min="0"
@@ -505,7 +506,8 @@
                 </label>
 
                 <label class="range-setting mood-range">
-                  <span>Emotional Sensitivity <strong>{moodFor(profile).emotional_sensitivity.toFixed(2)}×</strong></span>
+                  <span>Emotional sensitivity <strong>{moodFor(profile).emotional_sensitivity.toFixed(2)}×</strong></span>
+                  <small>How quickly memories, comfort, tension, and affection color delivery.</small>
                   <input
                     type="range"
                     min="0"
@@ -517,7 +519,8 @@
                 </label>
 
                 <label class="range-setting mood-range">
-                  <span>NSFW Intensity <strong>{moodFor(profile).nsfw_intensity.toFixed(2)}×</strong></span>
+                  <span>NSFW intensity <strong>{moodFor(profile).nsfw_intensity.toFixed(2)}×</strong></span>
+                  <small>How strongly intimate scene cues affect speech tags.</small>
                   <input
                     type="range"
                     min="0"
@@ -545,7 +548,7 @@
         <div class="setting-copy compact">
           <span class="setting-kicker">Clone Voice</span>
           <h3 id="clone-voice-title">Zero-shot voice profile</h3>
-          <p>Record or upload a clear 6-15 second reference. Reverie stores the clip locally and only asks Orpheus to use it when speech is generated.</p>
+          <p>Record or upload a clear 6-15 second reference. Reverie stores the clip locally, links it to the same mood controls above, and only asks Orpheus to use it when speech is generated.</p>
         </div>
 
         <div class="clone-voice-controls">
@@ -565,7 +568,7 @@
             {:else}
               <button type="button" class="record-button" onclick={startRecording}>Record reference</button>
             {/if}
-            <span>Keep it natural, quiet, and short.</span>
+            <span>Keep it natural, quiet, and short. Piper still remains available if Orpheus cannot fit in VRAM.</span>
           </div>
 
           {#if cloneRecordingUrl}
@@ -573,7 +576,7 @@
           {/if}
 
           <button type="button" class="create-voice-button" disabled={!cloneAudio || !cloneName.trim() || isCreatingVoice} onclick={createVoiceProfile}>
-            {isCreatingVoice ? 'Creating voice profile…' : 'Create Voice Profile from Recording'}
+            {isCreatingVoice ? 'Creating voice profile…' : 'Create local voice profile'}
           </button>
 
           <div class="clone-status" aria-live="polite">

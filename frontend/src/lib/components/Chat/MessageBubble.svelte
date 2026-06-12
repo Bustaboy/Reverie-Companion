@@ -19,6 +19,10 @@
   });
 
   const canPlayTTS = $derived(message.role === 'assistant' && message.status !== 'streaming' && message.content.trim().length > 0);
+  const isCurrentVoiceLine = $derived(
+    ttsStore.current?.messageId === message.id &&
+      (ttsStore.presenceState === 'preparing' || ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'paused')
+  );
 
   const playMessageAudio = () => {
     ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
@@ -39,6 +43,7 @@
   class:from-assistant={message.role === 'assistant'}
   class:is-streaming={message.status === 'streaming'}
   class:has-error={message.status === 'error'}
+  class:voice-active={isCurrentVoiceLine}
   class="message-row"
 >
   <div class="avatar" aria-hidden="true">
@@ -57,8 +62,8 @@
           title={`Play with ${voiceLabel}`}
           onclick={playMessageAudio}
         >
-          <span aria-hidden="true">▶</span>
-          <span>{voiceLabel}</span>
+          <span aria-hidden="true">{isCurrentVoiceLine ? '▰' : '▶'}</span>
+          <span>{isCurrentVoiceLine ? ttsStore.presenceState === 'paused' ? 'Paused' : 'Speaking' : voiceLabel}</span>
         </button>
       {/if}
     </div>
