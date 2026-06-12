@@ -19,3 +19,5 @@ export type { JournalEntriesResponse, JournalEntry, JournalEntryMetadata, Reflec
 
 export { GrowthService, GrowthServiceError, growthService, type GrowthServiceOptions } from './growthService';
 export type { LoRATrainingExample, LoRATrainingJob, PersonalLoRACounts, PersonalLoRASettings, PersonalLoRAStatusResponse } from '$lib/types/growth';
+
+export { TtsService, TtsServiceError, ttsService, type TtsAudioFormat, type TtsContext, type TtsGenerateRequest, type TtsGenerateResponse, type TtsQualityPreference, type TtsServiceOptions } from './ttsService';

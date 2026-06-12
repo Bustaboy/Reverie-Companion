@@ -1,3 +1,4 @@
+import type { TtsContext } from '$lib/api/ttsService';
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 export type ChatRole = 'user' | 'assistant';
@@ -35,6 +36,15 @@ export interface GrowthNotification {
   controls?: string[];
 }
 
+export interface ChatTtsMetadata {
+  text: string;
+  ttsText?: string;
+  voiceId?: string;
+  voiceName?: string;
+  context?: TtsContext;
+  emotion?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -44,4 +54,5 @@ export interface ChatMessage {
   error?: string;
   memoryContext?: MemoryContext;
   visualState?: VisualStateMetadata;
+  tts?: ChatTtsMetadata;
 }

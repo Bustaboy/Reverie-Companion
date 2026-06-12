@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
-import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { TtsContext } from '$lib/api/ttsService';
+import type { ChatTtsMetadata, GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
@@ -48,6 +49,8 @@ export interface ChatResponse {
   growthNotification?: GrowthNotification;
   /** Optional model/backend-provided visual state metadata for VN mode. */
   visualState?: VisualStateMetadata;
+  /** Optional clean/TTS-ready text and resolved voice metadata for frontend playback. */
+  tts?: ChatTtsMetadata;
 }
 
 export interface ChatStreamOptions {
@@ -87,6 +90,8 @@ export interface ChatStreamDoneEvent {
   growthNotification?: GrowthNotification;
   /** Optional model/backend-provided visual state metadata for VN mode. */
   visualState?: VisualStateMetadata;
+  /** Optional clean/TTS-ready text and resolved voice metadata for frontend playback. */
+  tts?: ChatTtsMetadata;
 }
 
 export type ChatStreamEvent =
@@ -122,6 +127,23 @@ interface BackendGrowthNotificationBody {
   growthNotification?: unknown;
 }
 
+interface BackendTtsMetadataBody {
+  text?: unknown;
+  clean_text?: unknown;
+  cleanText?: unknown;
+  tts_text?: unknown;
+  ttsText?: unknown;
+  voice_id?: unknown;
+  voiceId?: unknown;
+  resolved_voice_id?: unknown;
+  resolvedVoiceId?: unknown;
+  voice_name?: unknown;
+  voiceName?: unknown;
+  tts_context?: unknown;
+  ttsContext?: unknown;
+  emotion?: unknown;
+}
+
 interface BackendVisualStateBody {
   visual_state?: unknown;
   visualState?: unknown;
@@ -129,7 +151,7 @@ interface BackendVisualStateBody {
   metadata?: unknown;
 }
 
-interface BackendMemoryContextBody extends BackendGrowthNotificationBody, BackendVisualStateBody {
+interface BackendMemoryContextBody extends BackendGrowthNotificationBody, BackendVisualStateBody, BackendTtsMetadataBody {
   memory_context?: unknown;
   memoryContext?: unknown;
   memory?: unknown;
@@ -378,7 +400,8 @@ export class ChatService {
       ...body,
       memoryContext: this.extractMemoryContext(body),
       growthNotification: this.extractGrowthNotification(body),
-      visualState: this.extractVisualState(body)
+      visualState: this.extractVisualState(body),
+      tts: this.extractTtsMetadata(body)
     };
   }
 
@@ -509,7 +532,8 @@ export class ChatService {
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
         growthNotification: this.extractGrowthNotification(body),
-        visualState: this.extractVisualState(body)
+        visualState: this.extractVisualState(body),
+        tts: this.extractTtsMetadata(body)
       };
     }
 
@@ -524,6 +548,28 @@ export class ChatService {
       event: 'memory',
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
+    };
+  }
+
+  private extractTtsMetadata(body: BackendTtsMetadataBody | Record<string, unknown>): ChatTtsMetadata | undefined {
+    const cleanText = this.normalizeText(body.text ?? body.clean_text ?? body.cleanText);
+    const ttsText = this.normalizeText(body.tts_text ?? body.ttsText);
+    const voiceId = this.normalizeText(body.voice_id ?? body.voiceId ?? body.resolved_voice_id ?? body.resolvedVoiceId);
+    const context = body.tts_context ?? body.ttsContext;
+    const emotion = body.emotion;
+    const text = cleanText ?? ttsText;
+
+    if (!text) {
+      return undefined;
+    }
+
+    return {
+      text,
+      ttsText,
+      voiceId,
+      voiceName: this.normalizeText(body.voice_name ?? body.voiceName),
+      context: this.isRecord(context) ? (context as TtsContext) : undefined,
+      emotion: this.isRecord(emotion) ? emotion : undefined
     };
   }
 

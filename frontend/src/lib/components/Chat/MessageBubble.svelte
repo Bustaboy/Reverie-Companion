@@ -1,5 +1,6 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
 
@@ -8,6 +9,12 @@
   }
 
   let { message }: Props = $props();
+
+  const canPlayTts = $derived(message.role === 'assistant' && message.status !== 'streaming' && message.content.trim().length > 0);
+
+  const playMessage = () => {
+    ttsStore.playMessage(message, 'chat');
+  };
 
   const memoryHint = $derived.by(() => {
     if (message.role !== 'assistant' || !message.memoryContext?.used) {
@@ -34,6 +41,11 @@
     <div class="message-meta">
       <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
+      {#if canPlayTts}
+        <button type="button" class="message-tts-button" onclick={playMessage} aria-label="Play this Reverie message aloud">
+          ▶ Voice
+        </button>
+      {/if}
     </div>
 
     <div class="bubble">

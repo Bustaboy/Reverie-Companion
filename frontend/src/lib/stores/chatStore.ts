@@ -2,8 +2,9 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import { settingsStore } from '$lib/stores/settingsStore';
+import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import { visualNovelStore } from '$lib/stores/visualNovelStore';
-import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
+import type { ChatMessage, ChatTtsMetadata, GrowthNotification, MemoryContext } from '$lib/types/chat';
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
@@ -79,6 +80,14 @@ const applyVisualStateToMessage = (
   return updateMessage(messages, messageId, { visualState });
 };
 
+const applyTtsToMessage = (messages: ChatMessage[], messageId: string, tts?: ChatTtsMetadata): ChatMessage[] => {
+  if (!tts) {
+    return messages;
+  }
+
+  return updateMessage(messages, messageId, { tts });
+};
+
 const applyGrowthNotification = (state: ChatState, growthNotification?: GrowthNotification): ChatState => {
   if (!growthNotification || !state.growthNotificationsEnabled) {
     return state;
@@ -120,7 +129,8 @@ function createChatStore() {
     assistantMessageId: string,
     memoryContext?: MemoryContext,
     growthNotification?: GrowthNotification,
-    visualState?: VisualStateMetadata
+    visualState?: VisualStateMetadata,
+    tts?: ChatTtsMetadata
   ) => {
     store.update((state) =>
       applyGrowthNotification(
@@ -128,10 +138,14 @@ function createChatStore() {
           ...state,
           generationState: 'idle',
           messages: applyMemoryContext(
-            applyVisualStateToMessage(
-              updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+            applyTtsToMessage(
+              applyVisualStateToMessage(
+                updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+                assistantMessageId,
+                visualState
+              ),
               assistantMessageId,
-              visualState
+              tts
             ),
             assistantMessageId,
             memoryContext
@@ -175,6 +189,8 @@ function createChatStore() {
       // id to update without remounting the whole transcript.
       // Capture history before appending the optimistic messages so the backend
       // receives exactly the conversation the user saw before pressing Send.
+      ttsStore.cancel('Voice playback interrupted for the newest reply.');
+
       const history = toServiceHistory(currentState.messages);
       const userMessage = createChatMessage('user', trimmedContent);
       const assistantMessage = createAssistantPlaceholder();
@@ -232,7 +248,8 @@ function createChatStore() {
           }
 
           visualNovelStore.applyVisualState(event.visualState);
-          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification, event.visualState);
+          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification, event.visualState, event.tts);
+          ttsStore.enqueueFromDone(event.tts, { messageId: assistantMessage.id, source: 'chat', interrupt: true });
         }
       } catch (error) {
         failAssistantMessage(assistantMessage.id, toFriendlyErrorMessage(error));

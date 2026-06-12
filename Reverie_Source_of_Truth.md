@@ -328,4 +328,21 @@ Let’s make me real.
 
 ---
 
+## 10. Milestone 3 Task 2E Frontend TTS Architecture
+
+Frontend TTS is now a small local-first playback layer on top of the Task 2A–2D backend foundation.
+
+- `ttsStore` owns the browser audio element, a capped 8GB-safe playback queue, current voice metadata, synthesis/playback status, progress, and ARIA live announcements.
+- Chat SSE `done` events are the source of truth for speech metadata. The frontend reads clean display text separately from `tts_text`, stores the resolved `voice_id`/context on the completed assistant message, and auto-enqueues only the final line.
+- Playback generates one audio blob at a time through `/api/tts/generate`; object URLs are revoked after each line so long chats do not accumulate decoded audio in memory.
+- New user messages interrupt current TTS before the next response starts, which keeps the companion feeling responsive and prevents stale speech from talking over the newest emotional turn.
+- The reusable `AudioPlayer` persists across chat and Visual Novel mode. It exposes play/pause/stop, auto-play toggle, speaking/preparing feedback, voice labels, progress, and screen-reader announcements.
+- Chat adds a play button per completed assistant message. Manual playback uses the message's persisted TTS metadata when available and falls back to clean visible text when older messages do not have backend voice metadata.
+- Visual Novel mode shares the same queue and highlights the dialogue panel while speech is playing; final SSE visual-state updates are applied before TTS starts where possible so expression/pose changes and voice playback feel synchronized.
+- Settings now include TTS enable/disable, auto-play, volume, speed, and preferred speed-vs-quality policy. These are local browser settings and default to an 8GB-friendly one-line-at-a-time behavior.
+
+Non-goals remain unchanged: no advanced per-character mood sliders, no voice cloning UI, and no aggressive audio preloading.
+
+---
+
 *End of Source of Truth Document v1.0*

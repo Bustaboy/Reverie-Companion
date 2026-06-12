@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { chatStore } from '$lib/stores/chatStore';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { visualNovelScene, visualNovelStore } from '$lib/stores/visualNovelStore';
   import type { ResolvedVisualLayer, VisualAssetRef } from '$lib/types/visualNovel';
 
@@ -10,13 +11,21 @@
 
   let { onReturnToChat }: Props = $props();
 
-  const latestAssistantLine = $derived.by(() => {
-    const assistantMessage = [...$chatStore.messages]
+  const latestAssistantMessage = $derived.by(() =>
+    [...$chatStore.messages]
       .reverse()
-      .find((message) => message.role === 'assistant' && message.content.trim().length > 0);
+      .find((message) => message.role === 'assistant' && message.content.trim().length > 0)
+  );
 
-    return assistantMessage?.content.trim() ?? 'Reverie settles into the quiet, ready for the next moment with you.';
-  });
+  const latestAssistantLine = $derived(
+    latestAssistantMessage?.content.trim() ?? 'Reverie settles into the quiet, ready for the next moment with you.'
+  );
+
+  const playLatestLine = () => {
+    if (latestAssistantMessage) {
+      ttsStore.playMessage(latestAssistantMessage, 'visual-novel');
+    }
+  };
 
   const frameSignature = (asset: VisualAssetRef): string =>
     asset.frame
@@ -78,6 +87,7 @@
 
 <section
   class:full-immersive={$visualNovelStore.fullImmersive}
+  class:speaking={ttsStore.status === 'playing'}
   class="visual-novel-stage"
   aria-label="Visual novel mode"
 >
@@ -181,8 +191,16 @@
       <div class="vn-speaker-row">
         <strong>{$visualNovelScene.manifest.characterName}</strong>
         <span>{growthModifier ? `${stateSummary} · ${growthCueLabel}` : stateSummary}</span>
+        {#if ttsStore.status === 'playing'}
+          <em aria-label={`Speaking with ${ttsStore.currentVoiceName}`}>Speaking · {ttsStore.currentVoiceName}</em>
+        {/if}
       </div>
       <p>{latestAssistantLine}</p>
+      {#if latestAssistantMessage}
+        <button type="button" class="vn-voice-button" onclick={playLatestLine} aria-label="Play current visual novel line aloud">
+          Play line aloud
+        </button>
+      {/if}
       {#if $visualNovelScene.usedFallback}
         <small>Using safe fallback visuals until every authored layer is available.</small>
       {/if}

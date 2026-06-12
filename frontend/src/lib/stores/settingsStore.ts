@@ -4,6 +4,7 @@ import { get, writable } from 'svelte/store';
 export type ReflectionFrequency = 'low' | 'balanced' | 'high';
 export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
 export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
+export type TtsQualityPreference = 'quality' | 'speed';
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -12,6 +13,11 @@ export interface MemoryReflectionSettings {
   reflectionSensitivity: ReflectionSensitivity;
   growthNotificationsEnabled: boolean;
   contextBudgetPreset: ContextBudgetPreset;
+  ttsEnabled: boolean;
+  ttsAutoPlay: boolean;
+  ttsVolume: number;
+  ttsSpeed: number;
+  ttsQualityPreference: TtsQualityPreference;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -22,7 +28,7 @@ type PersistedSettings = Partial<MemoryReflectionSettings> & {
   savedAt?: string | null;
 };
 
-const STORAGE_KEY = 'reverie.memoryReflectionSettings.v1';
+const STORAGE_KEY = 'reverie.memoryReflectionSettings.v2';
 
 export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   longTermMemoryEnabled: true,
@@ -30,7 +36,12 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   reflectionFrequency: 'balanced',
   reflectionSensitivity: 'balanced',
   growthNotificationsEnabled: true,
-  contextBudgetPreset: 'balanced'
+  contextBudgetPreset: 'balanced',
+  ttsEnabled: true,
+  ttsAutoPlay: true,
+  ttsVolume: 0.86,
+  ttsSpeed: 1,
+  ttsQualityPreference: 'speed'
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -47,7 +58,13 @@ const isReflectionSensitivity = (value: unknown): value is ReflectionSensitivity
 const isContextBudgetPreset = (value: unknown): value is ContextBudgetPreset =>
   value === 'gentle' || value === 'balanced' || value === 'roomy';
 
+const isTtsQualityPreference = (value: unknown): value is TtsQualityPreference =>
+  value === 'quality' || value === 'speed';
+
 const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
+
+const clampNumber = (value: unknown, fallback: number, min: number, max: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 
 const normalizePersistedSettings = (value: PersistedSettings): SettingsState => ({
   longTermMemoryEnabled: toBoolean(
@@ -68,6 +85,13 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   contextBudgetPreset: isContextBudgetPreset(value.contextBudgetPreset)
     ? value.contextBudgetPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.contextBudgetPreset,
+  ttsEnabled: toBoolean(value.ttsEnabled, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsEnabled),
+  ttsAutoPlay: toBoolean(value.ttsAutoPlay, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsAutoPlay),
+  ttsVolume: clampNumber(value.ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1),
+  ttsSpeed: clampNumber(value.ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35),
+  ttsQualityPreference: isTtsQualityPreference(value.ttsQualityPreference)
+    ? value.ttsQualityPreference
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsQualityPreference,
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -94,6 +118,11 @@ const persistSettings = (state: SettingsState) => {
     reflectionSensitivity: state.reflectionSensitivity,
     growthNotificationsEnabled: state.growthNotificationsEnabled,
     contextBudgetPreset: state.contextBudgetPreset,
+    ttsEnabled: state.ttsEnabled,
+    ttsAutoPlay: state.ttsAutoPlay,
+    ttsVolume: state.ttsVolume,
+    ttsSpeed: state.ttsSpeed,
+    ttsQualityPreference: state.ttsQualityPreference,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -134,6 +163,21 @@ function createSettingsStore() {
     },
     setContextBudgetPreset(contextBudgetPreset: ContextBudgetPreset) {
       save({ contextBudgetPreset });
+    },
+    setTtsEnabled(enabled: boolean) {
+      save({ ttsEnabled: enabled });
+    },
+    setTtsAutoPlay(enabled: boolean) {
+      save({ ttsAutoPlay: enabled });
+    },
+    setTtsVolume(ttsVolume: number) {
+      save({ ttsVolume: clampNumber(ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1) });
+    },
+    setTtsSpeed(ttsSpeed: number) {
+      save({ ttsSpeed: clampNumber(ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35) });
+    },
+    setTtsQualityPreference(ttsQualityPreference: TtsQualityPreference) {
+      save({ ttsQualityPreference });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

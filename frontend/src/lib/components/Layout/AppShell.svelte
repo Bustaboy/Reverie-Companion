@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { AudioPlayer } from '$lib/components/Audio';
   import { ChatWindow } from '$lib/components/Chat';
   import { JournalPanel } from '$lib/components/Journal';
   import { PersonalLoRAPanel } from '$lib/components/Growth';
@@ -38,4 +39,5 @@
       <ChatWindow />
     {/if}
   </main>
+  <AudioPlayer />
 </div>
