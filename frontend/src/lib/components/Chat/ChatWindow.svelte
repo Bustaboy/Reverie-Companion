@@ -3,14 +3,17 @@
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
 
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
   };
 
-  const statusLabel = $derived(
-    $chatStore.generationState === 'idle' ? 'Local backend ready' : 'Reverie is responding'
-  );
+  const statusLabel = $derived.by(() => {
+    if ($chatStore.generationState !== 'idle') return 'Reverie is responding';
+    if (ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing') return ttsStore.presenceLabel;
+    return 'Local backend ready';
+  });
 
   const dismissError = () => {
     chatStore.clearError();
@@ -33,7 +36,12 @@
       <p class="subtitle">A warm, offline companion interface built for long conversations.</p>
     </div>
 
-    <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
+    <div
+      class:streaming={$chatStore.generationState !== 'idle'}
+      class:voice-active={ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing'}
+      class="status-pill"
+      aria-label="Companion status"
+    >
       <span></span>
       {statusLabel}
     </div>

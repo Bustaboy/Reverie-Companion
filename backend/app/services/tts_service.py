@@ -600,37 +600,15 @@ class TTSService:
     ) -> TTSGenerationResult:
         """Generate speech from text using context-aware voice routing and tags."""
 
-        visible_text = emotion_engine.strip_emotion_tags(text.strip())
-        try:
-            routing = self._context_router.route(
-                text=visible_text or (tts_text or text),
-                context=context,
-                voice_id=voice_id,
-                character_id=character_id,
-            )
-        except VoiceManagerError as exc:
-            raise TTSServiceError(
-                "Requested voice profile could not be resolved.",
-                code=exc.code,
-                retryable=False,
-                details=exc.details,
-            ) from exc
-        normalized_text = (
-            tts_text.strip()
-            if tts_text and tts_text.strip()
-            else emotion_engine.analyze_and_tag(
-                text=visible_text, tts_context=routing.context
-            ).tts_text
+        _visible_text, normalized_text, routing = self._prepare_request(
+            text=text,
+            voice_id=voice_id,
+            character_id=character_id,
+            context=context,
+            tts_text=tts_text,
         )
         resolved_voice_id = routing.backend_voice_id
         response_voice_id = routing.voice_profile.voice_id
-        if len(normalized_text) > self._settings.tts_max_text_chars:
-            raise TTSServiceError(
-                "TTS text exceeds the configured maximum length.",
-                code="tts_text_too_long",
-                retryable=False,
-                details={"max_chars": self._settings.tts_max_text_chars},
-            )
 
         errors: list[dict[str, object]] = []
         for backend, fallback_used in self._backend_order():
@@ -840,14 +818,22 @@ class TTSService:
                 text=visible_text, tts_context=routing.context
             ).tts_text
         )
-        if len(normalized_text) > self._settings.tts_max_text_chars:
-            raise TTSServiceError(
-                "TTS text exceeds the configured maximum length.",
-                code="tts_text_too_long",
-                retryable=False,
-                details={"max_chars": self._settings.tts_max_text_chars},
-            )
+        self._validate_text_length(normalized_text)
         return visible_text, normalized_text, routing
+
+    def _validate_text_length(self, text: str) -> None:
+        """Keep each synthesis request bounded for local latency and 8GB safety."""
+
+        max_chars = self._settings.tts_max_text_chars
+        if len(text) <= max_chars:
+            return
+
+        raise TTSServiceError(
+            "This voice line is too long to synthesize at once.",
+            code="tts_text_too_long",
+            retryable=False,
+            details={"max_chars": max_chars, "actual_chars": len(text)},
+        )
 
     def _backend_order(self) -> list[tuple[TTSBackend, bool]]:
         primary = self._settings.tts_primary_backend
