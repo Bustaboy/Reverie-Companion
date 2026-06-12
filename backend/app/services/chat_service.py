@@ -98,7 +98,10 @@ class ChatService:
         response = await self._ollama_client.chat(
             prepared_request, request_id=request_id
         )
-        return self._attach_growth_notification(response, growth_context.growth_notification)
+        response = self._attach_growth_notification(
+            response, growth_context.growth_notification
+        )
+        return self._attach_tts_context(response, request)
 
     def _attach_growth_notification(
         self,
@@ -110,6 +113,15 @@ class ChatService:
         if growth_notification is None:
             return response
         return response.model_copy(update={"growth_notification": growth_notification})
+
+    def _attach_tts_context(
+        self, response: ChatResponse, request: ChatRequest
+    ) -> ChatResponse:
+        """Echo chat/VN TTS routing context for future frontend voice playback."""
+
+        if request.tts_context is None:
+            return response
+        return response.model_copy(update={"tts_context": request.tts_context})
 
     async def stream_chat(
         self,
@@ -498,12 +510,37 @@ class ChatService:
                 yield frame
                 continue
 
-            yield self._growth_orchestrator.inject_reactivity_into_done_sse(
+            routed_frame = self._growth_orchestrator.inject_reactivity_into_done_sse(
                 frame,
                 request=request,
                 assistant_response="".join(assistant_chunks),
                 growth_context=growth_context,
             )
+            yield self._inject_tts_context_into_done_sse(routed_frame, request)
+
+    def _inject_tts_context_into_done_sse(self, frame: str, request: ChatRequest) -> str:
+        """Attach caller-provided TTS context to final stream metadata."""
+
+        if request.tts_context is None or "event: done" not in frame:
+            return frame
+
+        data_lines: list[str] = []
+        other_lines: list[str] = []
+        for line in frame.splitlines():
+            if line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").strip())
+            else:
+                other_lines.append(line)
+
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            payload = {"done": True}
+
+        if not isinstance(payload, dict):
+            payload = {"done": True}
+        payload["tts_context"] = request.tts_context.model_dump()
+        return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
 
     def _extract_sse_content(self, frame: str) -> str:
         """Read token content from one SSE frame without changing the stream."""

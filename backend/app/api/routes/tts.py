@@ -49,13 +49,20 @@ async def generate_tts(
     """
 
     request_id = str(uuid4())
+    context = request.context
     voice_id = request.voice_id
     logger.info(
         "Received TTS generation request",
         extra={
             "request_id": request_id,
             "voice_id": voice_id,
-            "character_id": request.character_id,
+            "character_id": (
+                context.character_id if context is not None else request.character_id
+            ),
+            "tts_context_mode": context.mode if context is not None else None,
+            "tts_context_is_narration": (
+                context.is_narration if context is not None else None
+            ),
             "stream": request.stream,
             "text_chars": len(request.text),
         },
@@ -66,6 +73,7 @@ async def generate_tts(
             text=request.text,
             voice_id=voice_id,
             character_id=request.character_id,
+            context=context,
             audio_format=request.audio_format,
             request_id=request_id,
         )

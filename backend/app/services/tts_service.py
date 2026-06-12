@@ -23,7 +23,9 @@ from time import perf_counter
 from typing import Protocol
 
 from app.core.config import Settings
-from app.services.voice_manager import VoiceManager, VoiceProfileNotFound
+from app.models.tts import TTSContext
+from app.services.tts_context_router import TTSContextRouter
+from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +409,7 @@ class TTSService:
         self._settings = settings
         self._voice_manager = voice_manager or VoiceManager(settings)
         self._voice_manager.ensure_default_narrator_voice()
+        self._context_router = TTSContextRouter(self._voice_manager)
         self._orpheus = OrpheusBackend(settings)
         self._piper = PiperBackend(settings)
 
@@ -422,27 +425,29 @@ class TTSService:
         text: str,
         voice_id: str | None = None,
         character_id: str | None = None,
+        context: TTSContext | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> TTSGenerationResult:
-        """Generate speech from text with profile-aware Orpheus/Piper fallback."""
+        """Generate speech from text using context-aware voice routing."""
 
         normalized_text = text.strip()
         try:
-            voice_profile = self._voice_manager.resolve_tts_voice_profile(
-                voice_id=voice_id, character_id=character_id
+            routing = self._context_router.route(
+                text=normalized_text,
+                context=context,
+                voice_id=voice_id,
+                character_id=character_id,
             )
-        except VoiceProfileNotFound as exc:
+        except VoiceManagerError as exc:
             raise TTSServiceError(
-                "Requested voice profile was not found.",
+                "Requested voice profile could not be resolved.",
                 code=exc.code,
                 retryable=False,
                 details=exc.details,
             ) from exc
-        resolved_voice_id = self._voice_manager.backend_voice_id_for_profile(
-            voice_profile
-        )
-        response_voice_id = voice_profile.voice_id
+        resolved_voice_id = routing.backend_voice_id
+        response_voice_id = routing.voice_profile.voice_id
         if len(normalized_text) > self._settings.tts_max_text_chars:
             raise TTSServiceError(
                 "TTS text exceeds the configured maximum length.",
@@ -478,6 +483,9 @@ class TTSService:
                         "request_id": request_id,
                         "backend": result.backend,
                         "voice_id": result.voice_id,
+                        "tts_context_mode": routing.context.mode,
+                        "tts_is_narration": routing.is_narration,
+                        "tts_route_reason": routing.reason,
                         "fallback_used": result.fallback_used,
                         "audio_bytes": len(result.audio_bytes),
                     },
@@ -519,6 +527,7 @@ class TTSService:
         text: str,
         voice_id: str | None = None,
         character_id: str | None = None,
+        context: TTSContext | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> AsyncIterator[bytes]:
@@ -533,6 +542,7 @@ class TTSService:
             text=text,
             voice_id=voice_id,
             character_id=character_id,
+            context=context,
             audio_format=audio_format,
             request_id=request_id,
         )
