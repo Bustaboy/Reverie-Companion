@@ -1,5 +1,7 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
@@ -19,6 +21,9 @@
   });
 
   const canPlayTTS = $derived(message.role === 'assistant' && message.status !== 'streaming' && message.content.trim().length > 0);
+  const canGenerateImage = $derived(message.status !== 'streaming' && message.content.trim().length > 0);
+  const imageJobs = $derived(imageGenerationStore.jobsForMessage(message.id));
+  const imageBusy = $derived(imageJobs.some((job) => job.status === 'queued' || job.status === 'waiting_for_resources' || job.status === 'paused' || job.status === 'running'));
   const isCurrentVoiceLine = $derived(
     ttsStore.current?.messageId === message.id &&
       (ttsStore.presenceState === 'preparing' || ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'paused')
@@ -26,6 +31,14 @@
 
   const playMessageAudio = () => {
     ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
+  };
+
+  const generateImage = () => {
+    imageGenerationStore.generateFromMessage(message);
+  };
+
+  const cancelImage = (jobId: string) => {
+    void imageGenerationStore.cancel(jobId);
   };
 
   const memoryHint = $derived.by(() => {
@@ -54,6 +67,19 @@
     <div class="message-meta">
       <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
+      {#if canGenerateImage}
+        <button
+          type="button"
+          class="message-image-button"
+          aria-label="Generate an image from this message"
+          title="Generate an image from this message"
+          disabled={imageBusy}
+          onclick={generateImage}
+        >
+          <span aria-hidden="true">✦</span>
+          <span>{imageBusy ? 'Composing' : 'Generate image'}</span>
+        </button>
+      {/if}
       {#if canPlayTTS}
         <button
           type="button"
@@ -89,6 +115,14 @@
         {/if}
       {:else}
         <p>{message.content}</p>
+      {/if}
+
+      {#if imageJobs.length > 0}
+        <div class="message-image-stack" aria-live="polite">
+          {#each imageJobs as job (job.job_id)}
+            <ImageJobCard {job} onCancel={() => cancelImage(job.job_id)} />
+          {/each}
+        </div>
       {/if}
     </div>
   </div>

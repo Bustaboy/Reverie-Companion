@@ -1,7 +1,9 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
   import { AudioPlayer } from '$lib/components/TTS';
   import { chatStore } from '$lib/stores/chatStore';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { visualNovelScene, visualNovelStore } from '$lib/stores/visualNovelStore';
   import type { ResolvedVisualLayer, VisualAssetRef } from '$lib/types/visualNovel';
@@ -64,9 +66,25 @@
   const growthIntensityStyle = $derived(
     growthModifier ? `--vn-growth-intensity: ${growthModifier.intensity.toFixed(2)}` : '--vn-growth-intensity: 0'
   );
+  const visualNovelImageJob = $derived(imageGenerationStore.latestVisualNovelJob);
+  const visualNovelImageUrl = $derived(visualNovelImageJob?.status === 'completed' ? visualNovelImageJob.imageUrls[0] : undefined);
+  const visualNovelImageBusy = $derived(
+    visualNovelImageJob?.status === 'queued' ||
+      visualNovelImageJob?.status === 'waiting_for_resources' ||
+      visualNovelImageJob?.status === 'paused' ||
+      visualNovelImageJob?.status === 'running'
+  );
 
   const handleAssetError = (src?: string) => {
     visualNovelStore.markAssetFailed(src);
+  };
+
+  const visualizeScene = () => {
+    imageGenerationStore.visualizeScene($visualNovelScene, latestAssistantLine);
+  };
+
+  const cancelVisualizeScene = () => {
+    if (visualNovelImageJob) void imageGenerationStore.cancel(visualNovelImageJob.job_id);
   };
 
   const handleStageKeydown = (event: KeyboardEvent) => {
@@ -112,6 +130,15 @@
       </div>
 
       <div class="vn-actions">
+        <button
+          type="button"
+          class="ghost-button"
+          aria-label="Visualize the current scene with local image generation"
+          disabled={visualNovelImageBusy}
+          onclick={visualizeScene}
+        >
+          {visualNovelImageBusy ? 'Composing scene' : 'Visualize scene'}
+        </button>
         <button type="button" class="ghost-button" aria-label="Return to chat mode" onclick={onReturnToChat}>Chat</button>
         <button
           type="button"
@@ -125,6 +152,17 @@
         </button>
       </div>
     </div>
+
+    {#if visualNovelImageUrl}
+      <img
+        class="vn-generated-scene-image"
+        src={visualNovelImageUrl}
+        alt="Generated visualization of the current visual novel scene"
+        loading="lazy"
+        decoding="async"
+        transition:fade={{ duration: visualTransitionMs }}
+      />
+    {/if}
 
     <div
       class:growth-reactive={Boolean(growthModifier)}
@@ -191,6 +229,15 @@
       <p>{latestAssistantLine}</p>
       {#if $visualNovelScene.usedFallback}
         <small>Using safe fallback visuals until every authored layer is available.</small>
+      {/if}
+      {#if visualNovelImageJob}
+        <ImageJobCard
+          job={visualNovelImageJob}
+          compact
+          showPreview={false}
+          onCancel={cancelVisualizeScene}
+          onRetry={visualizeScene}
+        />
       {/if}
       <AudioPlayer compact label="Visual novel voice playback" />
     </div>

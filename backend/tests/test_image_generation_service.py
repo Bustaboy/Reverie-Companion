@@ -7,7 +7,10 @@ from contextlib import asynccontextmanager
 
 from app.core.config import Settings
 from app.models.image import ImageGenerateRequest, ImageJobStatus, ImageQualityPreset
-from app.services.image_generation_service import ImageGenerationService
+from app.services.image_generation_service import (
+    ImageGenerationError,
+    ImageGenerationService,
+)
 from app.services.resource_coordinator import VRAMSnapshot
 
 
@@ -170,6 +173,66 @@ def test_image_job_stores_engineered_prompt_and_negative_prompt(tmp_path) -> Non
         assert "avoid showing the user's face" in queued.prompt
         assert "user face visible" in queued.negative_prompt
         assert "flat lighting" in queued.negative_prompt
-        assert service._jobs[job.job_id].context["image_prompt_engine"]["deterministic"] is True
+        assert (
+            service._jobs[job.job_id].context["image_prompt_engine"]["deterministic"]
+            is True
+        )
+
+    asyncio.run(run_test())
+
+
+def test_image_output_reference_serves_only_attached_local_files(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(ImageGenerateRequest(prompt="safe local output"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        output_dir = tmp_path / "images"
+        output_file = output_dir / f"{job.job_id}.png"
+        output_file.write_bytes(b"fake png")
+
+        reference = service.get_output_reference(job.job_id, 0)
+        assert reference.local_path == output_file.resolve()
+        assert reference.comfyui_view_url.endswith(
+            f"/view?filename={job.job_id}.png&type=output"
+        )
+
+    asyncio.run(run_test())
+
+
+def test_image_output_reference_rejects_unattached_or_unsafe_paths(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(ImageGenerateRequest(prompt="safe fallback output"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        # Simulate a malformed ComfyUI output that is attached to the job but
+        # points outside Reverie's output directory. The resolver must not serve
+        # it as a local file; it may only offer the ComfyUI /view fallback.
+        service._jobs[job.job_id].output_paths = ["../private.png"]
+        reference = service.get_output_reference(job.job_id, 0)
+        assert reference.local_path is None
+        assert reference.comfyui_view_url is None
+
+        try:
+            service.get_output_reference(job.job_id, 1)
+        except ImageGenerationError as exc:
+            assert exc.code == "image_output_not_found"
+        else:  # pragma: no cover - defensive assertion clarity.
+            raise AssertionError("Unattached output index should be rejected")
 
     asyncio.run(run_test())

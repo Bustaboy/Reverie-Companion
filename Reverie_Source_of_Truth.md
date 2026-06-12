@@ -411,4 +411,29 @@ Task 3B adds deterministic prompt engineering on top of the safe Task 3A image q
 - **Negative prompts and ComfyUI contract**: `/api/images/generate` can now accept `negative_prompt`; ImageGenerationService merges it with Reverie's default quality/anatomy/style negatives, stores the engineered prompt on the job, and passes both `text` and `negative_text` to the ComfyUI workflow metadata.
 - **8GB behavior**: prompt construction is pure Python string/rule processing, deterministic, bounded, and performed before the queued ComfyUI job starts. It does not load models, allocate GPU memory, or block chat/TTS beyond normal request validation.
 
+---
+
+## Milestone 3 Task 3C Update — Frontend Image Generation Integration & Display
+
+Task 3C connects the existing Task 3A/3B image backend to the Svelte/Tauri frontend without turning image generation into a blocking chat or voice path:
+
+- **Typed frontend image API boundary**: `frontend/src/lib/api/imageService.ts` wraps `POST /api/images/generate`, `GET /api/images/{job_id}`, `POST /api/images/{job_id}/cancel`, and the SSE progress stream. Components do not call raw fetch/Tauri APIs directly; the service normalizes backend errors, supports cancellation, and resolves ComfyUI output filenames to displayable preview URLs.
+- **Svelte 5 imageGenerationStore**: `frontend/src/lib/stores/imageGenerationStore.svelte.ts` owns image jobs, bounded recent state, announcements, progress updates, cancellation, per-message lookup, VN-scene lookup, and optional consent-based auto-generation. It passes compact chat/VN context into the backend prompt engine while keeping generated images out of durable memory/history for now.
+- **TTS/resource awareness in the UI**: the image store reads `ttsStore` presence and labels queued work as paused-for-voice when speech is preparing or playing. This mirrors the backend `LocalResourceCoordinator`: TTS remains priority, image jobs resume automatically, and users see calm VRAM/paused/fallback copy instead of technical queue noise.
+- **Chat integration**: chat now offers a global “Generate image” action plus per-message “Generate image” controls. Generated images render inside the relevant bubble as expandable image cards with progress bars, cancel buttons, fallback notes, and error feedback. Chat sending, streaming, and TTS playback remain independent.
+- **Visual Novel integration**: VN mode now includes a contextual “Visualize scene” action. Completed scene images appear as a lightweight background enhancement behind the sprite stack, with a dialogue-panel status row for progress/cancel/retry. Authored sprite layers remain the primary fast path; generated art is an optional overlay/reaction enhancement.
+- **Consent-based setting**: settings expose an off-by-default “Auto-generate after replies” toggle. Manual generation remains the default behavior so local image work never starts unexpectedly.
+- **8GB graceful degradation**: frontend presentation treats queued, waiting, paused, fallback, failed, and cancelled states as normal. It never blocks chat input or speech controls, uses lazy image loading, limits visible job state, and relies on the backend’s preview preset/pause-resume behavior for RTX 4070 8GB safety.
+
+Task 3C intentionally does **not** add image history, gallery management, or advanced generation controls; those remain reserved for Task 3D and later media workflows.
+
+### Task 3C Polish Round
+
+The Task 3C frontend integration was tightened after review:
+
+- **Reusable image job presentation**: chat and VN now share a dedicated image job card component for progress, cancellation, paused-for-voice, low-VRAM waiting, degraded preset, error, retry, and expandable preview states. This keeps later gallery/history work from duplicating status logic.
+- **Protected image output serving**: the backend now exposes job-indexed image output URLs. The frontend asks Reverie's API for `/api/images/{job_id}/outputs/{output_index}` instead of constructing arbitrary local or ComfyUI file URLs. The route serves local files only when the requested output index is attached to that job and resolves under the configured image output directory; otherwise it falls back to ComfyUI `/view` for that same attached output when safe.
+- **Polished resource feedback**: user-facing copy now distinguishes TTS pause/resume, low-VRAM waiting, unknown VRAM preview fallback, OOM/degraded preset fallback, and normal queued/running states while preserving the backend rule that TTS always has priority over image generation.
+
+
 *End of Source of Truth Document v1.0*

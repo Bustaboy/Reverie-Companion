@@ -168,6 +168,10 @@
     settingsStore.setTTSAutoPlay((event.currentTarget as HTMLInputElement).checked);
   };
 
+  const handleImageAutoGenerateChange = (event: Event) => {
+    settingsStore.setImageAutoGenerateOnAssistant((event.currentTarget as HTMLInputElement).checked);
+  };
+
   const handleTTSVolumeChange = (event: Event) => {
     settingsStore.setTTSVolume(Number((event.currentTarget as HTMLInputElement).value));
   };
@@ -400,6 +404,22 @@
           </button>
         {/each}
       </div>
+    </article>
+
+    <article class="settings-card settings-wide image-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Images</span>
+        <h2>Local scene visualization</h2>
+        <p>Generate images only when you ask by default. Optional auto-generation queues low-priority preview images after assistant replies and still lets voice/chat go first.</p>
+      </div>
+      <label class="inline-toggle">
+        <input
+          type="checkbox"
+          checked={$settingsStore.imageAutoGenerateOnAssistant}
+          onchange={handleImageAutoGenerateChange}
+        />
+        <span>{ $settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images' }</span>
+      </label>
     </article>
 
     <article class="settings-card settings-wide voice-settings-card">
