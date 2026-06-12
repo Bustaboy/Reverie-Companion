@@ -1993,3 +1993,187 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.app-shell.immersive-shell {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+  gap: 0;
+}
+
+.visual-novel-stage {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 1.8rem;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.visual-novel-stage.full-immersive {
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+
+.vn-scene {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100%;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.vn-background-image,
+.vn-background-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+}
+
+.vn-background-image {
+  object-fit: cover;
+}
+
+.vn-background-placeholder {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(240, 154, 159, 0.26), transparent 25rem),
+    radial-gradient(circle at 80% 18%, rgba(122, 74, 132, 0.32), transparent 27rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--vn-bg-tone) 74%, #ffffff 4%), #100d14 88%);
+}
+
+.vn-scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(16, 13, 20, 0.2), rgba(16, 13, 20, 0.72)),
+    radial-gradient(circle at center bottom, rgba(255, 255, 255, 0.08), transparent 36rem);
+  pointer-events: none;
+}
+
+.vn-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1rem, 2vw, 1.6rem);
+}
+
+.vn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.vn-character-layer {
+  display: grid;
+  place-items: end center;
+  min-height: 0;
+  padding: 0 1rem;
+}
+
+.vn-character-sprite {
+  max-width: min(42rem, 82vw);
+  max-height: min(64vh, 42rem);
+  object-fit: contain;
+  filter: drop-shadow(0 32px 60px rgba(0, 0, 0, 0.38));
+}
+
+.vn-character-placeholder {
+  display: grid;
+  place-items: center;
+  width: min(24rem, 58vw);
+  aspect-ratio: 0.72;
+  margin-bottom: -1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 46% 46% 1.8rem 1.8rem;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.24), transparent 4.8rem),
+    linear-gradient(160deg, color-mix(in srgb, var(--vn-character-tone) 54%, #ffffff 8%), rgba(122, 74, 132, 0.72));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 32px 70px rgba(0, 0, 0, 0.38),
+    0 0 48px rgba(240, 154, 159, 0.14);
+}
+
+.vn-character-placeholder span {
+  display: grid;
+  place-items: center;
+  width: 5.5rem;
+  height: 5.5rem;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 2.4rem;
+  font-weight: 900;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.vn-dialogue-panel {
+  width: min(62rem, calc(100% - 2rem));
+  margin: 0 auto clamp(1rem, 2vw, 1.5rem);
+  padding: clamp(1rem, 2vw, 1.2rem);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 1.35rem;
+  background: rgba(20, 16, 25, 0.78);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(20px);
+}
+
+.vn-speaker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.vn-speaker-row strong {
+  color: #ffd8d4;
+  font-size: 1rem;
+}
+
+.vn-speaker-row span,
+.vn-dialogue-panel small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.vn-dialogue-panel p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.vn-dialogue-panel small {
+  display: block;
+  margin-top: 0.55rem;
+}
+
+@media (max-width: 720px) {
+  .vn-topbar,
+  .vn-speaker-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vn-actions {
+    justify-content: flex-start;
+  }
+
+  .vn-character-placeholder {
+    width: min(18rem, 72vw);
+  }
+}
