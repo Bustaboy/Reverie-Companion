@@ -383,4 +383,19 @@ Task 2G delivered advanced mood sliders; Task 2H completed final cleanup, active
 
 ---
 
+
+## Milestone 3 Task 3A Update — Image Generation Backend Foundation + VRAM Safety
+
+Reverie now has a local-first backend foundation for in-chat image generation that is intentionally queued, low-priority, and safe for RTX 4070 8GB laptop systems:
+
+- **ImageGenerationService**: `backend/app/services/image_generation_service.py` owns the media workflow. It queues jobs, emits ordered lifecycle/progress events, supports cancellation, and isolates ComfyUI/Flux GGUF details behind a small adapter so chat and TTS routes never perform heavyweight media work inline. A compatibility import remains at `backend/services/image_generation_service.py`.
+- **ComfyUI + Flux GGUF lowvram contract**: jobs target ComfyUI running locally with Flux GGUF Q4/Q5-style lowvram workflows, batch size 1, conservative resolution/step presets, model/offload metadata, and no diffusion model loaded inside the Reverie FastAPI process.
+- **8GB quality presets**: `preview_8gb`, `balanced_8gb`, and `high_8gb` define bounded dimensions, steps, guidance, and minimum-free-VRAM budgets. The service automatically degrades to a lower preset when current VRAM cannot safely satisfy the requested tier.
+- **TTS priority and automatic pause/resume**: `LocalResourceCoordinator` exposes process-wide TTS activity and VRAM snapshots. Orpheus/Piper synthesis enters a priority section; image jobs pause before starting when TTS is active, resume after TTS finishes, and can ask ComfyUI to interrupt/retry if TTS begins during an active image attempt. TTS always wins over image generation.
+- **VRAM-aware queueing**: every image job checks live VRAM through `torch.cuda.mem_get_info()` when available, then `nvidia-smi`, before starting. If VRAM telemetry is unavailable, the service uses the preview preset by default rather than assuming the GPU is safe.
+- **API foundation**: `POST /api/images/generate` queues a job from `prompt`, compact `context`, and `quality_preset`; `GET /api/images/{job_id}/events` streams SSE progress; `GET /api/images/{job_id}` returns current state; and `POST /api/images/{job_id}/cancel` cancels queued/running work.
+- **Graceful degradation**: the backend reports calm, typed local-resource errors, logs fallback/resource decisions without dumping private prompt content, retries once at preview quality after OOM-like failures, and can pass CPU-fallback intent to the ComfyUI workflow metadata when enabled.
+
+This task deliberately does **not** add advanced prompt engineering or frontend image display. Later tasks can enrich prompts with character/memory state and build gallery/chat presentation on top of this safe queue/event contract.
+
 *End of Source of Truth Document v1.0*
