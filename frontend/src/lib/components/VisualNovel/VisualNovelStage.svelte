@@ -16,8 +16,13 @@
     return assistantMessage?.content.trim() ?? 'Reverie settles into the quiet, ready for the next moment with you.';
   });
 
+  const growthModifier = $derived($visualNovelStore.growthModifier);
   const stateSummary = $derived(
     `${$visualNovelScene.expressionLabel} expression, ${$visualNovelScene.poseLabel.toLowerCase()} pose`
+  );
+  const growthCueLabel = $derived(growthModifier ? growthModifier.cue.replaceAll('_', ' ') : '');
+  const growthIntensityStyle = $derived(
+    growthModifier ? `--vn-growth-intensity: ${growthModifier.intensity.toFixed(2)}` : '--vn-growth-intensity: 0'
   );
 
   const handleSpriteError = () => {
@@ -68,7 +73,12 @@
       </div>
     </div>
 
-    <div class="vn-character-layer" aria-label={`Reverie visual state: ${stateSummary}`}>
+    <div
+      class:growth-reactive={Boolean(growthModifier)}
+      class={`vn-character-layer growth-cue-${growthModifier?.cue ?? 'none'}`}
+      aria-label={`Reverie visual state: ${stateSummary}${growthModifier ? `, growth cue ${growthCueLabel}` : ''}`}
+      style={growthIntensityStyle}
+    >
       {#if $visualNovelScene.sprite.kind === 'image' && $visualNovelScene.sprite.src}
         <img
           class="vn-character-sprite"
@@ -93,7 +103,7 @@
     <div class="vn-dialogue-panel" aria-label="Visual novel dialogue">
       <div class="vn-speaker-row">
         <strong>{$visualNovelScene.manifest.characterName}</strong>
-        <span>{stateSummary}</span>
+        <span>{growthModifier ? `${stateSummary} · ${growthCueLabel}` : stateSummary}</span>
       </div>
       <p>{latestAssistantLine}</p>
       {#if $visualNovelScene.usedFallback}

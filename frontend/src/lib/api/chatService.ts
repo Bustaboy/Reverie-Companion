@@ -537,12 +537,16 @@ export class ChatService {
     const pose = this.normalizeText(raw.pose ?? raw.stance);
     const background = this.normalizeText(raw.background ?? raw.scene ?? raw.location);
     const characterId = this.normalizeText(raw.character_id ?? raw.characterId ?? raw.character);
+    const growthCue = this.normalizeText(raw.growth_cue ?? raw.growthCue ?? raw.growth);
+    const intensity = this.readUnitNumber(raw, ['intensity', 'expression_intensity', 'expressionIntensity']);
+    const confidence = this.readUnitNumber(raw, ['confidence']);
+    const decayMs = this.readNumber(raw, ['decay_ms', 'decayMs']);
 
-    if (!expression && !pose && !background && !characterId) {
+    if (!expression && !pose && !background && !characterId && !growthCue) {
       return undefined;
     }
 
-    return { characterId, expression, pose, background };
+    return { characterId, expression, pose, background, growthCue, intensity, confidence, decayMs };
   }
 
   private getNestedVisualState(body: BackendVisualStateBody | Record<string, unknown>): unknown {
@@ -744,6 +748,15 @@ export class ChatService {
     }
 
     return undefined;
+  }
+
+  private readUnitNumber(value: Record<string, unknown>, keys: string[]): number | undefined {
+    const number = this.readNumber(value, keys);
+    if (number === undefined) {
+      return undefined;
+    }
+
+    return Math.min(1, Math.max(0, number));
   }
 
   private statusFromFlags(value: Record<string, unknown>): MemoryContext['status'] | undefined {

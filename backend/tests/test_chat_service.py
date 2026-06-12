@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from typing import Any
 
@@ -23,6 +24,12 @@ class FakeOllamaClient:
             model="fake-model",
             message=ChatMessage(role="assistant", content="I hear you."),
         )
+
+    async def stream_chat(self, request: ChatRequest, *, request_id: str | None = None):
+        self.requests.append(request)
+        yield 'event: message\ndata: {"content": "I remember ", "request_id": "req-stream"}\n\n'
+        yield 'event: message\ndata: {"content": "what helps you feel safe.", "request_id": "req-stream"}\n\n'
+        yield 'event: done\ndata: {"done": true, "request_id": "req-stream"}\n\n'
 
 
 class FakeMemoryManager:
@@ -348,6 +355,55 @@ class ChatServiceReflectionTests(unittest.TestCase):
             request, request_id="req-growth-disabled"
         )
         self.assertIsNone(disabled.growth_notification)
+
+    def test_stream_infers_visual_state_only_on_done_event(self) -> None:
+        asyncio.run(self._assert_stream_infers_visual_state_only_on_done_event())
+
+    async def _assert_stream_infers_visual_state_only_on_done_event(self) -> None:
+        entry = {
+            "entry_id": "journal_visual",
+            "status": "active",
+            "character_summary": "Reverie noticed reassurance and trust help the user feel safe.",
+            "insights": [{"summary": "Trust is becoming a warmer pattern."}],
+            "themes": ["trust"],
+            "confidence": 0.88,
+            "evidence_count": 2,
+            "growth_notification": {
+                "id": "growth_journal_visual",
+                "journal_entry_id": "journal_visual",
+                "created_at": "2026-06-11T00:00:00Z",
+                "message": "Reverie seems steadier in your trust.",
+                "why": "A private reflection noticed reassurance helps you feel safe.",
+                "theme": "trust",
+                "style": "whisper",
+                "controls": ["dismiss", "review", "disable_similar"],
+            },
+        }
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=True,
+                reflection_min_interval_seconds=0,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            memory_manager=FakeMemoryManager(context="memory tag: reassurance, safe trust"),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+        request = ChatRequest(
+            stream=True,
+            messages=[ChatMessage(role="user", content="I feel anxious; please remember reassurance helps.")],
+        )
+
+        frames = [frame async for frame in await service.stream_chat(request, request_id="req-stream")]
+
+        self.assertEqual(sum("event: message" in frame for frame in frames), 2)
+        self.assertTrue(all("visual_state" not in frame for frame in frames[:2]))
+        done_payload = json.loads(frames[-1].split("data: ", 1)[1])
+        self.assertEqual(done_payload["visual_state"]["growth_cue"], "relationship_trust")
+        self.assertIn(done_payload["visual_state"]["expression"], {"happy", "concerned", "thinking", "neutral"})
+        self.assertEqual(done_payload["growth_notification"]["id"], "growth_journal_visual")
 
 
 if __name__ == "__main__":

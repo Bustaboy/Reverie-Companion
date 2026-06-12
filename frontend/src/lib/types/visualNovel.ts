@@ -44,6 +44,22 @@ export interface VisualStateMetadata {
   expression?: string;
   pose?: string;
   background?: string;
+  /** Temporary growth/reactivity cue emitted only on final SSE done events. */
+  growthCue?: string;
+  /** 0-1 visual modifier intensity for subtle pose/expression emphasis. */
+  intensity?: number;
+  /** 0-1 backend heuristic confidence; low confidence should already be neutral. */
+  confidence?: number;
+  /** Suggested temporary modifier lifetime; clamped by the Svelte store to 30-60s. */
+  decayMs?: number;
+}
+
+export interface VisualGrowthModifier {
+  cue: string;
+  intensity: number;
+  startedAt: number;
+  expiresAt: number;
+  decayMs: number;
 }
 
 export interface NormalizedVisualState {

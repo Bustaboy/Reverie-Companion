@@ -2166,12 +2166,48 @@ h1 {
   margin-top: 0.55rem;
 }
 
+
+.vn-character-layer.growth-reactive .vn-character-sprite,
+.vn-character-layer.growth-reactive .vn-character-placeholder {
+  filter: drop-shadow(0 34px 66px rgba(0, 0, 0, 0.4)) saturate(calc(1 + (var(--vn-growth-intensity, 0) * 0.1)));
+  transform: translateY(calc(var(--vn-growth-intensity, 0) * -0.55rem)) scale(calc(1 + (var(--vn-growth-intensity, 0) * 0.018)));
+  transition: transform 520ms cubic-bezier(0.2, 0.85, 0.2, 1), filter 520ms ease, opacity 220ms ease;
+}
+
+.vn-character-layer.growth-cue-relationship_trust .vn-character-sprite,
+.vn-character-layer.growth-cue-relationship_trust .vn-character-placeholder,
+.vn-character-layer.growth-cue-repair_attention .vn-character-sprite,
+.vn-character-layer.growth-cue-repair_attention .vn-character-placeholder {
+  transform: translateX(calc(var(--vn-growth-intensity, 0) * -0.45rem)) translateY(calc(var(--vn-growth-intensity, 0) * -0.45rem)) scale(calc(1 + (var(--vn-growth-intensity, 0) * 0.022)));
+}
+
+.vn-character-layer.growth-cue-reflective_growth .vn-character-sprite,
+.vn-character-layer.growth-cue-reflective_growth .vn-character-placeholder,
+.vn-character-layer.growth-cue-memory_recall .vn-character-sprite,
+.vn-character-layer.growth-cue-memory_recall .vn-character-placeholder {
+  transform: translateY(calc(var(--vn-growth-intensity, 0) * -0.35rem)) rotate(calc(var(--vn-growth-intensity, 0) * -0.45deg));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vn-background-image,
   .vn-character-sprite,
   .vn-character-placeholder,
   .vn-dialogue-panel {
     transition: none;
+  }
+
+  .vn-character-layer.growth-reactive .vn-character-sprite,
+  .vn-character-layer.growth-reactive .vn-character-placeholder,
+  .vn-character-layer.growth-cue-relationship_trust .vn-character-sprite,
+  .vn-character-layer.growth-cue-relationship_trust .vn-character-placeholder,
+  .vn-character-layer.growth-cue-repair_attention .vn-character-sprite,
+  .vn-character-layer.growth-cue-repair_attention .vn-character-placeholder,
+  .vn-character-layer.growth-cue-reflective_growth .vn-character-sprite,
+  .vn-character-layer.growth-cue-reflective_growth .vn-character-placeholder,
+  .vn-character-layer.growth-cue-memory_recall .vn-character-sprite,
+  .vn-character-layer.growth-cue-memory_recall .vn-character-placeholder {
+    filter: none;
+    transform: none;
   }
 }
 
