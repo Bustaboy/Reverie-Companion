@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ChatWindow } from '$lib/components/Chat';
   import { JournalPanel } from '$lib/components/Journal';
-  import { PersonalLoRAPanel } from '$lib/components/Growth';
+  import { GrowthDashboard, PersonalLoRAPanel } from '$lib/components/Growth';
   import { ImageGallery } from '$lib/components/ImageGeneration';
   import { SettingsPanel } from '$lib/components/Settings';
   import { VisualNovelStage } from '$lib/components/VisualNovel';
@@ -27,7 +27,9 @@
     <Sidebar activeSection={activeSection} onNavigate={navigate} />
   {/if}
   <main class="main-panel">
-    {#if activeSection === 'journal'}
+    {#if activeSection === 'growth'}
+      <GrowthDashboard />
+    {:else if activeSection === 'journal'}
       <JournalPanel />
     {:else if activeSection === 'training'}
       <PersonalLoRAPanel />

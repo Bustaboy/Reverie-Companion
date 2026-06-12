@@ -1,4 +1,4 @@
-export type NavigationItemId = 'chat' | 'journal' | 'training' | 'characters' | 'memory' | 'visual-novel' | 'images' | 'settings';
+export type NavigationItemId = 'chat' | 'growth' | 'journal' | 'training' | 'characters' | 'memory' | 'visual-novel' | 'images' | 'settings';
 
 export interface NavigationItem {
   id: NavigationItemId;
@@ -11,6 +11,7 @@ export interface NavigationItem {
 // panels, and feature flags can be added without touching layout markup.
 export const navigationItems: NavigationItem[] = [
   { id: 'chat', label: 'Chat', hint: 'Current session', enabled: true },
+  { id: 'growth', label: 'Growth', hint: 'Relationship pulse', enabled: true },
   { id: 'journal', label: 'Journal', hint: 'Private reflections', enabled: true },
   { id: 'training', label: 'Training', hint: 'Personal LoRA review', enabled: true },
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
