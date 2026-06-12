@@ -35,6 +35,18 @@ export interface MemoryPromotionDecision {
   provenance?: Record<string, unknown>;
 }
 
+
+export interface GrowthNotification {
+  id?: string;
+  journal_entry_id?: string;
+  created_at?: string;
+  message?: string;
+  why?: string;
+  theme?: string;
+  style?: string;
+  controls?: string[];
+}
+
 export interface JournalEntryMetadata {
   source?: string;
   engine?: string;
@@ -63,6 +75,7 @@ export interface JournalEntry {
   sensitivity_tags?: string[];
   training_eligibility?: TrainingEligibility;
   rollback_id?: string;
+  growth_notification?: GrowthNotification | null;
   metadata?: JournalEntryMetadata;
 }
 

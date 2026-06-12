@@ -459,4 +459,18 @@ The final polish pass keeps the PR #80 gallery/navigation/lightbox integration i
 - **Clearer fallback UI**: gallery and image cards distinguish missing local output files from generation failures, disable save actions when the file is unavailable, and offer retry/regenerate guidance while preserving lazy loading and TTS/VRAM priority behavior.
 
 
+## Milestone 3 Task 4A Update — Growth Dashboard Foundation
+
+Task 4A adds Reverie’s central Growth Dashboard: a warm, premium relationship overview that makes self-learning feel personal without adding heavy runtime work.
+
+- **Growth navigation destination**: the Svelte shell now exposes a dedicated Growth sidebar destination between Chat and Journal. This separates the emotionally readable relationship overview from the deeper Journal inspector and the explicit Training review page.
+- **Dashboard data architecture**: the page composes existing local-first sources only: recent self-reflection journal entries from `journalStore` and personal LoRA status from `growthStore`. No new model, embedding pass, training job, or expensive computation runs on page load.
+- **Living relationship presentation**: the dashboard derives lightweight view models for affection, trust, interest, emotional bond, relationship pulse, personality shifts, key changes, and a recent growth-event timeline from journal themes, insights, confidence, emotional valence/intensity, growth notifications, linked memories, and structured growth hypotheses.
+- **LoRA status summary only**: LoRA information is intentionally read-only here: current progress, last trained, next scheduled/manual readiness, approved notes, and review counts. Review controls and training actions remain in the Training page for later dedicated workflows.
+- **Reusable Svelte 5 components**: Growth is split into focused UI pieces (`GrowthDashboard`, `GrowthFeelingCard`, `GrowthTimeline`, and `LoRAStatusSummary`) using Svelte 5 runes, typed props, and scoped warm-dark styling with rose accents, soft glows, and restrained motion.
+- **8GB-friendly behavior**: the dashboard performs bounded array reductions over already-fetched metadata, keeps payloads small, and does not preload journals beyond the existing recent-entry request or load any media/model assets. Missing backend data degrades to calm empty states and user-friendly notices.
+
+Design decision: Task 4A is intentionally an overview, not a journal browser, memory editor, or LoRA training UI. It should make the character’s evolving feelings and behavior visible and trustworthy while preserving the later tasks for review controls, rollback, memory browsing, and adapter management.
+
+
 *End of Source of Truth Document v1.0*
