@@ -1,23 +1,36 @@
 """Request and response schemas for text-to-speech generation."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_TTS_TEXT_LENGTH = 2_000
 MAX_TTS_VOICE_ID_LENGTH = 80
+MAX_TTS_READY_TEXT_LENGTH = 2_400
 AudioFormat = Literal["wav", "pcm", "mp3"]
 TTSBackendName = Literal["orpheus", "piper"]
 TTSMode = Literal["one_to_one", "rpg"]
 
 
+class TTSEmotionMetadata(BaseModel):
+    """Deterministic emotion/prosody metadata shared by chat and TTS."""
+
+    scene: str
+    intensity: float = Field(ge=0.0, le=2.0)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    is_high_emotion: bool = False
+    is_intimate: bool = False
+    cues: list[str] = Field(default_factory=list, max_length=12)
+    visible_text_stripped: bool = False
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 class TTSContext(BaseModel):
     """Conversation context used to route text to an appropriate voice profile.
 
-    The model is intentionally compact for Task 2C: it identifies whether a
-    line should be treated as narrator text or character speech, the current
-    conversation mode, and lightweight future emotion/prosody hints without
-    applying emotional tag injection yet.
+    The model is intentionally compact: it identifies whether a line should be
+    treated as narrator text or character speech, the current conversation mode,
+    and lightweight emotion/prosody hints used by deterministic tag injection.
     """
 
     character_id: str | None = Field(
@@ -38,13 +51,13 @@ class TTSContext(BaseModel):
         default=None,
         min_length=1,
         max_length=80,
-        description="Future emotion/prosody hint; not injected into prompts yet.",
+        description="Lightweight emotion/prosody hint for deterministic tag injection.",
     )
     intensity: float = Field(
         default=1.0,
         ge=0.0,
         le=2.0,
-        description="Future emotion intensity multiplier; reserved for Task 2D.",
+        description="Emotion intensity multiplier for deterministic TTS tag injection.",
     )
 
     @field_validator("character_id", "emotion_hint")
@@ -82,6 +95,18 @@ class TTSGenerateRequest(BaseModel):
         default=None,
         description="Full context used for narration/character voice routing.",
     )
+    tts_text: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_TTS_READY_TEXT_LENGTH,
+        description=(
+            "Optional pre-tagged speech text from chat; never shown as visible chat text."
+        ),
+    )
+    emotion: TTSEmotionMetadata | None = Field(
+        default=None,
+        description="Optional deterministic emotion metadata from the chat pipeline.",
+    )
     stream: bool = Field(
         default=False,
         description="Return audio bytes directly instead of a base64 JSON payload.",
@@ -102,11 +127,13 @@ class TTSGenerateRequest(BaseModel):
             )
         return self
 
-    @field_validator("text")
+    @field_validator("text", "tts_text")
     @classmethod
-    def text_must_not_be_blank(cls, value: str) -> str:
+    def text_must_not_be_blank(cls, value: str | None) -> str | None:
         """Reject whitespace-only text before it reaches a local TTS backend."""
 
+        if value is None:
+            return None
         if not value.strip():
             raise ValueError("TTS text cannot be empty.")
         return value.strip()

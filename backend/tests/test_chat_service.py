@@ -441,6 +441,10 @@ class ChatServiceReflectionTests(unittest.TestCase):
             response = await service.chat(request, request_id="req-tts-context")
 
             self.assertEqual(response.tts_context, tts_context)
+            self.assertIsNotNone(response.tts_text)
+            self.assertIsNotNone(response.voice_id)
+            self.assertIsNotNone(response.emotion)
+            self.assertNotIn("<", response.message.content)
 
         asyncio.run(run_test())
 
@@ -466,6 +470,53 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
             done_payload = json.loads(frames[-1].split("data: ", 1)[1])
             self.assertEqual(done_payload["tts_context"], tts_context.model_dump())
+            self.assertIn("tts_text", done_payload)
+            self.assertIn("voice_id", done_payload)
+            self.assertIn("emotion", done_payload)
+            self.assertNotIn("<", done_payload["text"])
+
+        asyncio.run(run_test())
+
+    def test_stream_strips_model_emotion_tags_from_visible_chunks(self) -> None:
+        class TaggedOllamaClient(FakeOllamaClient):
+            async def stream_chat(
+                self, request: ChatRequest, *, request_id: str | None = None
+            ):
+                self.requests.append(request)
+                yield 'event: message\ndata: {"content": "<wh", "request_id": "req-stream"}\n\n'
+                yield 'event: message\ndata: {"content": "isper>I trust ", "request_id": "req-stream"}\n\n'
+                yield 'event: message\ndata: {"content": "you <moan>deeply.", "request_id": "req-stream"}\n\n'
+                yield 'event: done\ndata: {"done": true, "request_id": "req-stream"}\n\n'
+
+        async def run_test() -> None:
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=TaggedOllamaClient(),  # type: ignore[arg-type]
+            )
+            request = ChatRequest(
+                stream=True,
+                tts_context=TTSContext(emotion_hint="intimate", intensity=1.5),
+                messages=[ChatMessage(role="user", content="Stay close to me.")],
+            )
+
+            frames = [
+                frame
+                async for frame in await service.stream_chat(
+                    request, request_id="req-stream-tags"
+                )
+            ]
+
+            visible_text = "".join(
+                json.loads(frame.split("data: ", 1)[1])["content"]
+                for frame in frames
+                if "event: message" in frame
+            )
+            done_payload = json.loads(frames[-1].split("data: ", 1)[1])
+
+            self.assertEqual(visible_text, "I trust you deeply.")
+            self.assertNotIn("<", done_payload["text"])
+            self.assertIn("<", done_payload["tts_text"])
+            self.assertTrue(done_payload["emotion"]["tags"])
 
         asyncio.run(run_test())
 

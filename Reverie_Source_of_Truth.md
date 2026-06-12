@@ -150,13 +150,13 @@ Task 1A–1C now complete the approved Visual Novel foundation bridge between ch
 
 Milestone 3 Task 2A establishes Reverie's local-first TTS backend foundation:
 
-- **TTSService** owns speech generation workflow behind a typed service boundary. It accepts plain `text`, an optional durable `voice_id`, optional `character_id` assignment resolution, requested audio format, and optional streaming mode without introducing emotion routing or context-aware prosody yet.
+- **TTSService** owns speech generation workflow behind a typed service boundary. It accepts plain `text`, an optional durable `voice_id`, optional `character_id` assignment resolution, requested audio format, and optional streaming mode with optional pre-tagged `tts_text` support from the chat pipeline.
 - **Orpheus TTS 3B** is the primary quality backend for emotionally richer voice. It is lazily imported and loaded only on the first TTS request, supports `auto`/`cuda`/`cpu` device selection, defaults to 4-bit quantization for RTX 4070 8GB mobile safety, checks free CUDA VRAM before loading, unloads after CUDA OOM paths, and reports stable error codes when dependencies, model paths, or VRAM are unavailable.
 - **Piper TTS** is the fast CPU-friendly fallback. When Orpheus is unavailable, too slow, missing dependencies, missing model files, or over the configured VRAM budget, Reverie attempts Piper through the local binary and configured voice model path.
 - **Configuration** now exposes TTS model IDs/paths, Piper binary/voice paths, backend choice, timeouts, device selection, quantization level, free-VRAM guardrails, default voice ID, sample rate, text length limit, streaming chunk size, voice-profile store path, default narrator voice ID, and default character voice fallback behavior under the existing `REVERIE_` environment prefix.
 - **API surface** adds `POST /api/tts/generate`, returning base64 WAV audio for simple non-streaming clients or bounded audio-byte streaming for early voice playback. The route stays thin, logs request metadata without raw private text, and returns structured errors for UI handling.
 
-This foundation now avoids only Task 2D scope: no emotion tags and no memory/reflection-driven prosody. Context-sensitive voice routing is handled by the Task 2C router while preserving the 8GB-first lazy-loading and fallback behavior.
+Task 2D now layers deterministic emotion/prosody tagging on this foundation while preserving the 8GB-first lazy-loading and fallback behavior.
 
 ### 3.5 Voice Profile System (Milestone 3 Task 2B)
 
@@ -174,16 +174,29 @@ Short design summary: voice profiles are a durable identity layer, VoiceManager 
 
 Milestone 3 Task 2C layers smart, lightweight routing on top of the Task 2A/2B TTS and voice-profile foundation:
 
-- **TTSContext schema** now carries `character_id`, `is_narration`, `mode` (`one_to_one` or `rpg`), `emotion_hint`, and `intensity`. Emotion fields are accepted and preserved as future hooks only; Task 2D will decide how to translate them into tags or prosody.
+- **TTSContext schema** now carries `character_id`, `is_narration`, `mode` (`one_to_one` or `rpg`), `emotion_hint`, and `intensity`. Emotion fields now feed Task 2D deterministic tag selection and intensity scoring while staying lightweight and inspectable.
 - **TTS API context support** extends `POST /api/tts/generate` with a full `context` object while keeping legacy top-level `voice_id` and `character_id` clients working. Explicit `voice_id` remains an override; otherwise context drives narrator versus character routing.
 - **TTSContextRouter** owns routing policy outside the route and backend adapters. It uses explicit narration flags first, then simple one-to-one/RPG heuristics: one-to-one character context routes to the assigned character voice, RPG context treats quoted lines or matching speaker prefixes as character speech, and narration falls back to the default narrator profile.
 - **Voice resolution** still goes through VoiceManager, so assigned character profiles, durable narrator fallback, backend voice aliases, and stable `voice_profile_not_found` errors remain centralized and inspectable. TTSService now consumes the router decision and sends only the concrete backend voice key to Orpheus/Piper.
-- **Chat integration hooks** allow chat/VN callers to pass `tts_context` alongside chat requests and receive it back in non-streaming responses or final SSE `done` metadata. This gives the frontend a clean bridge from current chat/VN state to future TTS playback without forcing synthesis into the chat response path.
+- **Chat integration hooks** allow chat/VN callers to pass `tts_context` alongside chat requests and receive it back in non-streaming responses or final SSE `done` metadata. This gives the frontend a clean bridge from current chat/VN state to TTS playback without forcing synthesis into the chat response path.
 - **8GB behavior** remains unchanged: routing is pure Python/Pydantic logic, no additional model is loaded, no heavy NLP classifier runs, and TTS backends remain lazy with Piper CPU fallback.
 
-Short design summary: TTSContext describes the current speaker/narrator situation, TTSContextRouter resolves that context into a durable voice profile through VoiceManager, and TTSService remains the synthesis boundary. This keeps 1:1 chats natural, makes RPG/multi-character scenes predictable, and leaves emotion/prosody shaping cleanly reserved for Task 2D.
+Short design summary: TTSContext describes the current speaker/narrator situation, TTSContextRouter resolves that context into a durable voice profile through VoiceManager, and TTSService remains the synthesis boundary. This keeps 1:1 chats natural, makes RPG/multi-character scenes predictable, and gives Task 2D a stable voice-routing base for emotion/prosody shaping.
 
-### 3.7 Futa-Vision Integration Vision (Future)
+
+### 3.7 Emotion & Prosody System (Milestone 3 Task 2D)
+
+Milestone 3 Task 2D adds rich emotional voice enhancement without adding an LLM call to the normal chat path:
+
+- **EmotionEngine** is a deterministic, 8GB-friendly service that analyzes `TTSContext`, recent non-system chat messages, retrieved memory context, selected reflection journal entries, and growth notifications. It detects high-emotion and intimate/NSFW scenes with bounded keyword scoring, honors `emotion_hint` and `intensity`, and produces Orpheus-compatible speech tags such as `<whisper>`, `<sigh>`, `<gasp>`, `<moan>`, `<groan>`, and `<laugh>`.
+- **Clean-text vs TTS-text flow** is explicit. Chat-visible content is always passed through tag stripping before it reaches non-streaming `ChatResponse.message.content` or streamed SSE `message` token payloads. The chat pipeline separately creates `tts_text`, which may contain speech-only Orpheus tags, and exposes it only as TTS metadata for later playback. Emotion tags must never be rendered in chat bubbles.
+- **SSE `done` voice metadata** now carries the final clean `text`, separate `tts_text`, full resolved `tts_context`, durable `voice_id`, existing `visual_state` / growth metadata, and deterministic `emotion` metadata (`scene`, `intensity`, tags, high-emotion/intimate flags, and cues). The frontend can render clean text while handing `tts_text` + `tts_context` + `voice_id` to audio generation in Task 2E.
+- **TTSService integration** prefers pre-tagged `tts_text` when the chat pipeline provides it. If a direct TTS request only supplies clean `text`, TTSService falls back to on-the-fly EmotionEngine tagging using the provided `TTSContext`, then resolves the actual backend voice through `TTSContextRouter` and VoiceManager before calling Orpheus/Piper.
+- **8GB behavior** remains lightweight: no classifier model, no extra LLM call, no new resident GPU model, no synthesis during chat response generation, and no frontend audio player work in this task. Orpheus/Piper still load lazily at TTS time, and Piper remains the CPU-friendly fallback.
+
+Short design summary: visible text is the safe, tag-free chat contract; `tts_text` is the speech-only performance script; `tts_context` plus `voice_id` identify who should speak; and `emotion` metadata explains why tags were chosen. This preserves immersion for high-intensity and adult scenes while keeping user-visible chat clean and local-first performance predictable.
+
+### 3.8 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

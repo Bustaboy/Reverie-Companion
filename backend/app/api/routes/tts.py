@@ -76,6 +76,7 @@ async def generate_tts(
             context=context,
             audio_format=request.audio_format,
             request_id=request_id,
+            tts_text=request.tts_text,
         )
     except TTSBackendUnavailable as exc:
         raise _tts_http_exception(
