@@ -4652,3 +4652,393 @@ textarea:disabled {
   font-size: 0.94rem;
   line-height: 1.6;
 }
+
+/* Milestone 3 Task 5D: Settings & Control Hub */
+.settings-hub-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-hub-hero {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 176, 166, 0.17), transparent 25rem),
+    radial-gradient(circle at 92% 20%, rgba(132, 91, 150, 0.14), transparent 26rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent);
+}
+
+.settings-hub-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  min-height: 0;
+  padding: 1rem;
+  border-right: 1px solid var(--line);
+  background: rgba(14, 11, 18, 0.28);
+}
+
+.settings-search {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-search input,
+.reset-card input,
+.text-setting input,
+.text-setting select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.72rem 0.82rem;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.055);
+  outline: none;
+}
+
+.settings-search input:focus,
+.reset-card input:focus,
+.text-setting input:focus,
+.text-setting select:focus {
+  border-color: rgba(255, 176, 166, 0.42);
+  box-shadow: 0 0 0 3px rgba(240, 154, 159, 0.12);
+}
+
+.settings-section-nav {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.settings-section-nav button {
+  display: grid;
+  gap: 0.18rem;
+  width: 100%;
+  padding: 0.78rem 0.82rem;
+  text-align: left;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-section-nav button:hover,
+.settings-section-nav button:focus-visible,
+.settings-section-nav button.active {
+  color: var(--text);
+  border-color: rgba(255, 216, 212, 0.13);
+  background:
+    linear-gradient(135deg, rgba(240, 154, 159, 0.11), rgba(122, 74, 132, 0.07)),
+    rgba(255, 255, 255, 0.045);
+  outline: none;
+}
+
+.settings-section-nav span {
+  font-weight: 900;
+}
+
+.settings-section-nav small,
+.settings-empty-search,
+.performance-explainer,
+.status-copy,
+.error-copy,
+.image-preset-preview-grid p,
+.image-preset-preview-grid em,
+.import-row p,
+.reset-card p,
+.text-setting small {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.settings-hub-content {
+  grid-template-columns: 1fr;
+  padding: 1rem 1.15rem 1.35rem;
+  scroll-behavior: smooth;
+}
+
+.settings-hub-section {
+  display: grid;
+  gap: 0.82rem;
+  scroll-margin-top: 1rem;
+}
+
+.settings-section-heading {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.15rem 0.15rem 0;
+}
+
+.settings-section-heading span {
+  color: var(--accent-strong);
+  font-size: 0.73rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-section-heading h2,
+.settings-card h3,
+.reset-card h3,
+.appearance-preview-card h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.settings-section-heading p,
+.appearance-preview-card p {
+  max-width: 62rem;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.settings-health-stack,
+.appearance-swatch-row,
+.clone-actions,
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.settings-health-stack span {
+  width: fit-content;
+  padding: 0.38rem 0.58rem;
+  color: #f8d6d8;
+  border: 1px solid rgba(240, 154, 159, 0.18);
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.075);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.settings-preview-grid,
+.data-action-grid,
+.image-preset-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.appearance-swatch-row span {
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.85rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.appearance-swatch-row span:nth-child(1) { background: #100d14; }
+.appearance-swatch-row span:nth-child(2) { background: #271f30; }
+.appearance-swatch-row span:nth-child(3) { background: #f09a9f; }
+.appearance-swatch-row span:nth-child(4) { background: #7a4a84; }
+
+.soft-settings-action,
+.import-row label,
+.danger-settings-action,
+.data-action-grid button {
+  padding: 0.72rem 0.9rem;
+  color: #ffe3df;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.065);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+}
+
+.soft-settings-action.primary,
+.import-row label {
+  border-color: rgba(240, 154, 159, 0.28);
+  background: linear-gradient(135deg, rgba(240, 154, 159, 0.2), rgba(122, 74, 132, 0.16));
+}
+
+.danger-settings-action {
+  color: #ffd0ca;
+  border-color: rgba(255, 138, 128, 0.32);
+  background: rgba(255, 104, 92, 0.11);
+}
+
+.soft-settings-action:disabled,
+.danger-settings-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.clone-controls,
+.extension-field-list,
+.data-management-card,
+.reset-card,
+.text-setting {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.clone-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.clone-actions {
+  grid-column: 1 / -1;
+}
+
+.clone-voice-section audio {
+  width: 100%;
+}
+
+.voice-mood-list,
+.extension-section-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.voice-mood-card,
+.extension-section,
+.reset-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.voice-mood-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.voice-mood-header span,
+.voice-mood-header small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.image-preset-preview-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.image-preset-preview-grid button,
+.data-action-grid button {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 100%;
+  text-align: left;
+}
+
+.image-preset-preview-grid button {
+  padding: 0.9rem;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 1.05rem;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.image-preset-preview-grid button.active {
+  border-color: rgba(240, 154, 159, 0.42);
+  background:
+    linear-gradient(135deg, rgba(240, 154, 159, 0.15), rgba(122, 74, 132, 0.12)),
+    rgba(255, 255, 255, 0.055);
+}
+
+.image-preview-tile {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 5.5rem;
+  margin-bottom: 0.15rem;
+  color: #ffe1db;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.9rem;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 176, 166, 0.24), transparent 45%),
+    linear-gradient(135deg, rgba(122, 74, 132, 0.42), rgba(240, 154, 159, 0.13));
+  font-size: 1.4rem;
+  font-weight: 950;
+}
+
+.image-preset-preview-grid em {
+  color: #f8d6d8;
+  font-style: normal;
+}
+
+.checkbox-setting {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.data-action-grid button strong,
+.data-action-grid button span {
+  display: block;
+}
+
+.data-action-grid button span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.reset-card {
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, 13rem) auto;
+  align-items: center;
+}
+
+.status-copy {
+  color: #a8f0cb;
+}
+
+.error-copy,
+.extension-status .error {
+  color: #ffb9af;
+}
+
+.settings-hub .settings-trust-note {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 980px) {
+  .settings-hub-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-hub-sidebar {
+    grid-template-rows: auto auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .settings-section-nav {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(12rem, 1fr);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .settings-preview-grid,
+  .data-action-grid,
+  .image-preset-preview-grid,
+  .clone-controls,
+  .reset-card {
+    grid-template-columns: 1fr;
+  }
+}

@@ -586,4 +586,17 @@ The Svelte frontend now has matching typed extension contracts, a lightweight lo
 
 Documentation for future extension developers now lives under `docs/extensions/README.md`, including the `extension.v1` manifest format, capability guidance, an example settings/command manifest, error-isolation rules, and the character-import preview contract. Runtime overhead remains minimal: the foundation uses Pydantic/TypeScript schemas, bounded in-memory event history, local JSON manifest reads, and no additional frontend or backend dependencies. **Task 5C is complete.**
 
+
+### Milestone 3 Task 5D — Settings & Control Hub
+
+Task 5D completes Reverie's unified Settings & Control Hub architecture. The Settings surface is now a searchable, section-navigated hub with clear groups for General, Appearance, TTS & Voice, Image Generation, Growth & Self-Learning, Memory, Extensibility, Performance & 8GB, and Export/Import/Backup. Each section uses the warm premium dark shell, keyboard-friendly controls, descriptive copy, and local-first status language so users understand both what a setting does and why it matters.
+
+The hub preserves and improves all major controls from Tasks 1–5C: durable memory toggles, reflection cadence and sensitivity, growth notifications, context budgets, TTS enablement/autoplay/volume/speed/latency, per-voice mood tuning, local zero-shot voice profile creation, image auto-generation and 8GB presets, resource presets, background task limits, and proactive VRAM warnings. TTS now has an immediate voice-pacing preview, image presets include lightweight visual previews and resource-impact explanations, and the 8GB section explicitly explains TTS priority, serialized image work, Orpheus unload behavior, and safe downgrade expectations.
+
+Extensibility remains first-class. Backend extension contracts still load when Settings opens, extension failures remain isolated, and declarative extension setting sections render inside the hub while persisting under extension-scoped local settings. This keeps Task 5C's contract intact while making the Settings page the future registration point for plugin-facing controls.
+
+Data controls now provide explicit settings export, character backup envelope export, growth backup envelope export, full local backup export, recognized-field settings import, and a typed RESET confirmation flow. Backups are local JSON files and include privacy notes so users understand that exported files may contain intimate local preferences. Reset restores safe defaults and clears extension setting values without deleting memories, voices, images, or growth artifacts.
+
+The implementation remains lightweight for the RTX 4070 8GB target: no new dependencies, no resident models, no background jobs, and no backend schema changes. Search/filtering is local over a bounded section list, previews are CSS/browser-native, extension settings reuse the existing registry, and import/export uses explicit user-triggered JSON files. **Task 5D is complete.**
+
 *End of Source of Truth Document v1.0*

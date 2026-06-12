@@ -286,6 +286,22 @@ function createSettingsStore() {
         savedAt: new Date()
       });
     },
+    resetAllSettings() {
+      store.set({
+        ...DEFAULT_MEMORY_REFLECTION_SETTINGS,
+        extensionSettings: {},
+        savedAt: new Date()
+      });
+    },
+    importSettings(input: Partial<SettingsState>) {
+      const current = get(store);
+      const { savedAt: _savedAt, ...persistableCurrent } = current;
+      const { savedAt: _importedSavedAt, ...persistableInput } = input;
+      store.set({
+        ...normalizePersistedSettings({ ...persistableCurrent, ...persistableInput }),
+        savedAt: new Date()
+      });
+    },
     getSnapshot() {
       return get(store);
     }
