@@ -246,7 +246,6 @@ def test_generate_speech_routes_rpg_quoted_character_line(tmp_path) -> None:
     asyncio.run(run_test())
 
 
-
 def test_generate_speech_prefers_pretagged_tts_text(tmp_path) -> None:
     async def run_test() -> None:
         service = make_service(tmp_path)
@@ -305,5 +304,82 @@ def test_generate_speech_adds_fallback_tags_from_context(tmp_path) -> None:
 
         assert "<" in service._piper.last_kwargs["text"]
         assert "I want you close" in service._piper.last_kwargs["text"]
+
+    asyncio.run(run_test())
+
+
+def test_stream_speech_chunks_uses_true_orpheus_stream(tmp_path) -> None:
+    async def run_test() -> None:
+        class StreamingBackend(FakeBackend):
+            async def stream_generate(self, **kwargs):
+                self.calls += 1
+                self.last_kwargs = kwargs
+                from app.services.tts_service import TTSStreamChunk
+
+                yield TTSStreamChunk(
+                    audio_bytes=b"pcm-1",
+                    backend="orpheus",
+                    voice_id=kwargs["response_voice_id"],
+                    audio_format="pcm",
+                    sample_rate=24_000,
+                    sequence=1,
+                )
+                yield TTSStreamChunk(
+                    audio_bytes=b"",
+                    backend="orpheus",
+                    voice_id=kwargs["response_voice_id"],
+                    audio_format="pcm",
+                    sample_rate=24_000,
+                    sequence=2,
+                    is_final=True,
+                )
+
+        service = make_service(tmp_path)
+        service._orpheus = StreamingBackend("orpheus")  # type: ignore[assignment]
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", error=AssertionError("fallback not expected")
+        )
+
+        chunks = [
+            chunk
+            async for chunk in service.stream_speech_chunks(
+                text="Hello", voice_id="tara", request_id="req_stream"
+            )
+        ]
+
+        assert chunks[0].audio_bytes == b"pcm-1"
+        assert chunks[0].audio_format == "pcm"
+        assert chunks[-1].is_final is True
+        assert service._orpheus.last_kwargs["reference_audio_path"] == "voices/tara.wav"
+
+    asyncio.run(run_test())
+
+
+def test_stream_speech_chunks_falls_back_to_full_generation(tmp_path) -> None:
+    async def run_test() -> None:
+        service = make_service(tmp_path)
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"fallback wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend("piper", result=piper_result)  # type: ignore[assignment]
+
+        chunks = [
+            chunk
+            async for chunk in service.stream_speech_chunks(
+                text="Hello", voice_id="tara", request_id="req_stream_fallback"
+            )
+        ]
+
+        assert b"".join(chunk.audio_bytes for chunk in chunks) == b"fallback wav"
+        assert chunks[0].fallback_used is True
+        assert chunks[-1].is_final is True
+        assert chunks[-1].audio_format == "wav"
 
     asyncio.run(run_test())

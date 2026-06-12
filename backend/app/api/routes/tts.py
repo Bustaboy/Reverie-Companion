@@ -1,5 +1,9 @@
 """Text-to-speech API routes."""
 
+from __future__ import annotations
+
+import base64
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -43,9 +47,10 @@ async def generate_tts(
 ) -> TTSGenerateResponse | StreamingResponse:
     """Generate speech audio from text.
 
-    Non-streaming requests return base64 WAV audio in JSON for easy early
-    clients. Streaming requests return audio bytes directly; current backends
-    synthesize whole files first and stream in bounded chunks.
+    Non-streaming requests return base64 WAV audio in JSON for simple clients.
+    Streaming requests return newline-delimited JSON events so the UI can start
+    playback as soon as Orpheus yields PCM chunks, while still falling back to a
+    bounded full WAV payload when true backend streaming is unavailable.
     """
 
     request_id = str(uuid4())
@@ -67,6 +72,13 @@ async def generate_tts(
             "text_chars": len(request.text),
         },
     )
+
+    if request.stream:
+        return StreamingResponse(
+            _iter_tts_events(request, tts_service=tts_service, request_id=request_id),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache", "X-Request-ID": request_id},
+        )
 
     try:
         result = await tts_service.generate_speech(
@@ -103,20 +115,6 @@ async def generate_tts(
             },
         ) from exc
 
-    if request.stream:
-        return StreamingResponse(
-            _iter_audio_chunks(
-                result.audio_bytes,
-                chunk_size=tts_service.settings.tts_stream_chunk_size_bytes,
-            ),
-            media_type=f"audio/{request.audio_format}",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Request-ID": request_id,
-                "X-TTS-Backend": result.backend,
-            },
-        )
-
     return TTSGenerateResponse(
         request_id=request_id,
         backend=result.backend,  # type: ignore[arg-type]
@@ -129,11 +127,74 @@ async def generate_tts(
     )
 
 
-async def _iter_audio_chunks(
-    audio_bytes: bytes, *, chunk_size: int
+async def _iter_tts_events(
+    request: TTSGenerateRequest, *, tts_service: TTSService, request_id: str
 ) -> AsyncIterator[bytes]:
-    for start in range(0, len(audio_bytes), chunk_size):
-        yield audio_bytes[start : start + chunk_size]
+    """Yield streaming TTS events as compact newline-delimited JSON."""
+
+    try:
+        yield _json_line({"type": "start", "request_id": request_id})
+        async for chunk in tts_service.stream_speech_chunks(
+            text=request.text,
+            voice_id=request.voice_id,
+            character_id=request.character_id,
+            context=request.context,
+            audio_format=request.audio_format,
+            request_id=request_id,
+            tts_text=request.tts_text,
+        ):
+            if chunk.is_final:
+                yield _json_line(
+                    {
+                        "type": "done",
+                        "request_id": request_id,
+                        "backend": chunk.backend,
+                        "voice_id": chunk.voice_id,
+                        "audio_format": chunk.audio_format,
+                        "sample_rate": chunk.sample_rate,
+                        "fallback_used": chunk.fallback_used,
+                        "duration_seconds": chunk.duration_seconds,
+                    }
+                )
+                continue
+            yield _json_line(
+                {
+                    "type": "chunk",
+                    "request_id": request_id,
+                    "backend": chunk.backend,
+                    "voice_id": chunk.voice_id,
+                    "audio_format": chunk.audio_format,
+                    "sample_rate": chunk.sample_rate,
+                    "sequence": chunk.sequence,
+                    "fallback_used": chunk.fallback_used,
+                    "audio_base64": base64.b64encode(chunk.audio_bytes).decode("ascii"),
+                }
+            )
+    except TTSServiceError as exc:
+        logger.warning(
+            "Streaming TTS request failed",
+            extra={
+                "request_id": request_id,
+                "code": exc.code,
+                "retryable": exc.retryable,
+            },
+        )
+        yield _json_line(
+            {
+                "type": "error",
+                "request_id": request_id,
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": {**exc.details, "request_id": request_id},
+                    "retryable": exc.retryable,
+                },
+            }
+        )
+
+
+def _json_line(payload: dict[str, object]) -> bytes:
+    return (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
 
 
 def _tts_http_exception(

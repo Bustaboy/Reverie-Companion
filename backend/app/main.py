@@ -17,6 +17,7 @@ from app.api.routes.chat import router as chat_router
 from app.api.routes.growth import router as growth_router
 from app.api.routes.journal import router as journal_router
 from app.api.routes.tts import router as tts_router
+from app.api.routes.voices import router as voices_router
 from app.core.config import Settings, get_settings
 from app.core.ollama_client import OllamaClient, OllamaClientError
 from app.services.voice_manager import VoiceManager
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(journal_router)
     app.include_router(growth_router)
     app.include_router(tts_router)
+    app.include_router(voices_router)
     logger.info(
         "Reverie backend application configured",
         extra={"app_version": settings.app_version},

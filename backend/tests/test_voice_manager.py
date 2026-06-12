@@ -70,3 +70,27 @@ def test_cannot_delete_only_default_narrator(tmp_path) -> None:
         assert exc.code == "voice_default_narrator_required"
     else:  # pragma: no cover - assertion clarity.
         raise AssertionError("Expected deleting the only narrator to fail")
+
+
+def test_create_zero_shot_voice_profile_stores_reference_and_assignment(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        voice_profile_store_path=str(tmp_path / "voices.json"),
+        voice_reference_audio_dir=str(tmp_path / "reference_audio"),
+    )
+    manager = VoiceManager(settings)
+
+    profile = manager.create_zero_shot_voice_profile(
+        name="Tara Clone",
+        audio_file=__import__("io").BytesIO(b"fake audio"),
+        filename="tara.wav",
+        content_type="audio/wav",
+        character_id="tara",
+        duration_seconds=8.0,
+    )
+
+    assert profile.voice_id.startswith("clone_tara_clone")
+    assert profile.metadata["clone_backend"] == "orpheus_zero_shot"
+    assert profile.reference_audio_path is not None
+    assert manager.get_voice_for_character("tara") == profile

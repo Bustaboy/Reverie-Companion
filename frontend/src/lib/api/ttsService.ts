@@ -36,6 +36,38 @@ export interface TTSGenerateResponse {
   fallback_used?: boolean;
 }
 
+
+export type TTSStreamEvent =
+  | { type: 'start'; request_id: string }
+  | {
+      type: 'chunk';
+      request_id: string;
+      backend: 'orpheus' | 'piper';
+      voice_id: string;
+      audio_format: TTSAudioFormat;
+      sample_rate: number;
+      sequence: number;
+      fallback_used?: boolean;
+      audio_base64: string;
+    }
+  | {
+      type: 'done';
+      request_id: string;
+      backend: 'orpheus' | 'piper';
+      voice_id: string;
+      audio_format: TTSAudioFormat;
+      sample_rate: number;
+      fallback_used?: boolean;
+      duration_seconds?: number | null;
+    }
+  | { type: 'error'; request_id: string; error: { code?: string; message?: string; retryable?: boolean; details?: unknown } };
+
+export interface TTSStreamCallbacks {
+  onStart?: (event: Extract<TTSStreamEvent, { type: 'start' }>) => void;
+  onChunk?: (event: Extract<TTSStreamEvent, { type: 'chunk' }>, bytes: Uint8Array) => void | Promise<void>;
+  onDone?: (event: Extract<TTSStreamEvent, { type: 'done' }>) => void | Promise<void>;
+}
+
 export interface TTSServiceOptions {
   baseUrl?: string;
   timeoutMs?: number;
@@ -112,6 +144,83 @@ export class TTSService {
     }
   }
 
+
+  async streamSpeech(
+    request: TTSGenerateRequest,
+    callbacks: TTSStreamCallbacks,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<void> {
+    const url = `${this.baseUrl}/api/tts/generate`;
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+    const cancelExternalAbort = this.forwardAbort(options.signal, controller);
+
+    try {
+      const response = await this.fetcher(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/x-ndjson'
+        },
+        body: JSON.stringify({ ...request, stream: true, audio_format: request.audio_format ?? 'wav' }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const body = await this.parseJsonResponse<BackendErrorBody>(response);
+        throw this.toServiceError(response, body);
+      }
+      if (!response.body) {
+        throw new TTSServiceError('The local voice service did not open a speech stream.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          await this.handleStreamLine(line, callbacks);
+        }
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) await this.handleStreamLine(buffer, callbacks);
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+      cancelExternalAbort();
+    }
+  }
+
+  private async handleStreamLine(line: string, callbacks: TTSStreamCallbacks): Promise<void> {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as TTSStreamEvent;
+    if (event.type === 'start') {
+      callbacks.onStart?.(event);
+      return;
+    }
+    if (event.type === 'chunk') {
+      await callbacks.onChunk?.(event, base64ToBytes(event.audio_base64));
+      return;
+    }
+    if (event.type === 'done') {
+      await callbacks.onDone?.(event);
+      return;
+    }
+    throw new TTSServiceError(event.error.message ?? 'The local voice stream failed.', {
+      code: event.error.code,
+      retryable: event.error.retryable,
+      details: event.error.details
+    });
+  }
+
   private async parseJsonResponse<T>(response: Response): Promise<T> {
     const text = await response.text();
 
@@ -179,6 +288,13 @@ function getConfiguredBaseUrl(): string {
   }
 
   return DEFAULT_API_BASE_URL;
+}
+
+function base64ToBytes(audioBase64: string): Uint8Array {
+  const binary = atob(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {

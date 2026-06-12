@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import { settingsStore } from '$lib/stores/settingsStore';
-import { TTSServiceError, ttsService } from '$lib/api/ttsService';
+import { TTSServiceError, ttsService, type TTSStreamEvent } from '$lib/api/ttsService';
 import type { MessageTTSMetadata, TTSEmotionMetadata, TTSContextMetadata } from '$lib/types/chat';
 
 export type TTSPlaybackState = 'idle' | 'queued' | 'loading' | 'playing' | 'paused' | 'error';
@@ -40,17 +40,6 @@ const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
-const createObjectUrl = (audioBase64: string, format: string): string => {
-  const binary = atob(audioBase64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return URL.createObjectURL(new Blob([bytes], { type: `audio/${format}` }));
-};
-
 const normalizeAudioError = (error: unknown): string => {
   if (error instanceof TTSServiceError && error.code === 'tts_cancelled') {
     return 'Speech playback was cancelled.';
@@ -62,6 +51,83 @@ const normalizeAudioError = (error: unknown): string => {
 
   return 'Reverie could not play that voice line. Text chat is still available.';
 };
+
+
+class ProgressiveAudioSink {
+  private readonly context: AudioContext;
+  private nextStartTime = 0;
+  private sources: AudioBufferSourceNode[] = [];
+  private format: string | null = null;
+  private chunks: Uint8Array[] = [];
+
+  constructor(private readonly volume: number, private readonly speed: number) {
+    const audioGlobal = globalThis as typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+    const AudioContextConstructor = audioGlobal.AudioContext ?? audioGlobal.webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error('Web Audio is unavailable.');
+    this.context = new AudioContextConstructor();
+  }
+
+  async push(bytes: Uint8Array, event: Extract<TTSStreamEvent, { type: 'chunk' }>): Promise<'streamed' | 'buffered'> {
+    this.format = event.audio_format;
+    if (event.audio_format !== 'pcm') {
+      this.chunks.push(bytes);
+      return 'buffered';
+    }
+
+    if (this.context.state === 'suspended') await this.context.resume();
+    const samples = new Float32Array(Math.floor(bytes.byteLength / 2));
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = view.getInt16(index * 2, true) / 32768;
+    }
+
+    const buffer = this.context.createBuffer(1, samples.length, event.sample_rate);
+    buffer.copyToChannel(samples, 0);
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = clamp(this.speed, 0.75, 1.35);
+    gain.gain.value = clamp(this.volume, 0, 1);
+    source.connect(gain).connect(this.context.destination);
+
+    const startAt = Math.max(this.context.currentTime + 0.035, this.nextStartTime);
+    source.start(startAt);
+    this.nextStartTime = startAt + buffer.duration / source.playbackRate.value;
+    this.sources.push(source);
+    source.onended = () => {
+      this.sources = this.sources.filter((candidate) => candidate !== source);
+    };
+    return 'streamed';
+  }
+
+  get remainingSeconds() {
+    return Math.max(0, this.nextStartTime - this.context.currentTime);
+  }
+
+  toObjectUrl(fallbackFormat = 'wav'): string | null {
+    if (this.chunks.length === 0) return null;
+    const totalBytes = this.chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+    const merged = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return URL.createObjectURL(new Blob([merged], { type: `audio/${this.format ?? fallbackFormat}` }));
+  }
+
+  stop() {
+    for (const source of this.sources) {
+      try {
+        source.stop();
+      } catch {
+        // Already stopped by the browser audio graph.
+      }
+    }
+    this.sources = [];
+    void this.context.close();
+  }
+}
 
 class TTSStore {
   enabled = $state(settingsStore.getSnapshot().ttsEnabled);
@@ -76,8 +142,10 @@ class TTSStore {
   duration = $state(0);
   error = $state<string | null>(null);
   announcement = $state('Speech is ready.');
+  streamedChunks = $state(0);
 
   private activeAudio: ActiveAudio | null = null;
+  private activeSink: ProgressiveAudioSink | null = null;
   private generationController: AbortController | null = null;
   private progressTimer: ReturnType<typeof globalThis.setInterval> | null = null;
   private runToken = 0;
@@ -266,7 +334,15 @@ class TTSStore {
     this.generationController = controller;
 
     try {
-      const response = await ttsService.generateSpeech(
+      const sink = new ProgressiveAudioSink(this.volume, this.speed);
+      this.activeSink = sink;
+      let streamedProgressively = false;
+      let fallbackObjectUrl: string | null = null;
+      let doneAudioFormat = 'wav';
+      let doneVoiceId = nextItem.voiceId;
+      this.streamedChunks = 0;
+
+      await ttsService.streamSpeech(
         {
           text: nextItem.visibleText ?? nextItem.text,
           tts_text: nextItem.text,
@@ -282,44 +358,72 @@ class TTSStore {
             : undefined,
           emotion: nextItem.emotion
         },
+        {
+          onStart: () => {
+            this.announcement = `Starting voice stream with ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`;
+          },
+          onChunk: async (event, bytes) => {
+            if (token !== this.runToken || controller.signal.aborted) return;
+            this.streamedChunks = event.sequence;
+            const mode = await sink.push(bytes, event);
+            if (mode === 'streamed' && !streamedProgressively) {
+              streamedProgressively = true;
+              this.playbackState = 'playing';
+              this.announcement = `Speaking with ${toFriendlyVoiceName(event.voice_id ?? nextItem.voiceId, nextItem.voiceName)}.`;
+              this.startProgressTimer();
+            } else if (!streamedProgressively) {
+              this.announcement = `Receiving voice audio… ${event.sequence} chunk${event.sequence === 1 ? '' : 's'}.`;
+            }
+          },
+          onDone: (event) => {
+            doneAudioFormat = event.audio_format;
+            doneVoiceId = event.voice_id;
+            this.duration = event.duration_seconds ?? this.duration;
+            if (this.duration === 0) this.duration = sink.remainingSeconds;
+          }
+        },
         { signal: controller.signal }
       );
 
       if (token !== this.runToken || controller.signal.aborted) {
+        sink.stop();
         return;
       }
 
-      const objectUrl = createObjectUrl(response.audio_base64, response.audio_format);
-      const element = new Audio(objectUrl);
-      this.activeAudio = { element, objectUrl, item: nextItem };
-      this.applyPlaybackSettings();
-
-      element.onloadedmetadata = () => {
-        this.duration = Number.isFinite(element.duration) ? element.duration : response.duration_seconds ?? 0;
-      };
-      element.ontimeupdate = () => this.updateProgressFromAudio();
-      element.onerror = () => {
-        this.error = 'The generated voice audio could not be played.';
-        this.playbackState = 'error';
-        this.cleanupActiveAudio();
-      };
-      element.onended = () => {
-        this.updateProgressFromAudio();
-        this.cleanupActiveAudio();
-        this.playbackState = this.queue.length > 0 ? 'queued' : 'idle';
-        this.announcement = this.queue.length > 0 ? 'Continuing queued speech.' : 'Speech finished.';
-        void this.playNext();
-      };
-
-      await element.play();
-      this.playbackState = 'playing';
-      this.announcement = `Speaking with ${toFriendlyVoiceName(response.voice_id ?? nextItem.voiceId, nextItem.voiceName)}.`;
-      this.startProgressTimer();
+      fallbackObjectUrl = sink.toObjectUrl(doneAudioFormat);
+      if (fallbackObjectUrl) {
+        const element = new Audio(fallbackObjectUrl);
+        this.activeAudio = { element, objectUrl: fallbackObjectUrl, item: nextItem };
+        this.applyPlaybackSettings();
+        element.onloadedmetadata = () => {
+          this.duration = Number.isFinite(element.duration) ? element.duration : this.duration;
+        };
+        element.ontimeupdate = () => this.updateProgressFromAudio();
+        element.onerror = () => {
+          this.error = 'The generated voice audio could not be played.';
+          this.playbackState = 'error';
+          this.cleanupActiveAudio();
+        };
+        element.onended = () => this.finishCurrentLine();
+        await element.play();
+        this.playbackState = 'playing';
+        this.announcement = `Speaking with ${toFriendlyVoiceName(doneVoiceId ?? nextItem.voiceId, nextItem.voiceName)}.`;
+        this.startProgressTimer();
+      } else {
+        const finishDelayMs = Math.max(250, sink.remainingSeconds * 1000);
+        globalThis.setTimeout(() => {
+          if (this.activeSink === sink) this.activeSink = null;
+          sink.stop();
+          if (token === this.runToken) this.finishCurrentLine();
+        }, finishDelayMs);
+      }
     } catch (error) {
       if (token !== this.runToken) {
         return;
       }
 
+      this.activeSink?.stop();
+      this.activeSink = null;
       this.cleanupActiveAudio();
       this.error = normalizeAudioError(error);
       this.playbackState = 'error';
@@ -368,6 +472,8 @@ class TTSStore {
       this.activeAudio.element.currentTime = 0;
     }
 
+    this.activeSink?.stop();
+    this.activeSink = null;
     this.cleanupActiveAudio();
 
     if (options.clearQueue) {
@@ -382,6 +488,14 @@ class TTSStore {
     if (options.announce) {
       this.announcement = 'Speech stopped.';
     }
+  }
+
+  private finishCurrentLine() {
+    this.updateProgressFromAudio();
+    this.cleanupActiveAudio();
+    this.playbackState = this.queue.length > 0 ? 'queued' : 'idle';
+    this.announcement = this.queue.length > 0 ? 'Continuing queued speech.' : 'Speech finished.';
+    void this.playNext();
   }
 
   private cleanupActiveAudio() {
