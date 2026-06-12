@@ -216,20 +216,36 @@
   const progressWidth = (job: LoRATrainingJob | null) => `${Math.max(6, Math.round(bounded(job?.progress) * 100))}%`;
 
   const lastTrained = (job: LoRATrainingJob | null) => {
+    const statusDate = $growthStore.trainingStatus?.last_trained_at;
+    if (statusDate) return formatDate(statusDate);
     if (!job || job.status !== 'completed') return 'Not trained yet';
     return formatDate(job.completed_at);
+  };
+
+  const approveAdapter = (adapterId: string | null | undefined) => {
+    if (!adapterId) return;
+    void growthStore.approveAdapter(adapterId);
+  };
+
+  const rejectAdapter = (adapterId: string | null | undefined) => {
+    if (!adapterId) return;
+    void growthStore.rejectAdapter(adapterId);
   };
 
   const nextScheduled = $derived.by(() => {
     if ($personalLoRAReviewView.trainingActive) return 'Running now';
     if (!$personalLoRAReviewView.trainingOptedIn) return 'Paused until opt-in';
-    if ($personalLoRAReviewView.approvedExamples.length === 0) return 'After examples are approved';
+    if (!$personalLoRAReviewView.autoTrainingEnabled) return 'Automation paused';
+    if ($growthStore.trainingStatus?.next_scheduled_at) return formatDate($growthStore.trainingStatus.next_scheduled_at);
+    if ($personalLoRAReviewView.approvedExamples.length < ($growthStore.settings?.min_training_examples ?? 1)) return 'After enough examples are approved';
     return 'Idle / overnight ready';
   });
 
   const loraCopy = $derived.by(() => {
     if ($personalLoRAReviewView.trainingActive) return $growthStore.currentJob?.message ?? 'A local adapter job is moving carefully in the background.';
     if (!$personalLoRAReviewView.trainingOptedIn) return 'Personal LoRA training is visible here, but remains off until the user explicitly opts in.';
+    if ($growthStore.trainingStatus?.pending_adapter_update) return 'A new adapter is trained and waiting for your approval before it changes behavior.';
+    if ($personalLoRAReviewView.autoTrainingEnabled) return 'Approved growth signals can queue a lightweight local QLoRA run automatically when thresholds are met.';
     return 'Approved examples can become a small, local style adapter when you choose to start training.';
   });
 
@@ -370,8 +386,8 @@
             </div>
             <dl class="growth-lora-facts">
               <div>
-                <dt>Current progress</dt>
-                <dd>{percent($growthStore.currentJob?.progress)}</dd>
+                <dt>Current status</dt>
+                <dd>{jobStatusLabel($growthStore.currentJob)}</dd>
               </div>
               <div>
                 <dt>Last trained</dt>
@@ -382,10 +398,34 @@
                 <dd>{nextScheduled}</dd>
               </div>
               <div>
+                <dt>Triggered by</dt>
+                <dd>{$growthStore.trainingStatus?.triggered_by ?? 'Waiting for stronger growth data'}</dd>
+              </div>
+              <div>
                 <dt>Needs review</dt>
                 <dd>{$growthStore.counts.pending_review}</dd>
               </div>
             </dl>
+            {#if $growthStore.trainingStatus?.learning_feedback?.length}
+              <div class="growth-learning-feedback" aria-label="What the LoRA is learning">
+                <strong>What she is learning</strong>
+                <ul>
+                  {#each $growthStore.trainingStatus.learning_feedback as item}
+                    <li>{item}</li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            {#if $growthStore.trainingStatus?.pending_adapter_update}
+              <div class="growth-approval-card" role="status">
+                <strong>New LoRA update needs your review</strong>
+                <p>{$growthStore.trainingStatus.pending_adapter_update.trigger_summary ?? 'A trained adapter is ready to apply.'}</p>
+                <div>
+                  <button type="button" class="approve" onclick={() => approveAdapter($growthStore.trainingStatus?.pending_adapter_update?.adapter_id)} disabled={$growthStore.actionState !== 'idle'}>Approve</button>
+                  <button type="button" onclick={() => rejectAdapter($growthStore.trainingStatus?.pending_adapter_update?.adapter_id)} disabled={$growthStore.actionState !== 'idle'}>Reject</button>
+                </div>
+              </div>
+            {/if}
           </article>
 
           <article class="personality-shift-card" aria-labelledby="personality-shift-title">

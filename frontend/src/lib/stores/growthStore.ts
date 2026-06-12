@@ -3,6 +3,7 @@ import { growthService, GrowthServiceError } from '$lib/api/growthService';
 import type {
   LoRATrainingExample,
   LoRATrainingJob,
+  LoRATrainingStatusSummary,
   PersonalLoRACounts,
   PersonalLoRASettings,
   PersonalLoRASettingsUpdate,
@@ -15,6 +16,7 @@ export type GrowthActionState = 'idle' | 'saving' | 'reviewing' | 'training';
 export interface GrowthState {
   settings: PersonalLoRASettings | null;
   currentJob: LoRATrainingJob | null;
+  trainingStatus: LoRATrainingStatusSummary | null;
   examples: LoRATrainingExample[];
   counts: PersonalLoRACounts;
   loadState: GrowthLoadState;
@@ -30,8 +32,11 @@ export interface PersonalLoRAReviewView {
   collectionOptedIn: boolean;
   trainingOptedIn: boolean;
   reviewRequired: boolean;
+  applyApprovalRequired: boolean;
+  autoTrainingEnabled: boolean;
   trainingActive: boolean;
   canStartTraining: boolean;
+  canAutoTrainNow: boolean;
 }
 
 const INITIAL_COUNTS: PersonalLoRACounts = {
@@ -43,6 +48,7 @@ const INITIAL_COUNTS: PersonalLoRACounts = {
 const INITIAL_STATE: GrowthState = {
   settings: null,
   currentJob: null,
+  trainingStatus: null,
   examples: [],
   counts: INITIAL_COUNTS,
   loadState: 'idle',
@@ -63,6 +69,7 @@ const mergeStatus = (state: GrowthState, response: PersonalLoRAStatusResponse): 
   ...state,
   settings: response.settings,
   currentJob: response.current_job,
+  trainingStatus: response.training_status,
   examples: response.examples,
   counts: response.counts,
   loadState: 'loaded',
@@ -139,6 +146,15 @@ function createGrowthStore() {
     startTraining() {
       return runAction('training', () => growthService.startTraining());
     },
+    evaluateAutoTraining() {
+      return runAction('training', () => growthService.evaluateAutoTraining());
+    },
+    approveAdapter(adapterId: string) {
+      return runAction('reviewing', () => growthService.approveAdapter(adapterId));
+    },
+    rejectAdapter(adapterId: string) {
+      return runAction('reviewing', () => growthService.rejectAdapter(adapterId));
+    },
     clearError() {
       store.update((state) => ({ ...state, error: null, loadState: state.examples.length ? 'loaded' : 'idle' }));
     }
@@ -154,6 +170,7 @@ export const personalLoRAReviewView = derived<typeof growthStore, PersonalLoRARe
   const approvedExamples = $growthStore.examples.filter((example) => example.status === 'approved');
   const trainingOptedIn = $growthStore.settings?.training_opt_in ?? false;
   const trainingActive = isPersonalLoRATrainingActive($growthStore.currentJob);
+  const minTrainingExamples = $growthStore.settings?.min_training_examples ?? 1;
 
   return {
     pendingExamples,
@@ -162,7 +179,15 @@ export const personalLoRAReviewView = derived<typeof growthStore, PersonalLoRARe
     collectionOptedIn: $growthStore.settings?.collection_opt_in ?? false,
     trainingOptedIn,
     reviewRequired: $growthStore.settings?.require_review_before_training ?? true,
+    applyApprovalRequired: $growthStore.settings?.require_approval_before_applying ?? true,
+    autoTrainingEnabled: $growthStore.settings?.auto_training_enabled ?? false,
     trainingActive,
-    canStartTraining: trainingOptedIn && approvedExamples.length > 0 && $growthStore.actionState === 'idle' && !trainingActive
+    canStartTraining: trainingOptedIn && approvedExamples.length >= minTrainingExamples && $growthStore.actionState === 'idle' && !trainingActive,
+    canAutoTrainNow:
+      trainingOptedIn &&
+      ($growthStore.settings?.auto_training_enabled ?? false) &&
+      approvedExamples.length >= minTrainingExamples &&
+      $growthStore.actionState === 'idle' &&
+      !trainingActive
   };
 });

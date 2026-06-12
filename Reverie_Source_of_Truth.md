@@ -525,3 +525,12 @@ Task 4C adds the Memory Browser as Reverie's dedicated long-term recall control 
 Task 4C deliberately avoids LoRA training UI and encyclopedia work. It focuses on local memory inspection/control and keeps memory browsing lightweight for the 8GB target.
 
 *End of Source of Truth Document v1.0*
+
+
+### Milestone 3 Task 4D — Automated LoRA Training & Approvals
+
+Reverie's growth system now supports optional automated Personal LoRA training as an auditable extension of Reflection → Journal → Memory → Growth Dashboard. Training remains local-first and opt-in: collection, training, automation, and adapter application each have visible settings. Automated training is allowed only after approved growth data crosses configurable thresholds such as minimum approved examples, new examples since the last completed job, linked memory volume, training frequency hours, and max auto jobs per day. The default behavior is non-intrusive: automation is off until enabled, training requires explicit opt-in, and new adapters require approval before application.
+
+The 8GB-friendly training profile is conservative by design: Unsloth-style 4-bit QLoRA foundation, rank capped at 16, batch size 1, bounded sequence length, low learning rate, serialized background execution, and no hidden chat-path training. Current implementation writes inspectable dataset/job/adapter manifests and can be swapped for a real Unsloth worker while preserving the same safety controls.
+
+The Growth Dashboard surfaces a LoRA Training Status section with current status, last trained time, next scheduled training, data that triggered training, and plain-language learning feedback such as improved reassurance tone, stronger emotional memory recall, better boundary pacing, or more stable playful voice. When “Require approval before applying new LoRA updates” is enabled, completed adapters remain pending with approve/reject controls and are not activated until approved.

@@ -23,6 +23,18 @@
     void growthStore.updateSettings({ training_opt_in: (event.currentTarget as HTMLInputElement).checked });
   };
 
+  const setAutoTraining = (event: Event) => {
+    void growthStore.updateSettings({ auto_training_enabled: (event.currentTarget as HTMLInputElement).checked });
+  };
+
+  const setApplyApproval = (event: Event) => {
+    void growthStore.updateSettings({ require_approval_before_applying: (event.currentTarget as HTMLInputElement).checked });
+  };
+
+  const setExampleReview = (event: Event) => {
+    void growthStore.updateSettings({ require_review_before_training: (event.currentTarget as HTMLInputElement).checked });
+  };
+
   const approveExample = (itemId: string) => {
     void growthStore.approveExample(itemId);
   };
@@ -38,6 +50,16 @@
   const startTraining = () => {
     if (!$personalLoRAReviewView.canStartTraining) return;
     void growthStore.startTraining();
+  };
+
+  const approveAdapter = (adapterId: string | null | undefined) => {
+    if (!adapterId) return;
+    void growthStore.approveAdapter(adapterId);
+  };
+
+  const rejectAdapter = (adapterId: string | null | undefined) => {
+    if (!adapterId) return;
+    void growthStore.rejectAdapter(adapterId);
   };
 
   const formatDate = (value: string | null | undefined) => {
@@ -93,7 +115,7 @@
     if ($personalLoRAReviewView.trainingActive) return 'Training is already running.';
     if ($growthStore.actionState !== 'idle') return 'Please wait for the current action to finish.';
     if (!$personalLoRAReviewView.trainingOptedIn) return 'Turn on training opt-in before starting.';
-    if ($personalLoRAReviewView.approvedExamples.length === 0) return 'Approve at least one candidate before training.';
+    if ($personalLoRAReviewView.approvedExamples.length < ($growthStore.settings?.min_training_examples ?? 1)) return `Approve at least ${$growthStore.settings?.min_training_examples ?? 1} candidates before training.`;
     return '';
   });
 
@@ -159,8 +181,8 @@
               <strong>{$personalLoRAReviewView.approvedExamples.length}</strong>
             </div>
             <div>
-              <span>Needs review</span>
-              <strong>{$growthStore.counts.pending_review}</strong>
+              <span>Next scheduled</span>
+              <strong>{formatDate($growthStore.trainingStatus?.next_scheduled_at)}</strong>
             </div>
           </div>
         </article>
@@ -179,7 +201,7 @@
           <div class="setting-copy compact">
             <span class="setting-kicker">Consent</span>
             <h2>Opt-in controls</h2>
-            <p>Collection finds possible examples. Training is a separate choice.</p>
+            <p>Collection finds possible examples. Automated training only runs after opt-in thresholds are met.</p>
           </div>
           <label class="inline-toggle">
             <input type="checkbox" checked={$personalLoRAReviewView.collectionOptedIn} onchange={setCollectionOptIn} />
@@ -189,8 +211,20 @@
             <input type="checkbox" checked={$personalLoRAReviewView.trainingOptedIn} onchange={setTrainingOptIn} />
             <span>{$personalLoRAReviewView.trainingOptedIn ? 'Allow approved examples to train' : 'Training opt-in is off'}</span>
           </label>
+          <label class="inline-toggle">
+            <input type="checkbox" checked={$personalLoRAReviewView.autoTrainingEnabled} onchange={setAutoTraining} />
+            <span>{$personalLoRAReviewView.autoTrainingEnabled ? 'Auto-train when thresholds are met' : 'Automatic training is off'}</span>
+          </label>
+          <label class="inline-toggle">
+            <input type="checkbox" checked={$personalLoRAReviewView.reviewRequired} onchange={setExampleReview} />
+            <span>{$personalLoRAReviewView.reviewRequired ? 'Review examples before training' : 'Auto-approve qualifying examples'}</span>
+          </label>
+          <label class="inline-toggle">
+            <input type="checkbox" checked={$personalLoRAReviewView.applyApprovalRequired} onchange={setApplyApproval} />
+            <span>{$personalLoRAReviewView.applyApprovalRequired ? 'Require approval before applying new LoRA updates' : 'Apply trained LoRA updates automatically'}</span>
+          </label>
           <p class="training-small-note">
-            {$personalLoRAReviewView.reviewRequired ? 'Review is required before training.' : 'Review is currently optional in settings, but this panel still uses approved examples only.'}
+            Threshold: {$growthStore.settings?.min_training_examples ?? 1} approved examples · every {$growthStore.settings?.training_frequency_hours ?? 24} hours · {$growthStore.settings?.max_auto_jobs_per_day ?? 1} auto job/day.
           </p>
         </article>
 
@@ -220,6 +254,26 @@
           <button class="primary-training-button" type="button" onclick={startTraining} disabled={!$personalLoRAReviewView.canStartTraining}>
             {$growthStore.actionState === 'training' ? 'Starting…' : 'Start Training'}
           </button>
+          {#if $growthStore.trainingStatus?.learning_feedback?.length}
+            <div class="training-learning-feedback">
+              <strong>What this is learning</strong>
+              <ul>
+                {#each $growthStore.trainingStatus.learning_feedback as item}
+                  <li>{item}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if $growthStore.trainingStatus?.pending_adapter_update}
+            <div class="adapter-approval-box">
+              <strong>Pending LoRA update</strong>
+              <p>{$growthStore.trainingStatus.pending_adapter_update.trigger_summary ?? 'A completed adapter is waiting for your approval.'}</p>
+              <div class="candidate-actions inline-actions">
+                <button type="button" class="approve" onclick={() => approveAdapter($growthStore.trainingStatus?.pending_adapter_update?.adapter_id)} disabled={isBusy}>Approve update</button>
+                <button type="button" onclick={() => rejectAdapter($growthStore.trainingStatus?.pending_adapter_update?.adapter_id)} disabled={isBusy}>Reject update</button>
+              </div>
+            </div>
+          {/if}
         </article>
       </section>
 

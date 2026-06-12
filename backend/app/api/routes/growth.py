@@ -27,6 +27,13 @@ class PersonalLoRASettingsUpdate(BaseModel):
     max_sequence_length: int | None = Field(default=None, ge=256, le=1024)
     pause_during_chat: bool | None = None
     require_review_before_training: bool | None = None
+    require_approval_before_applying: bool | None = None
+    auto_training_enabled: bool | None = None
+    training_frequency_hours: int | None = Field(default=None, ge=6, le=168)
+    min_training_examples: int | None = Field(default=None, ge=1, le=256)
+    min_new_examples_for_auto_training: int | None = Field(default=None, ge=1, le=64)
+    min_memory_links_for_auto_training: int | None = Field(default=None, ge=0, le=64)
+    max_auto_jobs_per_day: int | None = Field(default=None, ge=1, le=3)
     active_adapter_id: str | None = None
     rollback_adapter_id: str | None = None
 
@@ -48,6 +55,7 @@ async def personal_lora_status(
         return {
             "settings": trainer.get_settings(),
             "current_job": trainer.get_current_job(),
+            "training_status": trainer.get_training_status(),
             "examples": examples[:50],
             "counts": {
                 "pending_review": sum(
@@ -124,6 +132,50 @@ async def delete_personal_lora_example(
 
     try:
         return {"example": trainer.delete_example(item_id)}
+    except PersonalLoRAError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+
+@router.post("/personal-lora/evaluate-auto")
+async def evaluate_personal_lora_auto_training(
+    trainer: Annotated[PersonalLoRATrainer, Depends(get_lora_trainer)],
+) -> dict[str, Any]:
+    """Evaluate automated thresholds and queue training if eligible."""
+
+    try:
+        return {"job": trainer.evaluate_auto_training()}
+    except PersonalLoRAError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+
+
+@router.post("/personal-lora/adapters/{adapter_id}/approve")
+async def approve_personal_lora_adapter(
+    adapter_id: str,
+    trainer: Annotated[PersonalLoRATrainer, Depends(get_lora_trainer)],
+) -> dict[str, Any]:
+    """Approve and apply a completed adapter update."""
+
+    try:
+        return {"job": trainer.approve_adapter_update(adapter_id)}
+    except PersonalLoRAError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+
+@router.post("/personal-lora/adapters/{adapter_id}/reject")
+async def reject_personal_lora_adapter(
+    adapter_id: str,
+    trainer: Annotated[PersonalLoRATrainer, Depends(get_lora_trainer)],
+) -> dict[str, Any]:
+    """Reject a completed adapter update without applying it."""
+
+    try:
+        return {"job": trainer.reject_adapter_update(adapter_id)}
     except PersonalLoRAError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
