@@ -27,15 +27,19 @@ export interface MemoryReflectionSettings {
   proactiveResourceWarnings: boolean;
 }
 
+export type ExtensionSettingValue = boolean | number | string | null;
+
 export interface SettingsState extends MemoryReflectionSettings {
   savedAt: Date | null;
+  extensionSettings: Record<string, Record<string, ExtensionSettingValue>>;
 }
 
 type PersistedSettings = Partial<MemoryReflectionSettings> & {
   savedAt?: string | null;
+  extensionSettings?: Record<string, Record<string, ExtensionSettingValue>>;
 };
 
-const STORAGE_KEY = 'reverie.memoryReflectionSettings.v1';
+const STORAGE_KEY = 'reverie.memoryReflectionSettings.v2';
 
 export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   longTermMemoryEnabled: true,
@@ -58,7 +62,8 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
 
 const INITIAL_STATE: SettingsState = {
   ...DEFAULT_MEMORY_REFLECTION_SETTINGS,
-  savedAt: null
+  savedAt: null,
+  extensionSettings: {}
 };
 
 const isReflectionFrequency = (value: unknown): value is ReflectionFrequency =>
@@ -83,6 +88,22 @@ const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value 
 const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
   const numberValue = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
   return Math.min(max, Math.max(min, numberValue));
+};
+
+const isExtensionSettingValue = (value: unknown): value is ExtensionSettingValue =>
+  value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string';
+
+const normalizeExtensionSettings = (value: unknown): Record<string, Record<string, ExtensionSettingValue>> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized: Record<string, Record<string, ExtensionSettingValue>> = {};
+  for (const [extensionId, settings] of Object.entries(value)) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) continue;
+    normalized[extensionId] = {};
+    for (const [key, settingValue] of Object.entries(settings)) {
+      if (isExtensionSettingValue(settingValue)) normalized[extensionId][key] = settingValue;
+    }
+  }
+  return normalized;
 };
 
 const normalizePersistedSettings = (value: PersistedSettings): SettingsState => ({
@@ -131,7 +152,8 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
     value.proactiveResourceWarnings,
     DEFAULT_MEMORY_REFLECTION_SETTINGS.proactiveResourceWarnings
   ),
-  savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
+  savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null,
+  extensionSettings: normalizeExtensionSettings(value.extensionSettings)
 });
 
 const readPersistedSettings = (): SettingsState => {
@@ -167,6 +189,7 @@ const persistSettings = (state: SettingsState) => {
     performancePreset: state.performancePreset,
     backgroundTaskLimit: state.backgroundTaskLimit,
     proactiveResourceWarnings: state.proactiveResourceWarnings,
+    extensionSettings: state.extensionSettings,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -243,8 +266,25 @@ function createSettingsStore() {
     setProactiveResourceWarnings(proactiveResourceWarnings: boolean) {
       save({ proactiveResourceWarnings });
     },
+    setExtensionSetting(extensionId: string, key: string, value: ExtensionSettingValue) {
+      store.update((state) => ({
+        ...state,
+        extensionSettings: {
+          ...state.extensionSettings,
+          [extensionId]: {
+            ...(state.extensionSettings[extensionId] ?? {}),
+            [key]: value
+          }
+        },
+        savedAt: new Date()
+      }));
+    },
     resetMemoryReflectionSettings() {
-      save(DEFAULT_MEMORY_REFLECTION_SETTINGS);
+      store.set({
+        ...DEFAULT_MEMORY_REFLECTION_SETTINGS,
+        extensionSettings: {},
+        savedAt: new Date()
+      });
     },
     getSnapshot() {
       return get(store);

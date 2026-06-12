@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes.chat import router as chat_router
+from app.api.routes.extensions import router as extensions_router
 from app.api.routes.growth import router as growth_router
 from app.api.routes.images import router as images_router
 from app.api.routes.journal import router as journal_router
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(chat_router)
+    app.include_router(extensions_router)
     app.include_router(journal_router)
     app.include_router(memory_router)
     app.include_router(growth_router)
