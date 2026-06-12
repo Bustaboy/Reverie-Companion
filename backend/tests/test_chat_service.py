@@ -9,6 +9,7 @@ from typing import Any
 
 from app.core.config import Settings
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
+from app.models.tts import TTSContext
 from app.services.chat_service import ChatService
 
 
@@ -393,17 +394,80 @@ class ChatServiceReflectionTests(unittest.TestCase):
         )
         request = ChatRequest(
             stream=True,
-            messages=[ChatMessage(role="user", content="I feel anxious; please remember reassurance helps.")],
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="I feel anxious; please remember reassurance helps.",
+                )
+            ],
         )
 
-        frames = [frame async for frame in await service.stream_chat(request, request_id="req-stream")]
+        frames = [
+            frame
+            async for frame in await service.stream_chat(
+                request, request_id="req-stream"
+            )
+        ]
 
         self.assertEqual(sum("event: message" in frame for frame in frames), 2)
         self.assertTrue(all("visual_state" not in frame for frame in frames[:2]))
         done_payload = json.loads(frames[-1].split("data: ", 1)[1])
-        self.assertEqual(done_payload["visual_state"]["growth_cue"], "relationship_trust")
-        self.assertIn(done_payload["visual_state"]["expression"], {"happy", "concerned", "thinking", "neutral"})
-        self.assertEqual(done_payload["growth_notification"]["id"], "growth_journal_visual")
+        self.assertEqual(
+            done_payload["visual_state"]["growth_cue"], "relationship_trust"
+        )
+        self.assertIn(
+            done_payload["visual_state"]["expression"],
+            {"happy", "concerned", "thinking", "neutral"},
+        )
+        self.assertEqual(
+            done_payload["growth_notification"]["id"], "growth_journal_visual"
+        )
+
+    def test_chat_echoes_tts_context_for_future_voice_playback(self) -> None:
+        async def run_test() -> None:
+            tts_context = TTSContext(
+                character_id="tara", mode="one_to_one", emotion_hint="warm"
+            )
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            )
+            request = ChatRequest(
+                stream=False,
+                tts_context=tts_context,
+                messages=[ChatMessage(role="user", content="Say hi.")],
+            )
+
+            response = await service.chat(request, request_id="req-tts-context")
+
+            self.assertEqual(response.tts_context, tts_context)
+
+        asyncio.run(run_test())
+
+    def test_stream_done_frame_echoes_tts_context(self) -> None:
+        async def run_test() -> None:
+            tts_context = TTSContext(character_id="tara", is_narration=True, mode="rpg")
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+            )
+            request = ChatRequest(
+                stream=True,
+                tts_context=tts_context,
+                messages=[ChatMessage(role="user", content="Describe the room.")],
+            )
+
+            frames = [
+                frame
+                async for frame in await service.stream_chat(
+                    request, request_id="req-stream-tts-context"
+                )
+            ]
+
+            done_payload = json.loads(frames[-1].split("data: ", 1)[1])
+            self.assertEqual(done_payload["tts_context"], tts_context.model_dump())
+
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":
