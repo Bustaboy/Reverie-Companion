@@ -3726,7 +3726,7 @@ h1 {
   }
 }
 
-/* Milestone 3 Task 4B: diary-style self-reflection journal polish. */
+/* Diary-style self-reflection journal polish. */
 .diary-hero {
   position: relative;
   overflow: hidden;
@@ -4080,7 +4080,7 @@ h1 {
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
 }
 
-/* Milestone 3 Task 4D: automated LoRA training status and approval polish. */
+/* Automated LoRA training status and approval polish. */
 .growth-learning-feedback,
 .growth-approval-card,
 .training-learning-feedback,
@@ -4143,7 +4143,7 @@ h1 {
   font-weight: 900;
 }
 
-/* Milestone 3 Task 5A: shared premium polish layer.
+/* Shared premium polish layer.
    These rules intentionally sit late in the cascade so older feature surfaces
    inherit one interaction language without rewriting domain-specific layouts. */
 :root {
@@ -4653,7 +4653,7 @@ textarea:disabled {
   line-height: 1.6;
 }
 
-/* Milestone 3 Task 5D — unified Settings & Control Hub */
+/* Unified Settings & Control Hub */
 .control-hub {
   background:
     radial-gradient(circle at 20% -10%, rgba(240, 154, 159, 0.13), transparent 28rem),
@@ -4846,6 +4846,74 @@ textarea:disabled {
   line-height: 1.55;
 }
 
+.welcome-card,
+.release-note-card {
+  gap: 0.9rem;
+}
+
+.onboarding-list,
+.milestone-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.onboarding-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.onboarding-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.78rem;
+  border: 1px solid rgba(255, 214, 179, 0.13);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.onboarding-step > span {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  background: rgba(240, 154, 159, 0.14);
+  color: #ffd9d4;
+  font-weight: 900;
+}
+
+.onboarding-step strong,
+.milestone-card strong,
+.release-note-card strong {
+  color: #fff2e8;
+}
+
+.onboarding-step p,
+.milestone-card p,
+.release-note-card p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.milestone-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.milestone-card {
+  min-height: 12rem;
+}
+
+.milestone-card span {
+  display: block;
+  margin-top: auto;
+  color: #ffd9cf;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .appearance-preview,
 .image-preset-preview,
 .tts-preview-card {
@@ -5033,7 +5101,12 @@ textarea:disabled {
   }
 
   .settings-card-grid.three-up,
-  .backup-grid {
+  .backup-grid,
+  .milestone-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-list {
     grid-template-columns: 1fr;
   }
 }
@@ -5052,6 +5125,10 @@ textarea:disabled {
 
   .image-preset-preview {
     grid-template-columns: 1fr;
+  }
+
+  .milestone-card {
+    min-height: auto;
   }
 }
 

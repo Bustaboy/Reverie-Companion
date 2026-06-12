@@ -21,6 +21,7 @@
 
   type SettingsSectionId =
     | 'general'
+    | 'whats-new'
     | 'appearance'
     | 'voice'
     | 'images'
@@ -48,7 +49,14 @@
       label: 'General',
       eyebrow: 'Start here',
       description: 'Local autosave, defaults, and day-to-day companion behavior.',
-      search: 'general autosave local defaults companion behavior privacy'
+      search: 'general autosave local defaults companion behavior privacy onboarding welcome checklist start'
+    },
+    {
+      id: 'whats-new',
+      label: 'What’s New',
+      eyebrow: 'Milestone 3',
+      description: 'A concise release tour of the VN, voice, images, growth, extensions, and settings polish.',
+      search: 'milestone 3 whats new release notes visual novel voice image generation growth extension settings polished'
     },
     {
       id: 'appearance',
@@ -115,6 +123,41 @@
     { scope: 'full', label: 'full local backup', description: 'every current reverie.* browser key plus the settings snapshot' }
   ];
 
+  const milestoneHighlights: Array<{ title: string; description: string; impact: string }> = [
+    {
+      title: 'Visual Novel foundation',
+      description: 'Emotion-aware stage, expressions, backgrounds, and graceful return-to-chat controls.',
+      impact: 'Adds a cinematic companion layer without blocking chat.'
+    },
+    {
+      title: 'Emotional TTS',
+      description: 'Local voice profiles, mood routing, streaming playback, and zero-shot profile creation hooks.',
+      impact: 'Keeps spoken presence intimate while preserving 8GB headroom.'
+    },
+    {
+      title: 'In-chat images',
+      description: 'ComfyUI-ready image jobs, prompt context, gallery history, queue controls, and safe fallbacks.',
+      impact: 'Scene visuals are optional, cancelable, and one-at-a-time on 8GB systems.'
+    },
+    {
+      title: 'Transparent growth suite',
+      description: 'Growth Dashboard, diary Journal, editable Memory Browser, LoRA review, and Encyclopedia.',
+      impact: 'Makes character change inspectable, reversible, and grounded in evidence.'
+    },
+    {
+      title: 'Extension-ready Settings Hub',
+      description: 'Typed extension contracts, searchable controls, import/export, and clear quality tradeoffs.',
+      impact: 'Future modules can plug in without destabilizing the core app.'
+    }
+  ];
+
+  const onboardingSteps: Array<{ title: string; description: string }> = [
+    { title: 'Start in Chat', description: 'Talk normally; Reverie streams responses while memory, voice, and media stay decoupled.' },
+    { title: 'Review growth', description: 'Use Growth, Journal, Memory, and Encyclopedia to inspect what is being learned.' },
+    { title: 'Tune 8GB comfort', description: 'Use Performance & 8GB before raising image, context, or voice quality.' },
+    { title: 'Back up locally', description: 'Export settings or a full local backup before experimenting with new characters or extensions.' }
+  ];
+
   const appearanceOptions: Array<{ value: AppearanceTheme; label: string; description: string }> = [
     { value: 'warm_dark', label: 'Warm dark', description: 'Default premium near-black palette with rose-gold warmth.' },
     { value: 'ember', label: 'Ember', description: 'Softer copper accents for a more intimate evening feel.' },
@@ -145,21 +188,21 @@
   ];
 
   const contextBudgetOptions: Array<{ value: ContextBudgetPreset; label: string; description: string; detail: string }> = [
-    { value: 'gentle', label: 'Gentle', description: 'Keeps recall lighter for busy laptops or battery moments.', detail: 'Smallest memory bundle' },
-    { value: 'balanced', label: 'Balanced', description: 'Recommended for the 8GB target: warm continuity with calm resource use.', detail: '8GB-aware default' },
-    { value: 'roomy', label: 'Roomy', description: 'Allows a little more remembered context when your system has headroom.', detail: 'More context when idle' }
+    { value: 'gentle', label: 'Gentle', description: 'Keeps recall lighter by sending fewer memory excerpts and shorter scene notes; best while media or training is busy.', detail: 'Smallest memory bundle' },
+    { value: 'balanced', label: 'Balanced', description: 'Recommended for the 8GB target: preserves identity, recent scene state, and important memories without overfilling context.', detail: '8GB-aware default' },
+    { value: 'roomy', label: 'Roomy', description: 'Adds extra remembered context only when your system is idle enough for a larger KV cache and longer prompt assembly.', detail: 'More context when idle' }
   ];
 
   const imagePresetOptions: Array<{ value: ImageDefaultPreset; label: string; description: string; impact: string }> = [
-    { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops.', impact: 'Lowest VRAM pressure' },
-    { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail when VRAM is available; falls back safely.', impact: 'Guarded quality' },
-    { value: 'high_8gb', label: 'High', description: 'Best local detail, still queued and 8GB-gated.', impact: 'Use with headroom' }
+    { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops; ideal during active chat or voice playback.', impact: 'Lowest VRAM pressure' },
+    { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail after the resource guard checks headroom; automatically falls back before launch.', impact: 'Guarded quality' },
+    { value: 'high_8gb', label: 'High', description: 'Best local detail for plugged-in, idle sessions; still queued, cancelable, and 8GB-gated.', impact: 'Use with headroom' }
   ];
 
   const performancePresetOptions: Array<{ value: PerformancePreset; label: string; description: string; detail: string }> = [
     { value: '8gb_safe', label: '8GB Safe', description: 'Prioritizes TTS responsiveness, preview images, gentle context, and one background task.', detail: 'Best for RTX 4070 laptop defaults' },
-    { value: 'balanced', label: 'Balanced', description: 'Keeps normal 8GB guardrails while allowing richer context when the machine is idle.', detail: 'Recommended daily mode' },
-    { value: 'quality', label: 'Quality', description: 'Opts up to roomier context and more expressive voice/image quality after headroom checks.', detail: 'Use when plugged in with thermal headroom' }
+    { value: 'balanced', label: 'Balanced', description: 'Keeps normal 8GB guardrails while allowing richer context after idle/headroom checks.', detail: 'Recommended daily mode' },
+    { value: 'quality', label: 'Quality', description: 'Opts up to roomier context and more expressive voice/image quality; expects plugged-in thermals and may downgrade under pressure.', detail: 'Use when plugged in with thermal headroom' }
   ];
 
   const ttsLatencyOptions: Array<{ value: TTSLatencyPreset; label: string; description: string }> = [
@@ -557,9 +600,47 @@
             <article class="settings-card mini-hub-card">
               <strong>Extension sections</strong>
               <span>{$extensionSettingsSections.length}</span>
-              <p>Registered declaratively through the Task 5C extension contract.</p>
+              <p>Registered declaratively through typed extension contracts.</p>
             </article>
           </div>
+          <article class="settings-card settings-wide welcome-card" aria-labelledby="welcome-checklist-title">
+            <div class="setting-copy compact">
+              <span class="setting-kicker">Welcome path</span>
+              <h3 id="welcome-checklist-title">A gentle first run checklist</h3>
+              <p>Use this as a quick tour when setting up a character or validating a fresh install. Nothing here makes network calls or changes quality automatically.</p>
+            </div>
+            <div class="onboarding-list">
+              {#each onboardingSteps as step, index}
+                <div class="onboarding-step">
+                  <span aria-hidden="true">{index + 1}</span>
+                  <div><strong>{step.title}</strong><p>{step.description}</p></div>
+                </div>
+              {/each}
+            </div>
+          </article>
+        </section>
+      {/if}
+
+      {#if shouldShow('whats-new') && (!normalizedSearch || activeSection === 'whats-new')}
+        <section class="settings-section settings-wide" aria-labelledby="whats-new-title">
+          <div class="settings-section-heading">
+            <span class="setting-kicker">Milestone 3 release</span>
+            <h2 id="whats-new-title">What’s New in Milestone 3</h2>
+            <p>Milestone 3 turns the companion foundation into a cohesive local-first experience: cinematic presentation, emotional voice, optional images, transparent growth, extensibility, and a unified settings hub.</p>
+          </div>
+          <div class="milestone-grid">
+            {#each milestoneHighlights as item}
+              <article class="settings-card milestone-card">
+                <strong>{item.title}</strong>
+                <p>{item.description}</p>
+                <span>{item.impact}</span>
+              </article>
+            {/each}
+          </div>
+          <aside class="settings-card settings-wide release-note-card">
+            <strong>8GB release posture</strong>
+            <p>Reverie now explains resource tradeoffs in plain language: chat and TTS stay responsive, image generation is queued, background jobs are bounded, and risky quality increases can downgrade before they crash the session.</p>
+          </aside>
         </section>
       {/if}
 
@@ -709,19 +790,19 @@
         <section class="settings-section settings-wide" aria-labelledby="memory-settings-title">
           <div class="settings-section-heading"><span class="setting-kicker">Memory</span><h2 id="memory-settings-title">Continuity with pruning controls</h2><p>Protect identity, explicit preferences, boundaries, and important promises while keeping context lean enough for the 8GB target.</p></div>
           <article class="settings-card settings-card-featured"><div class="setting-copy"><span class="setting-kicker">Durable recall</span><h3>Long-term memory</h3><p id="long-term-memory-description">Let Reverie keep important preferences, promises, and boundaries. Turning this off keeps the current chat intact while durable remembering pauses.</p></div><label class="toggle-switch"><input type="checkbox" checked={$settingsStore.longTermMemoryEnabled} onchange={(event) => settingsStore.setLongTermMemoryEnabled((event.currentTarget as HTMLInputElement).checked)} aria-describedby="long-term-memory-description" /><span>{$settingsStore.longTermMemoryEnabled ? 'On' : 'Off'}</span></label></article>
-          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">8GB awareness</span><h3>Context budget</h3><p>A simple preset for remembered context. Balanced is designed for smooth local use on the 8GB target.</p></div><div class="budget-grid" role="radiogroup" aria-label="Context budget preset">{#each contextBudgetOptions as option}<button type="button" class:active={$settingsStore.contextBudgetPreset === option.value} aria-pressed={$settingsStore.contextBudgetPreset === option.value} onclick={() => settingsStore.setContextBudgetPreset(option.value)}><span>{option.detail}</span><strong>{option.label}</strong><small>{option.description}</small></button>{/each}</div></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">8GB awareness</span><h3>Context budget</h3><p>A simple preset for remembered context and KV-cache pressure. Balanced is designed to preserve continuity without crowding the 8GB target.</p></div><div class="budget-grid" role="radiogroup" aria-label="Context budget preset">{#each contextBudgetOptions as option}<button type="button" class:active={$settingsStore.contextBudgetPreset === option.value} aria-pressed={$settingsStore.contextBudgetPreset === option.value} onclick={() => settingsStore.setContextBudgetPreset(option.value)}><span>{option.detail}</span><strong>{option.label}</strong><small>{option.description}</small></button>{/each}</div></article>
           <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">Pruning</span><h3>Memory pruning posture</h3><p>Pruning removes noise from retrieval; it should never silently erase user-protected facts or character identity.</p></div><div class="option-grid" role="radiogroup" aria-label="Memory pruning mode">{#each pruningOptions as option}<button type="button" class:active={$settingsStore.memoryPruningMode === option.value} aria-pressed={$settingsStore.memoryPruningMode === option.value} onclick={() => settingsStore.setMemoryPruningMode(option.value)}><strong>{option.label}</strong><span>{option.description}</span></button>{/each}</div></article>
         </section>
       {/if}
 
       {#if shouldShow('performance') && (!normalizedSearch || activeSection === 'performance')}
         <section class="settings-section settings-wide" aria-labelledby="performance-settings-title">
-          <div class="settings-section-heading"><span class="setting-kicker">Performance & 8GB</span><h2 id="performance-settings-title">Guardrails you can understand</h2><p>Heavy media and learning work must stay queued, explain downgrades, and yield to chat/voice responsiveness.</p></div>
+          <div class="settings-section-heading"><span class="setting-kicker">Performance & 8GB</span><h2 id="performance-settings-title">Guardrails you can understand</h2><p>Heavy media and learning work stays queued, explains downgrades, and yields to chat/voice responsiveness before VRAM pressure becomes a crash.</p></div>
           <article class="settings-card settings-wide performance-settings-card">
             <div class="option-grid" role="radiogroup" aria-label="Performance preset">{#each performancePresetOptions as option}<button type="button" class:active={$settingsStore.performancePreset === option.value} aria-pressed={$settingsStore.performancePreset === option.value} onclick={() => settingsStore.setPerformancePreset(option.value)}><strong>{option.label}</strong><span>{option.description}</span><small>{option.detail}</small></button>{/each}</div>
             <label class="range-setting"><span>Background task limit <strong>{$settingsStore.backgroundTaskLimit}</strong></span><small>Caps non-interactive jobs like indexing, gallery refreshes, and media helpers so chat and voice stay responsive.</small><input type="range" min="1" max="3" step="1" value={$settingsStore.backgroundTaskLimit} onchange={(event) => settingsStore.setBackgroundTaskLimit(Number((event.currentTarget as HTMLInputElement).value))} /></label>
-            <label class="checkbox-setting"><input type="checkbox" checked={$settingsStore.proactiveResourceWarnings} onchange={(event) => settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked)} /><span>Show proactive VRAM warnings and auto-downgrade explanations.</span></label>
-            <p class="performance-explainer">TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.</p>
+            <label class="checkbox-setting"><input type="checkbox" checked={$settingsStore.proactiveResourceWarnings} onchange={(event) => settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked)} /><span>Show proactive VRAM warnings, pause/resume notes, and auto-downgrade explanations.</span></label>
+            <p class="performance-explainer">TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, pauses lower-priority indexing while active, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.</p>
           </article>
         </section>
       {/if}

@@ -19,5 +19,5 @@ export const navigationItems: NavigationItem[] = [
   { id: 'memory', label: 'Memory', hint: 'Editable recall', enabled: true },
   { id: 'visual-novel', label: 'Visual Novel', hint: 'Immersive scene', enabled: true },
   { id: 'images', label: 'Images', hint: 'Gallery & controls', enabled: true },
-  { id: 'settings', label: 'Settings', hint: 'Memory controls', enabled: true }
+  { id: 'settings', label: 'Settings', hint: 'Control hub', enabled: true }
 ];
