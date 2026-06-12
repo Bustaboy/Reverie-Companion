@@ -3725,3 +3725,405 @@ h1 {
     padding: 0.95rem;
   }
 }
+
+/* Milestone 3 Task 4B — diary-style reflection journal */
+.diary-journal {
+  background:
+    radial-gradient(circle at 16% 7%, rgba(255, 176, 166, 0.18), transparent 25rem),
+    radial-gradient(circle at 86% 16%, rgba(122, 74, 132, 0.16), transparent 24rem),
+    linear-gradient(135deg, rgba(35, 25, 36, 0.92), rgba(22, 18, 28, 0.9)),
+    var(--panel);
+}
+
+.diary-hero {
+  background:
+    linear-gradient(90deg, rgba(255, 226, 205, 0.07), transparent 58%),
+    rgba(255, 255, 255, 0.018);
+}
+
+.journal-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.journal-primary-button,
+.journal-read-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.72rem 0.95rem;
+  color: #23131b;
+  border: 1px solid rgba(255, 220, 207, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffd5bd, #f09a9f 62%, #d47795);
+  box-shadow: 0 16px 38px rgba(240, 154, 159, 0.18);
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease,
+    opacity 160ms ease;
+}
+
+.journal-primary-button:hover:not(:disabled),
+.journal-primary-button:focus-visible,
+.journal-read-button:hover,
+.journal-read-button:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.journal-primary-button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.journal-filters {
+  display: grid;
+  grid-template-columns: minmax(13rem, 21rem) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.journal-search {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.journal-search span,
+.journal-timeline-heading span {
+  color: var(--dim);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.journal-search input {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  outline: none;
+  background: rgba(18, 14, 22, 0.66);
+}
+
+.journal-search input:focus {
+  border-color: rgba(255, 176, 166, 0.48);
+  box-shadow: 0 0 0 3px rgba(240, 154, 159, 0.1);
+}
+
+.journal-filter-pills {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.1rem;
+  scrollbar-width: thin;
+}
+
+.journal-filter-pills button,
+.journal-pin-filter {
+  flex: 0 0 auto;
+  padding: 0.62rem 0.78rem;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.046);
+  cursor: pointer;
+}
+
+.journal-filter-pills button.active,
+.journal-filter-pills button:hover,
+.journal-pin-filter.active,
+.journal-pin-filter:hover {
+  color: #ffe7e1;
+  border-color: rgba(255, 176, 166, 0.36);
+  background: rgba(240, 154, 159, 0.12);
+}
+
+.diary-content {
+  grid-template-columns: minmax(18rem, 27rem) minmax(0, 1fr);
+}
+
+.diary-timeline {
+  position: relative;
+  padding: 1.15rem 1rem 1.3rem 1.45rem;
+  background:
+    linear-gradient(90deg, rgba(255, 213, 189, 0.04), transparent),
+    rgba(15, 12, 18, 0.16);
+}
+
+.diary-timeline::before {
+  content: '';
+  position: absolute;
+  top: 4.4rem;
+  bottom: 1.5rem;
+  left: 1.32rem;
+  width: 1px;
+  background: linear-gradient(rgba(255, 176, 166, 0.02), rgba(255, 176, 166, 0.38), rgba(255, 176, 166, 0.02));
+}
+
+.journal-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.2rem 0.4rem;
+}
+
+.journal-timeline-heading strong {
+  color: #ffe7e1;
+  font-size: 0.82rem;
+}
+
+.diary-entry-card {
+  position: relative;
+  margin-left: 0.55rem;
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(135deg, rgba(255, 236, 213, 0.066), rgba(255, 255, 255, 0.03)),
+    rgba(36, 27, 34, 0.72);
+}
+
+.diary-entry-card::before {
+  content: '';
+  position: absolute;
+  top: 1.25rem;
+  left: -1.05rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 2px solid rgba(255, 198, 178, 0.75);
+  border-radius: 999px;
+  background: #2a1c28;
+  box-shadow: 0 0 0 5px rgba(240, 154, 159, 0.08);
+}
+
+.diary-entry-card.pinned {
+  border-color: rgba(255, 205, 154, 0.38);
+  background:
+    linear-gradient(135deg, rgba(255, 205, 154, 0.11), rgba(240, 154, 159, 0.065)),
+    rgba(36, 27, 34, 0.78);
+}
+
+.journal-card-pin {
+  position: absolute;
+  top: 0.82rem;
+  right: 0.9rem;
+  color: #ffd5bd;
+  font-size: 0.9rem;
+}
+
+.diary-page {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 225, 205, 0.055), transparent 28rem),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025), transparent 16%, transparent 84%, rgba(0, 0, 0, 0.1));
+}
+
+.diary-paper {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 224, 199, 0.18);
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 245, 220, 0.12), transparent 12rem),
+    linear-gradient(90deg, rgba(255, 220, 190, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255, 244, 230, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(72, 45, 48, 0.78), rgba(38, 28, 39, 0.92));
+  background-size: auto, 2.4rem 2.4rem, 100% 2.35rem, auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.diary-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.33;
+  background-image:
+    radial-gradient(circle at 22% 30%, rgba(255, 245, 222, 0.11) 0 1px, transparent 1px),
+    radial-gradient(circle at 70% 62%, rgba(0, 0, 0, 0.17) 0 1px, transparent 1px);
+  background-size: 1.9rem 1.9rem, 2.7rem 2.7rem;
+}
+
+.diary-paper-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.diary-paper-topline button,
+.journal-reader-actions button {
+  position: relative;
+  z-index: 1;
+  padding: 0.45rem 0.68rem;
+  color: #ffe1d6;
+  border: 1px solid rgba(255, 220, 205, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.diary-salutation {
+  margin-top: 0.35rem !important;
+  color: #ffd7c5 !important;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.16rem !important;
+  font-style: italic;
+}
+
+.journal-read-button {
+  position: relative;
+  z-index: 1;
+  margin-top: 1.1rem;
+}
+
+.journal-filter-empty {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0.55rem;
+  padding: 1rem;
+  color: var(--muted);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 1.1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.journal-filter-empty strong {
+  color: var(--text);
+}
+
+.journal-reader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(10, 7, 12, 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.journal-reader-modal {
+  position: relative;
+  width: min(48rem, 100%);
+  max-height: min(48rem, calc(100vh - 2rem));
+  overflow-y: auto;
+  padding: clamp(1.35rem, 4vw, 2.45rem);
+  color: #fff3ee;
+  border: 1px solid rgba(255, 226, 205, 0.22);
+  border-radius: 1.65rem;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 224, 199, 0.13), transparent 18rem),
+    linear-gradient(90deg, rgba(255, 220, 190, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(255, 244, 230, 0.035) 1px, transparent 1px),
+    linear-gradient(145deg, #3a2730, #1f1825 72%);
+  background-size: auto, 2.5rem 2.5rem, 100% 2.4rem, auto;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.56);
+}
+
+.journal-reader-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: #ffe8df;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  font-size: 1.45rem;
+}
+
+.journal-reader-date {
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.journal-reader-modal h2 {
+  max-width: 39rem;
+  margin: 0.45rem 2.6rem 0.7rem 0;
+  font-size: clamp(1.7rem, 4vw, 2.65rem);
+  line-height: 1.04;
+}
+
+.journal-reader-prose {
+  color: #f3e2dc;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.08rem, 2vw, 1.24rem);
+  line-height: 1.9;
+}
+
+.journal-reader-modal section {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.journal-reader-modal h3 {
+  margin: 0 0 0.75rem;
+  color: #ffd7c5;
+}
+
+.journal-reader-modal ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.journal-reader-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.journal-reader-actions span {
+  color: var(--dim);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 960px) {
+  .journal-filters,
+  .diary-content {
+    grid-template-columns: 1fr;
+  }
+
+  .journal-pin-filter {
+    justify-self: start;
+  }
+
+  .diary-timeline {
+    max-height: 21rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 720px) {
+  .journal-header-actions,
+  .diary-paper-topline,
+  .journal-reader-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

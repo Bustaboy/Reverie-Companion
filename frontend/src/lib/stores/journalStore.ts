@@ -1,13 +1,16 @@
+import { browser } from '$app/environment';
 import { get, writable } from 'svelte/store';
 import { journalService, JournalServiceError } from '$lib/api/journalService';
 import type { JournalEntry } from '$lib/types/journal';
+import type { Message } from '$lib/api';
 
 interface JournalState {
   entries: JournalEntry[];
   selectedEntryId: string | null;
-  loadState: 'idle' | 'loading' | 'refreshing' | 'loaded' | 'error';
+  loadState: 'idle' | 'loading' | 'refreshing' | 'reflecting' | 'loaded' | 'error';
   error: string | null;
   lastLoadedAt: Date | null;
+  pinnedEntryIds: string[];
 }
 
 const INITIAL_STATE: JournalState = {
@@ -15,7 +18,26 @@ const INITIAL_STATE: JournalState = {
   selectedEntryId: null,
   loadState: 'idle',
   error: null,
-  lastLoadedAt: null
+  lastLoadedAt: null,
+  pinnedEntryIds: []
+};
+
+const PINNED_STORAGE_KEY = 'reverie:pinned-journal-entries';
+
+const readPinnedEntries = (): string[] => {
+  if (!browser) return [];
+  try {
+    const raw = localStorage.getItem(PINNED_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const writePinnedEntries = (entryIds: string[]) => {
+  if (!browser) return;
+  localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(entryIds));
 };
 
 const friendlyError = (error: unknown): string => {
@@ -73,8 +95,60 @@ function createJournalStore() {
     refresh() {
       return loadEntries({ force: true });
     },
+    async triggerReflection(history: Message[]) {
+      if (activeRequest) return null;
+
+      const controller = new AbortController();
+      activeRequest = controller;
+
+      store.update((state) => ({
+        ...state,
+        loadState: 'reflecting',
+        error: null
+      }));
+
+      try {
+        const entry = await journalService.triggerReflection(history);
+        if (controller.signal.aborted) return null;
+
+        store.update((state) => {
+          const entries = [entry, ...state.entries.filter((existing) => existing.entry_id !== entry.entry_id)];
+          return {
+            ...state,
+            entries,
+            selectedEntryId: entry.entry_id,
+            loadState: 'loaded',
+            error: null,
+            lastLoadedAt: new Date()
+          };
+        });
+        return entry;
+      } catch (error) {
+        if (controller.signal.aborted) return null;
+        store.update((state) => ({
+          ...state,
+          loadState: state.entries.length ? 'loaded' : 'error',
+          error: friendlyError(error)
+        }));
+        return null;
+      } finally {
+        if (activeRequest === controller) activeRequest = null;
+      }
+    },
     selectEntry(entryId: string) {
       store.update((state) => ({ ...state, selectedEntryId: entryId }));
+    },
+    hydratePins() {
+      store.update((state) => ({ ...state, pinnedEntryIds: readPinnedEntries() }));
+    },
+    togglePin(entryId: string) {
+      store.update((state) => {
+        const pinned = state.pinnedEntryIds.includes(entryId)
+          ? state.pinnedEntryIds.filter((id) => id !== entryId)
+          : [entryId, ...state.pinnedEntryIds];
+        writePinnedEntries(pinned);
+        return { ...state, pinnedEntryIds: pinned };
+      });
     },
     clearError() {
       store.update((state) => ({ ...state, error: null, loadState: state.entries.length ? 'loaded' : 'idle' }));

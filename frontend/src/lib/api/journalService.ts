@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
 import type { JournalEntriesResponse, JournalEntry } from '$lib/types/journal';
+import type { Message } from '$lib/api/chatService';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -67,6 +68,47 @@ export class JournalService {
         : [];
       if (dev) console.debug('[Reverie API] Journal entries', { count: entries.length });
       return entries;
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
+  }
+
+  async triggerReflection(history: Message[]): Promise<JournalEntry> {
+    const messages = history
+      .filter((message) => (message.role === 'user' || message.role === 'assistant') && message.content.trim().length > 0)
+      .slice(-20)
+      .map((message) => ({ role: message.role, content: message.content }));
+
+    if (messages.length === 0) {
+      throw new JournalServiceError('There is not enough recent conversation to write a reflection yet.');
+    }
+
+    const url = `${this.baseUrl}/journal/reflections`;
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+
+    if (dev) console.debug('[Reverie API] POST', url);
+
+    try {
+      const response = await this.fetcher(url, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+        signal: controller.signal
+      });
+      const body = await this.parseJsonResponse<{ entry?: JournalEntry } | JournalEntry | BackendErrorBody>(response);
+
+      if (!response.ok) {
+        throw this.toServiceError(response, body as BackendErrorBody);
+      }
+
+      const entry = (body as { entry?: JournalEntry }).entry ?? (body as JournalEntry);
+      if (!entry || typeof entry.entry_id !== 'string') {
+        throw new JournalServiceError('The journal wrote an unreadable reflection.');
+      }
+      return entry;
     } catch (error) {
       throw this.toUserFriendlyError(error);
     } finally {

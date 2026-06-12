@@ -13,27 +13,33 @@ from app.main import app
 class FakeJournalManager:
     """Small route dependency stand-in that keeps API tests offline."""
 
+    def _entry(self, entry_id: str = "journal_test") -> dict[str, object]:
+        return {
+            "entry_id": entry_id,
+            "created_at": "2026-06-11T12:00:00+00:00",
+            "status": "active",
+            "character_summary": "I felt safe enough to keep a tender note.",
+            "themes": ["trust", "growth"],
+            "confidence": 0.82,
+            "insights": [
+                {
+                    "kind": "relationship",
+                    "summary": "Trust is becoming a stable emotional theme.",
+                    "confidence": 0.8,
+                    "evidence_count": 2,
+                    "themes": ["trust"],
+                }
+            ],
+            "metadata": {"memory_promotion": {"should_promote": False}},
+        }
+
     def get_recent_journal_entries(self, limit: int = 5) -> list[dict[str, object]]:
-        return [
-            {
-                "entry_id": "journal_test",
-                "created_at": "2026-06-11T12:00:00+00:00",
-                "status": "active",
-                "character_summary": "I felt safe enough to keep a tender note.",
-                "themes": ["trust", "growth"],
-                "confidence": 0.82,
-                "insights": [
-                    {
-                        "kind": "relationship",
-                        "summary": "Trust is becoming a stable emotional theme.",
-                        "confidence": 0.8,
-                        "evidence_count": 2,
-                        "themes": ["trust"],
-                    }
-                ],
-                "metadata": {"memory_promotion": {"should_promote": False}},
-            }
-        ][:limit]
+        return [self._entry()][:limit]
+
+    def trigger_reflection(self, conversation_history: list[dict[str, str]]) -> dict[str, object]:
+        entry = self._entry("journal_manual")
+        entry["conversation_window"] = {"turn_count": len(conversation_history)}
+        return entry
 
 
 class JournalApiTests(unittest.TestCase):
@@ -51,6 +57,25 @@ class JournalApiTests(unittest.TestCase):
         self.assertEqual(body["count"], 1)
         self.assertEqual(body["entries"][0]["entry_id"], "journal_test")
         self.assertEqual(body["entries"][0]["themes"], ["trust", "growth"])
+
+    def test_manual_reflection_returns_new_entry(self) -> None:
+        app.dependency_overrides[get_journal_manager] = lambda: FakeJournalManager()
+        client = TestClient(app)
+
+        response = client.post(
+            "/journal/reflections",
+            json={
+                "messages": [
+                    {"role": "user", "content": "I felt safe when you remembered my boundary."},
+                    {"role": "assistant", "content": "I want to keep honoring that gently."},
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["entry"]["entry_id"], "journal_manual")
+        self.assertEqual(body["entry"]["conversation_window"]["turn_count"], 2)
 
 
 if __name__ == "__main__":

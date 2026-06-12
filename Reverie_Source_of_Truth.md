@@ -249,7 +249,21 @@ Milestone 3 Task 4A adds the central Growth Dashboard as Reverie's warm relation
 
 Task 4A establishes the emotional command center for self-learning: users can see how the character's feelings, tone, and behavior are evolving from local evidence, while detailed editing/review/rollback workflows remain reserved for Journal, Memory, Training, and later Growth-control tasks.
 
-### 3.12 Futa-Vision Integration Vision (Future)
+### 3.12 Diary-Style Self-Reflection Journal (Milestone 3 Task 4B)
+
+Milestone 3 Task 4B turns the Journal destination into the detailed, diary-like evidence reader that complements the Growth Dashboard:
+
+- **Navigation role**: `Journal` remains a first-class sidebar destination next to Growth. Growth is the emotional overview; Journal is the intimate chronological record where users can inspect the reflections that explain those growth signals.
+- **Diary presentation**: entries are shown as warm, first-person diary pages with chronological timeline cards, date anchors, soft parchment/paper texture styling, rose accents, and a readable full-page modal. Presentation copy may feel personal, but structured fields remain the authoritative evidence for memory, growth, and training review.
+- **Search and filtering**: the Journal view supports lightweight client-side filtering by theme, character metadata, and keyword across summaries, insights, facts, interpretations, and growth hypotheses. This keeps page load bounded to recent local entries and avoids model inference or broad memory scans.
+- **Pinned entries**: important reflections can be pinned locally for quick review. Pins are UI affordances stored on-device and do not promote memories, alter character state, or authorize training by themselves.
+- **Manual reflection trigger**: the Journal can manually request a new bounded reflection from recent visible chat turns through the local `/journal/reflections` endpoint. The backend still uses `ReflectionManager` so journal-first persistence, evidence limits, memory-promotion gates, growth notifications, and rollback provenance remain consistent with automatic reflection.
+- **Growth visibility tie-in**: the same journal entries feed the Growth Dashboard timeline, relationship pulse derivations, Personal LoRA review counts, and future rollback/audit flows. Journal makes the evidence emotionally readable; Growth summarizes what appears to be changing.
+- **8GB behavior**: the page uses Svelte-derived arrays, recent-entry API reads, localStorage pins, and CSS-only texture/glow effects. Manual reflection uses the existing lightweight reflection manager and bounded chat history; it does not load additional models, scan all memories, start training, or add GPU-resident work on page load.
+
+Task 4B makes self-learning feel trustworthy and alive: users can read what the character believes she learned, search by theme or emotional thread, pin meaningful moments, and see exactly how diary evidence supports Growth without turning the Journal into an editable memory browser or LoRA control panel.
+
+### 3.13 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
