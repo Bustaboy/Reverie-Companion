@@ -586,4 +586,17 @@ The Svelte frontend now has matching typed extension contracts, a lightweight lo
 
 Documentation for future extension developers now lives under `docs/extensions/README.md`, including the `extension.v1` manifest format, capability guidance, an example settings/command manifest, error-isolation rules, and the character-import preview contract. Runtime overhead remains minimal: the foundation uses Pydantic/TypeScript schemas, bounded in-memory event history, local JSON manifest reads, and no additional frontend or backend dependencies. **Task 5C is complete.**
 
+
+### Milestone 3 Task 5D — Settings & Control Hub
+
+Task 5D upgrades Settings from a focused memory/reflection panel into Reverie's unified Settings & Control Hub. The frontend now organizes core controls into searchable, keyboard-friendly sections for General, Appearance, TTS & Voice, Image Generation, Growth & Self-Learning, Memory, Extensibility, Performance & 8GB, and Import/Export/Backup. The hub preserves the warm premium dark design language while adding a persistent section rail, clear hierarchy, calm local-save status, and accessible form/radiogroup semantics.
+
+The settings architecture remains lightweight and local-first: core preferences live in the typed `settingsStore`, are normalized on load, and persist in the existing versioned local storage payload with backward-compatible defaults. Appearance density/theme preferences, memory pruning posture, TTS latency/volume/speed, image defaults, growth/reflection controls, and 8GB performance presets all use explicit typed setters so future backend sync can attach without scraping component state.
+
+Control Hub previews explain impact before users opt into heavier behavior. TTS exposes a live sample summary plus per-voice mood sliders and zero-shot voice profile creation; image presets show an 8GB-aware preview and remind users that backend VRAM checks can still downgrade ComfyUI work; performance controls explain TTS priority, serialized image jobs, background task limits, and proactive VRAM warnings. This keeps the RTX 4070 8GB mobile promise visible at the exact point of configuration.
+
+Extensibility from Task 5C is now treated as a first-class hub section. Extension manifests can register declarative setting sections and fields that render beside core settings, while values remain isolated under extension-scoped local storage and extension errors are shown calmly without crashing the hub.
+
+Import/export/reset controls are centralized. Users can export character-facing local keys, growth/journal/reflection/memory/training-facing local keys, settings-only payloads, or a full `reverie.*` local backup; backups can be imported with confirmation; and reset-to-defaults requires confirmation before clearing core and extension hub settings. **Task 5D is complete.**
+
 *End of Source of Truth Document v1.0*

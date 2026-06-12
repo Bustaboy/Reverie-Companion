@@ -1,140 +1,165 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { onMount } from 'svelte';
-  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset, type PerformancePreset } from '$lib/stores/settingsStore';
-  import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
+  import {
+    settingsStore,
+    type AppearanceTheme,
+    type ContextBudgetPreset,
+    type ImageDefaultPreset,
+    type InterfaceDensity,
+    type MemoryPruningMode,
+    type PerformancePreset,
+    type ReflectionFrequency,
+    type ReflectionSensitivity,
+    type TTSLatencyPreset
+  } from '$lib/stores/settingsStore';
+  import { voiceService, type VoiceMoodSettings, type VoiceProfile } from '$lib/api/voiceService';
   import { extensionService } from '$lib/api/extensionService';
-  import { extensionRegistry, extensionSettingsSections } from '$lib/extensions/registry';
   import { extensionEventBus } from '$lib/extensions/extensionBus';
+  import { extensionRegistry, extensionSettingsSections } from '$lib/extensions/registry';
   import type { ExtensionSettingField } from '$lib/extensions/contracts';
 
-  const reflectionFrequencyOptions: Array<{
-    value: ReflectionFrequency;
+  type SettingsSectionId =
+    | 'general'
+    | 'appearance'
+    | 'voice'
+    | 'images'
+    | 'growth'
+    | 'memory'
+    | 'extensibility'
+    | 'performance'
+    | 'backup';
+
+  const SETTINGS_STORAGE_KEY = 'reverie.memoryReflectionSettings.v2';
+  const PINNED_JOURNAL_STORAGE_KEY = 'reverie.journal.pinnedEntryIds.v1';
+
+  const settingsSections: Array<{
+    id: SettingsSectionId;
     label: string;
+    eyebrow: string;
     description: string;
+    search: string;
   }> = [
     {
-      value: 'low',
-      label: 'Low',
-      description: 'Reflect only after clear milestones or when you ask for it.'
+      id: 'general',
+      label: 'General',
+      eyebrow: 'Start here',
+      description: 'Local autosave, defaults, and day-to-day companion behavior.',
+      search: 'general autosave local defaults companion behavior privacy'
     },
     {
-      value: 'balanced',
-      label: 'Balanced',
-      description: 'Notice meaningful patterns without interrupting ordinary conversation.'
+      id: 'appearance',
+      label: 'Appearance',
+      eyebrow: 'Warm interface',
+      description: 'Choose the premium dark feel, density, and motion comfort.',
+      search: 'appearance theme dark ember midnight density compact comfortable motion accessibility'
     },
     {
-      value: 'high',
-      label: 'High',
-      description: 'Check in more often after emotional turns, repairs, or important promises.'
+      id: 'voice',
+      label: 'TTS & Voice',
+      eyebrow: 'Spoken presence',
+      description: 'Speech playback, mood-sensitive delivery, and local voice profiles.',
+      search: 'tts voice speech autoplay volume speed latency mood orpheus piper clone nsfw sample preview'
+    },
+    {
+      id: 'images',
+      label: 'Image Generation',
+      eyebrow: 'Scene visuals',
+      description: '8GB-aware presets and optional assistant image automation.',
+      search: 'image generation comfyui preset preview balanced high auto assistant scene visualization'
+    },
+    {
+      id: 'growth',
+      label: 'Growth & Self-Learning',
+      eyebrow: 'Transparent change',
+      description: 'Reflection pace, sensitivity, growth notes, and training guardrails.',
+      search: 'growth self learning reflection frequency sensitivity notifications automation training lora adapter'
+    },
+    {
+      id: 'memory',
+      label: 'Memory',
+      eyebrow: 'Continuity',
+      description: 'Long-term memory, context budget, and pruning posture.',
+      search: 'memory long term context budget pruning recall preferences promises boundaries'
+    },
+    {
+      id: 'extensibility',
+      label: 'Extensibility',
+      eyebrow: 'Extension hub',
+      description: 'Extension-registered settings with isolated local persistence.',
+      search: 'extensibility extensions plugins manifests settings sections diagnostics contracts'
+    },
+    {
+      id: 'performance',
+      label: 'Performance & 8GB',
+      eyebrow: 'Resource safety',
+      description: 'VRAM guardrails, background task limits, and downgrade explanations.',
+      search: 'performance 8gb vram guardrails resource background task warnings downgrade oom rtx 4070'
+    },
+    {
+      id: 'backup',
+      label: 'Import / Export',
+      eyebrow: 'Portability',
+      description: 'Export characters, growth data, settings, or a full local backup.',
+      search: 'backup export import characters growth settings restore reset defaults'
     }
   ];
 
-  const reflectionSensitivityOptions: Array<{
-    value: ReflectionSensitivity;
-    label: string;
-    description: string;
-  }> = [
-    {
-      value: 'conservative',
-      label: 'Conservative',
-      description: 'Only keep what is explicit, repeated, or clearly important.'
-    },
-    {
-      value: 'balanced',
-      label: 'Balanced',
-      description: 'A careful middle path for preferences, boundaries, and relationship moments.'
-    },
-    {
-      value: 'responsive',
-      label: 'Responsive',
-      description: 'Let Reverie notice subtler shifts while still avoiding big assumptions.'
-    }
+  const appearanceOptions: Array<{ value: AppearanceTheme; label: string; description: string }> = [
+    { value: 'warm_dark', label: 'Warm dark', description: 'Default premium near-black palette with rose-gold warmth.' },
+    { value: 'ember', label: 'Ember', description: 'Softer copper accents for a more intimate evening feel.' },
+    { value: 'midnight', label: 'Midnight', description: 'Quieter blue-black contrast for long sessions.' }
   ];
 
-  const contextBudgetOptions: Array<{
-    value: ContextBudgetPreset;
-    label: string;
-    description: string;
-    detail: string;
-  }> = [
-    {
-      value: 'gentle',
-      label: 'Gentle',
-      description: 'Keeps recall lighter for busy laptops or battery moments.',
-      detail: 'Smallest memory bundle'
-    },
-    {
-      value: 'balanced',
-      label: 'Balanced',
-      description: 'Recommended for the 8GB target: warm continuity with calm resource use.',
-      detail: '8GB-aware default'
-    },
-    {
-      value: 'roomy',
-      label: 'Roomy',
-      description: 'Allows a little more remembered context when your system has headroom.',
-      detail: 'More context when idle'
-    }
+  const densityOptions: Array<{ value: InterfaceDensity; label: string; description: string }> = [
+    { value: 'comfortable', label: 'Comfortable', description: 'Roomier cards and copy for clarity.' },
+    { value: 'compact', label: 'Compact', description: 'Tighter spacing for laptop screens.' }
   ];
 
-  const imagePresetOptions: Array<{
-    value: ImageDefaultPreset;
-    label: string;
-    description: string;
-  }> = [
-    { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops.' },
-    { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail when VRAM is available; falls back safely.' },
-    { value: 'high_8gb', label: 'High', description: 'Best local detail, still queued and 8GB-gated.' }
+  const reflectionFrequencyOptions: Array<{ value: ReflectionFrequency; label: string; description: string }> = [
+    { value: 'low', label: 'Low', description: 'Reflect only after clear milestones or when you ask for it.' },
+    { value: 'balanced', label: 'Balanced', description: 'Notice meaningful patterns without interrupting ordinary conversation.' },
+    { value: 'high', label: 'High', description: 'Check in more often after emotional turns, repairs, or important promises.' }
   ];
 
-  const performancePresetOptions: Array<{
-    value: PerformancePreset;
-    label: string;
-    description: string;
-    detail: string;
-  }> = [
-    {
-      value: '8gb_safe',
-      label: '8GB Safe',
-      description: 'Prioritizes TTS responsiveness, preview images, gentle context, and one background task.',
-      detail: 'Best for RTX 4070 laptop defaults'
-    },
-    {
-      value: 'balanced',
-      label: 'Balanced',
-      description: 'Keeps the normal 8GB guardrails while allowing richer context when the machine is idle.',
-      detail: 'Recommended daily mode'
-    },
-    {
-      value: 'quality',
-      label: 'Quality',
-      description: 'Opts up to roomier context and more expressive voice/image quality after headroom checks.',
-      detail: 'Use when plugged in with thermal headroom'
-    }
+  const reflectionSensitivityOptions: Array<{ value: ReflectionSensitivity; label: string; description: string }> = [
+    { value: 'conservative', label: 'Conservative', description: 'Only keep what is explicit, repeated, or clearly important.' },
+    { value: 'balanced', label: 'Balanced', description: 'A careful middle path for preferences, boundaries, and relationship moments.' },
+    { value: 'responsive', label: 'Responsive', description: 'Notice subtler shifts while still avoiding big assumptions.' }
   ];
 
-  const ttsLatencyOptions: Array<{
-    value: TTSLatencyPreset;
-    label: string;
-    description: string;
-  }> = [
-    {
-      value: 'quality',
-      label: 'Quality',
-      description: 'Prefer Orpheus-style expressiveness when the machine has room.'
-    },
-    {
-      value: 'balanced',
-      label: 'Balanced',
-      description: 'Recommended for 8GB: expressive enough without aggressive preloading.'
-    },
-    {
-      value: 'speed',
-      label: 'Speed',
-      description: 'Favor quick fallback voices and interruption-friendly playback.'
-    }
+  const pruningOptions: Array<{ value: MemoryPruningMode; label: string; description: string }> = [
+    { value: 'protective', label: 'Protective', description: 'Keep more approved memories; prune only stale low-confidence notes.' },
+    { value: 'balanced', label: 'Balanced', description: 'Recommended: protect identity, boundaries, promises, and recent relationship context.' },
+    { value: 'lean', label: 'Lean', description: 'Trim aggressively to reduce storage and retrieval noise on modest systems.' }
   ];
 
+  const contextBudgetOptions: Array<{ value: ContextBudgetPreset; label: string; description: string; detail: string }> = [
+    { value: 'gentle', label: 'Gentle', description: 'Keeps recall lighter for busy laptops or battery moments.', detail: 'Smallest memory bundle' },
+    { value: 'balanced', label: 'Balanced', description: 'Recommended for the 8GB target: warm continuity with calm resource use.', detail: '8GB-aware default' },
+    { value: 'roomy', label: 'Roomy', description: 'Allows a little more remembered context when your system has headroom.', detail: 'More context when idle' }
+  ];
+
+  const imagePresetOptions: Array<{ value: ImageDefaultPreset; label: string; description: string; impact: string }> = [
+    { value: 'preview_8gb', label: 'Preview', description: 'Fastest and safest default for 8GB laptops.', impact: 'Lowest VRAM pressure' },
+    { value: 'balanced_8gb', label: 'Balanced', description: 'Higher detail when VRAM is available; falls back safely.', impact: 'Guarded quality' },
+    { value: 'high_8gb', label: 'High', description: 'Best local detail, still queued and 8GB-gated.', impact: 'Use with headroom' }
+  ];
+
+  const performancePresetOptions: Array<{ value: PerformancePreset; label: string; description: string; detail: string }> = [
+    { value: '8gb_safe', label: '8GB Safe', description: 'Prioritizes TTS responsiveness, preview images, gentle context, and one background task.', detail: 'Best for RTX 4070 laptop defaults' },
+    { value: 'balanced', label: 'Balanced', description: 'Keeps normal 8GB guardrails while allowing richer context when the machine is idle.', detail: 'Recommended daily mode' },
+    { value: 'quality', label: 'Quality', description: 'Opts up to roomier context and more expressive voice/image quality after headroom checks.', detail: 'Use when plugged in with thermal headroom' }
+  ];
+
+  const ttsLatencyOptions: Array<{ value: TTSLatencyPreset; label: string; description: string }> = [
+    { value: 'quality', label: 'Quality', description: 'Prefer Orpheus-style expressiveness when the machine has room.' },
+    { value: 'balanced', label: 'Balanced', description: 'Recommended for 8GB: expressive enough without aggressive preloading.' },
+    { value: 'speed', label: 'Speed', description: 'Favor quick fallback voices and interruption-friendly playback.' }
+  ];
+
+  let activeSection = $state<SettingsSectionId>('general');
+  let searchQuery = $state('');
   let cloneName = $state('');
   let cloneFile = $state<File | null>(null);
   let cloneRecording = $state<Blob | null>(null);
@@ -155,15 +180,36 @@
   let extensionsLoading = $state(false);
   let extensionStatus = $state<string | null>(null);
   let extensionError = $state<string | null>(null);
+  let backupStatus = $state<string | null>(null);
+  let backupError = $state<string | null>(null);
+  let importFileInput = $state<HTMLInputElement | null>(null);
+  let samplePreview = $state('Warm, close, and emotionally aware — with TTS priority protected on 8GB systems.');
 
   const cloneAudio = $derived(cloneRecording ?? cloneFile);
+  const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
+  const visibleSectionIds = $derived(
+    new Set(
+      settingsSections
+        .filter((section) => !normalizedSearch || `${section.label} ${section.description} ${section.search}`.toLowerCase().includes(normalizedSearch))
+        .map((section) => section.id)
+    )
+  );
+  const savedLabel = $derived(
+    $settingsStore.savedAt
+      ? `Saved locally ${$settingsStore.savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : 'Saved locally on this device'
+  );
+  const activeImagePreset = $derived(imagePresetOptions.find((option) => option.value === $settingsStore.imageDefaultPreset) ?? imagePresetOptions[0]);
+  const activePerformancePreset = $derived(performancePresetOptions.find((option) => option.value === $settingsStore.performancePreset) ?? performancePresetOptions[0]);
+  const visibleExtensionSections = $derived(
+    normalizedSearch
+      ? $extensionSettingsSections.filter((section) => `${section.title} ${section.description ?? ''} ${section.extensionName}`.toLowerCase().includes(normalizedSearch))
+      : $extensionSettingsSections
+  );
 
-  const defaultMoodSettings = (): VoiceMoodSettings => ({
-    baseline_expressiveness: 1,
-    emotional_sensitivity: 1,
-    nsfw_intensity: 1
-  });
+  const shouldShow = (sectionId: SettingsSectionId) => visibleSectionIds.has(sectionId);
 
+  const defaultMoodSettings = (): VoiceMoodSettings => ({ baseline_expressiveness: 1, emotional_sensitivity: 1, nsfw_intensity: 1 });
   const moodFor = (profile: VoiceProfile): VoiceMoodSettings => profile.mood_settings ?? defaultMoodSettings();
 
   const loadVoiceProfiles = async () => {
@@ -185,9 +231,7 @@
       const registry = await extensionService.listExtensions();
       extensionRegistry.setBackendExtensions(registry.extensions);
       extensionStatus = `${registry.extensions.length} extension contract${registry.extensions.length === 1 ? '' : 's'} loaded.`;
-      extensionEventBus.publish('settings.extensions_loaded', 'settings', 'reverie.settings', {
-        extension_count: registry.extensions.length
-      });
+      extensionEventBus.publish('settings.extensions_loaded', 'settings', 'reverie.settings', { extension_count: registry.extensions.length });
     } catch (error) {
       extensionError = error instanceof Error ? error.message : 'Could not load backend extension contracts.';
       extensionRegistry.reportError(extensionError);
@@ -203,22 +247,13 @@
 
   const setExtensionSetting = (extensionId: string, field: ExtensionSettingField, value: boolean | number | string | null) => {
     settingsStore.setExtensionSetting(extensionId, field.key, value);
-    extensionEventBus.publish('settings.extension_setting_changed', 'settings', extensionId, {
-      key: field.key,
-      value
-    });
+    extensionEventBus.publish('settings.extension_setting_changed', 'settings', extensionId, { key: field.key, value });
   };
 
   const handleExtensionInput = (extensionId: string, field: ExtensionSettingField, event: Event) => {
     const target = event.currentTarget as HTMLInputElement | HTMLSelectElement;
-    if (field.kind === 'boolean') {
-      setExtensionSetting(extensionId, field, (target as HTMLInputElement).checked);
-      return;
-    }
-    if (field.kind === 'number') {
-      setExtensionSetting(extensionId, field, Number(target.value));
-      return;
-    }
+    if (field.kind === 'boolean') return setExtensionSetting(extensionId, field, (target as HTMLInputElement).checked);
+    if (field.kind === 'number') return setExtensionSetting(extensionId, field, Number(target.value));
     setExtensionSetting(extensionId, field, target.value);
   };
 
@@ -229,48 +264,6 @@
       if (cloneRecordingUrl) URL.revokeObjectURL(cloneRecordingUrl);
     };
   });
-
-  const savedLabel = $derived(
-    $settingsStore.savedAt
-      ? `Saved locally ${$settingsStore.savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-      : 'Saved locally on this device'
-  );
-
-  const handleLongTermMemoryChange = (event: Event) => {
-    settingsStore.setLongTermMemoryEnabled((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleSelfReflectionChange = (event: Event) => {
-    settingsStore.setSelfReflectionEnabled((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleGrowthNotificationsChange = (event: Event) => {
-    settingsStore.setGrowthNotificationsEnabled((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleTTSEnabledChange = (event: Event) => {
-    settingsStore.setTTSEnabled((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleTTSAutoPlayChange = (event: Event) => {
-    settingsStore.setTTSAutoPlay((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleImageAutoGenerateChange = (event: Event) => {
-    settingsStore.setImageAutoGenerateOnAssistant((event.currentTarget as HTMLInputElement).checked);
-  };
-
-  const handleImageDefaultPresetChange = (preset: ImageDefaultPreset) => {
-    settingsStore.setImageDefaultPreset(preset);
-  };
-
-  const handleTTSVolumeChange = (event: Event) => {
-    settingsStore.setTTSVolume(Number((event.currentTarget as HTMLInputElement).value));
-  };
-
-  const handleTTSSpeedChange = (event: Event) => {
-    settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
-  };
 
   const handleCloneFileChange = (event: Event) => {
     const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
@@ -320,9 +313,7 @@
 
   const updateMoodSetting = async (profile: VoiceProfile, key: keyof VoiceMoodSettings, value: number) => {
     const nextMood = { ...moodFor(profile), [key]: value };
-    voiceProfiles = voiceProfiles.map((candidate) =>
-      candidate.voice_id === profile.voice_id ? { ...candidate, mood_settings: nextMood } : candidate
-    );
+    voiceProfiles = voiceProfiles.map((candidate) => (candidate.voice_id === profile.voice_id ? { ...candidate, mood_settings: nextMood } : candidate));
     savingMoodVoiceId = profile.voice_id;
     voiceMoodError = null;
     try {
@@ -362,501 +353,369 @@
       isCreatingVoice = false;
     }
   };
+
+  const localStorageEntriesForScope = (scope: 'characters' | 'growth' | 'settings' | 'full') => {
+    if (!browser) return {};
+    const entries: Record<string, string> = {};
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key) continue;
+      const normalized = key.toLowerCase();
+      const include =
+        scope === 'full'
+          ? key.startsWith('reverie.')
+          : scope === 'settings'
+            ? key === SETTINGS_STORAGE_KEY || normalized.includes('setting') || normalized.includes('api')
+            : scope === 'growth'
+              ? normalized.includes('growth') || normalized.includes('journal') || normalized.includes('reflection') || normalized.includes('lora') || normalized.includes('memory')
+              : normalized.includes('character') || normalized.includes('voice') || normalized.includes('persona');
+      if (include) entries[key] = window.localStorage.getItem(key) ?? '';
+    }
+    if (scope === 'growth' && window.localStorage.getItem(PINNED_JOURNAL_STORAGE_KEY)) {
+      entries[PINNED_JOURNAL_STORAGE_KEY] = window.localStorage.getItem(PINNED_JOURNAL_STORAGE_KEY) ?? '';
+    }
+    return entries;
+  };
+
+  const downloadJson = (filename: string, payload: unknown) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportBackup = (scope: 'characters' | 'growth' | 'settings' | 'full') => {
+    backupError = null;
+    const payload = {
+      kind: 'reverie.settings_control_hub.backup',
+      version: 1,
+      scope,
+      exported_at: new Date().toISOString(),
+      note: 'Local-first export. Backend character/growth databases remain authoritative when connected; this captures current browser-side control hub state.',
+      settings: settingsStore.getSnapshot(),
+      local_storage: localStorageEntriesForScope(scope)
+    };
+    downloadJson(`reverie-${scope}-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
+    backupStatus = `Exported ${scope === 'full' ? 'a full local backup' : scope} backup.`;
+  };
+
+  const importBackup = async (event: Event) => {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    backupError = null;
+    try {
+      const payload = JSON.parse(await file.text()) as {
+        settings?: unknown;
+        local_storage?: Record<string, string>;
+      };
+      if (!confirm('Import this Reverie backup? Current local settings with matching keys will be replaced.')) return;
+      if (browser && payload.local_storage && typeof payload.local_storage === 'object') {
+        for (const [key, value] of Object.entries(payload.local_storage)) {
+          if (key.startsWith('reverie.') && typeof value === 'string') window.localStorage.setItem(key, value);
+        }
+      }
+      if (payload.settings) {
+        settingsStore.importSettingsPayload(payload.settings);
+      } else if (browser) {
+        const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (rawSettings) settingsStore.importSettingsPayload(JSON.parse(rawSettings));
+      }
+      backupStatus = `Imported ${file.name}.`;
+    } catch (error) {
+      backupError = error instanceof Error ? error.message : 'That file was not a readable Reverie backup.';
+    } finally {
+      (event.currentTarget as HTMLInputElement).value = '';
+    }
+  };
+
+  const resetWithConfirmation = () => {
+    if (!confirm('Reset Settings & Control Hub to calm defaults? Extension settings saved under the hub will also be cleared.')) return;
+    settingsStore.resetMemoryReflectionSettings();
+    backupStatus = 'Restored calm defaults.';
+  };
 </script>
 
-<section class="settings-panel" aria-labelledby="settings-title">
-  <header class="settings-hero">
+<section class="settings-panel control-hub" class:settings-compact={$settingsStore.interfaceDensity === 'compact'} aria-labelledby="settings-title">
+  <header class="settings-hero control-hub-hero">
     <div>
-      <p class="eyebrow">Private local controls</p>
-      <h1 id="settings-title">Memory & Reflection</h1>
+      <p class="eyebrow">Settings & Control Hub</p>
+      <h1 id="settings-title">One calm place to tune Reverie</h1>
       <p class="subtitle">
-        Choose how much Reverie remembers, reflects, and gently shares signs of growth. These controls stay simple on purpose: clear enough to trust, calm enough to revisit anytime.
+        Search every major local control, review the 8GB impact before changing quality, and let extensions add their own safe setting sections without cluttering the core experience.
       </p>
     </div>
-    <div class="settings-save-pill" aria-live="polite">
-      <span aria-hidden="true">✓</span>
-      {savedLabel}
+    <div class="settings-hero-actions">
+      <div class="settings-save-pill" aria-live="polite"><span aria-hidden="true">✓</span>{savedLabel}</div>
+      <button type="button" class="hub-secondary-action" onclick={() => exportBackup('full')}>Quick backup</button>
     </div>
   </header>
 
-  <div class="settings-content">
-    <article class="settings-card settings-card-featured">
-      <div class="setting-copy">
-        <span class="setting-kicker">Memory</span>
-        <h2>Long-term memory</h2>
-        <p id="long-term-memory-description">
-          Let Reverie keep important preferences, promises, and boundaries. Turning this off keeps the current chat intact while durable remembering pauses.
-        </p>
-      </div>
-      <label class="toggle-switch">
-        <input
-          type="checkbox"
-          checked={$settingsStore.longTermMemoryEnabled}
-          onchange={handleLongTermMemoryChange}
-          aria-describedby="long-term-memory-description"
-        />
-        <span>{ $settingsStore.longTermMemoryEnabled ? 'On' : 'Off' }</span>
+  <div class="settings-hub-layout">
+    <aside class="settings-hub-nav" aria-label="Settings sections">
+      <label class="settings-search">
+        <span>Search settings</span>
+        <input type="search" bind:value={searchQuery} placeholder="Try “8GB”, “voice”, “backup”…" aria-label="Search settings" />
       </label>
-    </article>
-
-    <article class="settings-card settings-card-featured">
-      <div class="setting-copy">
-        <span class="setting-kicker">Reflection</span>
-        <h2>Self-reflection</h2>
-        <p id="self-reflection-description">
-          Allow private review after the conversation settles. Reflection is slower growth, not constant monitoring or rewriting from one fragile moment.
-        </p>
-      </div>
-      <label class="toggle-switch">
-        <input
-          type="checkbox"
-          checked={$settingsStore.selfReflectionEnabled}
-          onchange={handleSelfReflectionChange}
-          aria-describedby="self-reflection-description"
-        />
-        <span>{ $settingsStore.selfReflectionEnabled ? 'On' : 'Off' }</span>
-      </label>
-    </article>
-
-    <article class="settings-card settings-wide">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Pace</span>
-        <h2>Reflection frequency</h2>
-        <p>Pick how often Reverie pauses later to understand what mattered.</p>
-      </div>
-      <div class="option-grid" role="radiogroup" aria-label="Reflection frequency">
-        {#each reflectionFrequencyOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.reflectionFrequency === option.value}
-            aria-pressed={$settingsStore.reflectionFrequency === option.value}
-            onclick={() => settingsStore.setReflectionFrequency(option.value)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-          </button>
-        {/each}
-      </div>
-    </article>
-
-    <article class="settings-card settings-wide">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Care</span>
-        <h2>Reflection sensitivity</h2>
-        <p>Choose how cautious Reverie should be before treating a moment as meaningful growth.</p>
-      </div>
-      <div class="option-grid" role="radiogroup" aria-label="Reflection sensitivity">
-        {#each reflectionSensitivityOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.reflectionSensitivity === option.value}
-            aria-pressed={$settingsStore.reflectionSensitivity === option.value}
-            onclick={() => settingsStore.setReflectionSensitivity(option.value)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-          </button>
-        {/each}
-      </div>
-    </article>
-
-    <article class="settings-card settings-wide">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Presence</span>
-        <h2>Growth notifications</h2>
-        <p>Show occasional notes when Reverie notices a meaningful shift—no dashboards, no pressure.</p>
-      </div>
-      <label class="inline-toggle">
-        <input
-          type="checkbox"
-          checked={$settingsStore.growthNotificationsEnabled}
-          onchange={handleGrowthNotificationsChange}
-        />
-        <span>{ $settingsStore.growthNotificationsEnabled ? 'Show gentle growth notes' : 'Keep growth quiet' }</span>
-      </label>
-    </article>
-
-    <article class="settings-card settings-wide">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">8GB awareness</span>
-        <h2>Context budget</h2>
-        <p>A simple preset for remembered context. Balanced is designed for smooth local use on the 8GB target.</p>
-      </div>
-      <div class="budget-grid" role="radiogroup" aria-label="Context budget preset">
-        {#each contextBudgetOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.contextBudgetPreset === option.value}
-            aria-pressed={$settingsStore.contextBudgetPreset === option.value}
-            onclick={() => settingsStore.setContextBudgetPreset(option.value)}
-          >
-            <span>{option.detail}</span>
-            <strong>{option.label}</strong>
-            <small>{option.description}</small>
-          </button>
-        {/each}
-      </div>
-    </article>
-
-    <article class="settings-card settings-wide image-settings-card">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Images</span>
-        <h2>Local scene visualization</h2>
-        <p>Generate images only when you ask by default. Optional auto-generation queues low-priority preview images after assistant replies and still lets voice/chat go first.</p>
-      </div>
-      <label class="inline-toggle">
-        <input
-          type="checkbox"
-          checked={$settingsStore.imageAutoGenerateOnAssistant}
-          onchange={handleImageAutoGenerateChange}
-        />
-        <span>{ $settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images' }</span>
-      </label>
-      <div class="option-grid compact-options" role="radiogroup" aria-label="Default image generation preset">
-        {#each imagePresetOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.imageDefaultPreset === option.value}
-            aria-pressed={$settingsStore.imageDefaultPreset === option.value}
-            onclick={() => handleImageDefaultPresetChange(option.value)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-          </button>
-        {/each}
-      </div>
-    </article>
-
-    <article class="settings-card settings-wide voice-settings-card">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Voice</span>
-        <h2>Text-to-speech playback</h2>
-        <p>Keep speech local, interruptible, and light on memory. Reverie only generates one short audio line at a time.</p>
-      </div>
-
-      <div class="voice-settings-grid">
-        <label class="inline-toggle">
-          <input type="checkbox" checked={$settingsStore.ttsEnabled} onchange={handleTTSEnabledChange} />
-          <span>{ $settingsStore.ttsEnabled ? 'Voice enabled' : 'Voice disabled' }</span>
-        </label>
-
-        <label class="inline-toggle">
-          <input
-            type="checkbox"
-            checked={$settingsStore.ttsAutoPlay}
-            disabled={!$settingsStore.ttsEnabled}
-            onchange={handleTTSAutoPlayChange}
-          />
-          <span>{ $settingsStore.ttsAutoPlay ? 'Auto-play new replies' : 'Manual playback only' }</span>
-        </label>
-
-        <label class="range-setting">
-          <span>Volume <strong>{Math.round($settingsStore.ttsVolume * 100)}%</strong></span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={$settingsStore.ttsVolume}
-            disabled={!$settingsStore.ttsEnabled}
-            oninput={handleTTSVolumeChange}
-          />
-        </label>
-
-        <label class="range-setting">
-          <span>Speed <strong>{$settingsStore.ttsSpeed.toFixed(2)}×</strong></span>
-          <input
-            type="range"
-            min="0.75"
-            max="1.35"
-            step="0.05"
-            value={$settingsStore.ttsSpeed}
-            disabled={!$settingsStore.ttsEnabled}
-            oninput={handleTTSSpeedChange}
-          />
-        </label>
-      </div>
-
-      <div class="option-grid voice-quality-grid" role="radiogroup" aria-label="TTS quality and speed preference">
-        {#each ttsLatencyOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.ttsLatencyPreset === option.value}
-            disabled={!$settingsStore.ttsEnabled}
-            aria-pressed={$settingsStore.ttsLatencyPreset === option.value}
-            onclick={() => settingsStore.setTTSLatencyPreset(option.value)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-          </button>
-        {/each}
-      </div>
-
-      <section class="voice-mood-section" aria-labelledby="voice-mood-title">
-        <div class="setting-copy compact">
-          <span class="setting-kicker">Character Mood</span>
-          <h3 id="voice-mood-title">Per-character speech tuning</h3>
-          <p>Fine-tune how each linked voice reacts to emotional, intimate, and high-stakes scenes. These are lightweight profile settings, not extra models.</p>
-        </div>
-
-        <div class="voice-mood-list" aria-live="polite">
-          {#if voicesLoading}
-            <p class="voice-mood-empty">Loading local voice profiles…</p>
-          {:else if voiceProfiles.length === 0}
-            <p class="voice-mood-empty">Create or link a character voice profile to reveal mood controls.</p>
-          {:else}
-            {#each voiceProfiles as profile (profile.voice_id)}
-              <article class="voice-mood-card">
-                <div class="voice-mood-header">
-                  <div>
-                    <strong>{profile.name}</strong>
-                    <span>{profile.type === 'character' ? 'Character voice' : 'Narrator'} · {profile.voice_id}</span>
-                  </div>
-                  {#if savingMoodVoiceId === profile.voice_id}
-                    <small>Saving…</small>
-                  {/if}
-                </div>
-
-                <label class="range-setting mood-range">
-                  <span>Baseline expressiveness <strong>{moodFor(profile).baseline_expressiveness.toFixed(2)}×</strong></span>
-                  <small>How animated this voice feels before scene emotion is added.</small>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value={moodFor(profile).baseline_expressiveness}
-                    onchange={(event) => updateMoodSetting(profile, 'baseline_expressiveness', Number((event.currentTarget as HTMLInputElement).value))}
-                  />
-                </label>
-
-                <label class="range-setting mood-range">
-                  <span>Emotional sensitivity <strong>{moodFor(profile).emotional_sensitivity.toFixed(2)}×</strong></span>
-                  <small>How quickly memories, comfort, tension, and affection color delivery.</small>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value={moodFor(profile).emotional_sensitivity}
-                    onchange={(event) => updateMoodSetting(profile, 'emotional_sensitivity', Number((event.currentTarget as HTMLInputElement).value))}
-                  />
-                </label>
-
-                <label class="range-setting mood-range">
-                  <span>NSFW intensity <strong>{moodFor(profile).nsfw_intensity.toFixed(2)}×</strong></span>
-                  <small>How strongly intimate scene cues affect speech tags.</small>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value={moodFor(profile).nsfw_intensity}
-                    onchange={(event) => updateMoodSetting(profile, 'nsfw_intensity', Number((event.currentTarget as HTMLInputElement).value))}
-                  />
-                </label>
-              </article>
-            {/each}
+      <nav>
+        {#each settingsSections as section}
+          {#if shouldShow(section.id)}
+            <button type="button" class:active={activeSection === section.id} onclick={() => (activeSection = section.id)}>
+              <span>{section.eyebrow}</span>
+              <strong>{section.label}</strong>
+            </button>
           {/if}
-        </div>
+        {/each}
+      </nav>
+      <p class="settings-nav-note">Core controls save instantly to this device. Backend safety gates can still downgrade heavy jobs to protect the 8GB target.</p>
+    </aside>
 
-        <div class="clone-status" aria-live="polite">
-          {#if voiceMoodError}
-            <span class="error">{voiceMoodError}</span>
-          {:else if voiceMoodStatus}
-            <span>{voiceMoodStatus}</span>
-          {/if}
-        </div>
-      </section>
+    <div class="settings-content control-hub-content">
+      {#if shouldShow('general') && (!normalizedSearch || activeSection === 'general')}
+        <section class="settings-section settings-wide" aria-labelledby="general-settings-title">
+          <div class="settings-section-heading">
+            <span class="setting-kicker">General</span>
+            <h2 id="general-settings-title">Local control center</h2>
+            <p>Reverie keeps these controls lightweight: no resident settings service, no cloud dependency, and clear reset/export escape hatches.</p>
+          </div>
+          <div class="settings-card-grid three-up">
+            <article class="settings-card mini-hub-card">
+              <strong>Local-first</strong>
+              <span>{savedLabel}</span>
+              <p>Settings persist in local storage until backend-wide preferences are connected.</p>
+            </article>
+            <article class="settings-card mini-hub-card">
+              <strong>Current 8GB mode</strong>
+              <span>{activePerformancePreset.label}</span>
+              <p>{activePerformancePreset.detail}</p>
+            </article>
+            <article class="settings-card mini-hub-card">
+              <strong>Extension sections</strong>
+              <span>{$extensionSettingsSections.length}</span>
+              <p>Registered declaratively through the Task 5C extension contract.</p>
+            </article>
+          </div>
+        </section>
+      {/if}
 
-      <section class="clone-voice-section" aria-labelledby="clone-voice-title">
-        <div class="setting-copy compact">
-          <span class="setting-kicker">Clone Voice</span>
-          <h3 id="clone-voice-title">Zero-shot voice profile</h3>
-          <p>Record or upload a clear 6-15 second reference. Reverie stores the clip locally, links it to the same mood controls above, and only asks Orpheus to use it when speech is generated.</p>
-        </div>
+      {#if shouldShow('appearance') && (!normalizedSearch || activeSection === 'appearance')}
+        <section class="settings-section settings-wide" aria-labelledby="appearance-settings-title">
+          <div class="settings-section-heading">
+            <span class="setting-kicker">Appearance</span>
+            <h2 id="appearance-settings-title">Warm premium dark design</h2>
+            <p>These preferences are intentionally cheap CSS-level choices, so they do not affect model memory or local inference performance.</p>
+          </div>
+          <article class="settings-card settings-wide">
+            <div class="option-grid" role="radiogroup" aria-label="Appearance theme">
+              {#each appearanceOptions as option}
+                <button type="button" class:active={$settingsStore.appearanceTheme === option.value} aria-pressed={$settingsStore.appearanceTheme === option.value} onclick={() => settingsStore.setAppearanceTheme(option.value)}>
+                  <strong>{option.label}</strong>
+                  <span>{option.description}</span>
+                </button>
+              {/each}
+            </div>
+            <div class="appearance-preview" data-theme={$settingsStore.appearanceTheme} aria-label="Appearance preview">
+              <div><span></span><span></span><span></span></div>
+              <strong>Preview card</strong>
+              <p>Soft hierarchy, restrained glow, readable contrast, and keyboard-visible controls.</p>
+            </div>
+          </article>
+          <article class="settings-card settings-wide">
+            <div class="option-grid compact-options" role="radiogroup" aria-label="Interface density">
+              {#each densityOptions as option}
+                <button type="button" class:active={$settingsStore.interfaceDensity === option.value} aria-pressed={$settingsStore.interfaceDensity === option.value} onclick={() => settingsStore.setInterfaceDensity(option.value)}>
+                  <strong>{option.label}</strong>
+                  <span>{option.description}</span>
+                </button>
+              {/each}
+            </div>
+            <label class="checkbox-setting">
+              <input type="checkbox" checked={$settingsStore.reducedMotionPreference} onchange={(event) => settingsStore.setReducedMotionPreference((event.currentTarget as HTMLInputElement).checked)} />
+              <span>Prefer extra-calm motion inside new settings surfaces.</span>
+            </label>
+          </article>
+        </section>
+      {/if}
 
-        <div class="clone-voice-controls">
-          <label class="text-setting">
-            <span>Profile name</span>
-            <input type="text" bind:value={cloneName} placeholder="Tara warm close-up" maxlength="120" />
-          </label>
+      {#if shouldShow('voice') && (!normalizedSearch || activeSection === 'voice')}
+        <section class="settings-section settings-wide" aria-labelledby="voice-settings-title">
+          <div class="settings-section-heading">
+            <span class="setting-kicker">TTS & Voice</span>
+            <h2 id="voice-settings-title">Spoken presence without VRAM surprises</h2>
+            <p>TTS remains priority media. Speed and fallback choices can keep speech responsive while Orpheus-style voices stay optional.</p>
+          </div>
 
-          <label class="file-setting">
-            <span>Upload reference audio</span>
-            <input type="file" accept="audio/*" onchange={handleCloneFileChange} />
-          </label>
+          <article class="settings-card settings-wide voice-settings-card">
+            <div class="setting-copy compact">
+              <span class="setting-kicker">Playback</span>
+              <h3>Voice output</h3>
+              <p>Use voice playback for assistant replies, or leave text-only mode on for maximum resource headroom.</p>
+            </div>
+            <label class="inline-toggle">
+              <input type="checkbox" checked={$settingsStore.ttsEnabled} onchange={(event) => settingsStore.setTTSEnabled((event.currentTarget as HTMLInputElement).checked)} />
+              <span>{$settingsStore.ttsEnabled ? 'Voice playback enabled' : 'Text-only mode'}</span>
+            </label>
+            <label class="inline-toggle">
+              <input type="checkbox" checked={$settingsStore.ttsAutoPlay} disabled={!$settingsStore.ttsEnabled} onchange={(event) => settingsStore.setTTSAutoPlay((event.currentTarget as HTMLInputElement).checked)} />
+              <span>{$settingsStore.ttsAutoPlay ? 'Auto-play assistant speech' : 'Wait for manual play'}</span>
+            </label>
+            <div class="voice-settings-grid">
+              <label class="range-setting"><span>Volume <strong>{Math.round($settingsStore.ttsVolume * 100)}%</strong></span><input type="range" min="0" max="1" step="0.01" value={$settingsStore.ttsVolume} disabled={!$settingsStore.ttsEnabled} oninput={(event) => settingsStore.setTTSVolume(Number((event.currentTarget as HTMLInputElement).value))} /></label>
+              <label class="range-setting"><span>Speed <strong>{$settingsStore.ttsSpeed.toFixed(2)}×</strong></span><input type="range" min="0.75" max="1.35" step="0.05" value={$settingsStore.ttsSpeed} disabled={!$settingsStore.ttsEnabled} oninput={(event) => settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value))} /></label>
+            </div>
+            <div class="option-grid voice-quality-grid" role="radiogroup" aria-label="TTS quality and speed preference">
+              {#each ttsLatencyOptions as option}
+                <button type="button" class:active={$settingsStore.ttsLatencyPreset === option.value} disabled={!$settingsStore.ttsEnabled} aria-pressed={$settingsStore.ttsLatencyPreset === option.value} onclick={() => settingsStore.setTTSLatencyPreset(option.value)}>
+                  <strong>{option.label}</strong><span>{option.description}</span>
+                </button>
+              {/each}
+            </div>
+            <div class="tts-preview-card" aria-live="polite">
+              <div><strong>Live speech preview</strong><span>{samplePreview}</span></div>
+              <button type="button" onclick={() => (samplePreview = `Sample queued with ${$settingsStore.ttsLatencyPreset} latency, ${Math.round($settingsStore.ttsVolume * 100)}% volume, ${$settingsStore.ttsSpeed.toFixed(2)}× speed.`)}>Update sample</button>
+            </div>
+          </article>
 
-          <div class="recording-row">
-            {#if isRecording}
-              <button type="button" class="record-button active" onclick={stopRecording}>Stop recording</button>
+          <article class="settings-card settings-wide voice-mood-section" aria-labelledby="voice-mood-title">
+            <div class="setting-copy compact">
+              <span class="setting-kicker">Character Mood</span>
+              <h3 id="voice-mood-title">Per-character speech tuning</h3>
+              <p>Fine-tune how each linked voice reacts to emotional, intimate, and high-stakes scenes. These are lightweight profile settings, not extra models.</p>
+            </div>
+            <div class="voice-mood-list" aria-live="polite">
+              {#if voicesLoading}
+                <p class="voice-mood-empty">Loading local voice profiles…</p>
+              {:else if voiceProfiles.length === 0}
+                <p class="voice-mood-empty">Create or link a character voice profile to reveal mood controls.</p>
+              {:else}
+                {#each voiceProfiles as profile (profile.voice_id)}
+                  <article class="voice-mood-card">
+                    <div class="voice-mood-header"><div><strong>{profile.name}</strong><span>{profile.type === 'character' ? 'Character voice' : 'Narrator'} · {profile.voice_id}</span></div>{#if savingMoodVoiceId === profile.voice_id}<small>Saving…</small>{/if}</div>
+                    <label class="range-setting mood-range"><span>Baseline expressiveness <strong>{moodFor(profile).baseline_expressiveness.toFixed(2)}×</strong></span><small>How animated this voice feels before scene emotion is added.</small><input type="range" min="0" max="2" step="0.05" value={moodFor(profile).baseline_expressiveness} onchange={(event) => updateMoodSetting(profile, 'baseline_expressiveness', Number((event.currentTarget as HTMLInputElement).value))} /></label>
+                    <label class="range-setting mood-range"><span>Emotional sensitivity <strong>{moodFor(profile).emotional_sensitivity.toFixed(2)}×</strong></span><small>How quickly memories, comfort, tension, and affection color delivery.</small><input type="range" min="0" max="2" step="0.05" value={moodFor(profile).emotional_sensitivity} onchange={(event) => updateMoodSetting(profile, 'emotional_sensitivity', Number((event.currentTarget as HTMLInputElement).value))} /></label>
+                    <label class="range-setting mood-range"><span>NSFW intensity <strong>{moodFor(profile).nsfw_intensity.toFixed(2)}×</strong></span><small>How strongly intimate scene cues affect speech tags.</small><input type="range" min="0" max="2" step="0.05" value={moodFor(profile).nsfw_intensity} onchange={(event) => updateMoodSetting(profile, 'nsfw_intensity', Number((event.currentTarget as HTMLInputElement).value))} /></label>
+                  </article>
+                {/each}
+              {/if}
+            </div>
+            <div class="clone-status" aria-live="polite">{#if voiceMoodError}<span class="error">{voiceMoodError}</span>{:else if voiceMoodStatus}<span>{voiceMoodStatus}</span>{/if}</div>
+          </article>
+
+          <article class="settings-card settings-wide clone-voice-section" aria-labelledby="clone-voice-title">
+            <div class="setting-copy compact"><span class="setting-kicker">Clone Voice</span><h3 id="clone-voice-title">Zero-shot voice profile</h3><p>Record or upload a clear 6-15 second reference. Reverie stores the clip locally and only asks Orpheus to use it when speech is generated.</p></div>
+            <div class="clone-voice-controls">
+              <label class="text-setting"><span>Profile name</span><input type="text" bind:value={cloneName} placeholder="Tara warm close-up" maxlength="120" /></label>
+              <label class="file-setting"><span>Upload reference audio</span><input type="file" accept="audio/*" onchange={handleCloneFileChange} /></label>
+              <div class="recording-row">{#if isRecording}<button type="button" class="record-button active" onclick={stopRecording}>Stop recording</button>{:else}<button type="button" class="record-button" onclick={startRecording}>Record reference</button>{/if}<span>Keep it natural, quiet, and short. Piper remains available if Orpheus cannot fit in VRAM.</span></div>
+              {#if cloneRecordingUrl}<audio controls src={cloneRecordingUrl} aria-label="Voice reference preview"></audio>{/if}
+              <button type="button" class="create-voice-button" disabled={!cloneAudio || !cloneName.trim() || isCreatingVoice} onclick={createVoiceProfile}>{isCreatingVoice ? 'Creating voice profile…' : 'Create local voice profile'}</button>
+              <div class="clone-status" aria-live="polite">{#if cloneError}<span class="error">{cloneError}</span>{:else if cloneStatus}<span>{cloneStatus}</span>{/if}</div>
+            </div>
+          </article>
+        </section>
+      {/if}
+
+      {#if shouldShow('images') && (!normalizedSearch || activeSection === 'images')}
+        <section class="settings-section settings-wide" aria-labelledby="image-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Image Generation</span><h2 id="image-settings-title">Local scene visualization</h2><p>Generate images only when you ask by default. Auto-generation is low-priority and still lets voice/chat go first.</p></div>
+          <article class="settings-card settings-wide image-settings-card">
+            <label class="inline-toggle"><input type="checkbox" checked={$settingsStore.imageAutoGenerateOnAssistant} onchange={(event) => settingsStore.setImageAutoGenerateOnAssistant((event.currentTarget as HTMLInputElement).checked)} /><span>{$settingsStore.imageAutoGenerateOnAssistant ? 'Auto-generate after replies' : 'Ask before generating images'}</span></label>
+            <div class="option-grid compact-options" role="radiogroup" aria-label="Default image generation preset">
+              {#each imagePresetOptions as option}
+                <button type="button" class:active={$settingsStore.imageDefaultPreset === option.value} aria-pressed={$settingsStore.imageDefaultPreset === option.value} onclick={() => settingsStore.setImageDefaultPreset(option.value)}><strong>{option.label}</strong><span>{option.description}</span><small>{option.impact}</small></button>
+              {/each}
+            </div>
+            <div class="image-preset-preview" data-preset={$settingsStore.imageDefaultPreset}><div><span></span></div><strong>{activeImagePreset.label} preset preview</strong><p>{activeImagePreset.description} Backend VRAM checks can still downgrade this before ComfyUI starts.</p></div>
+          </article>
+        </section>
+      {/if}
+
+      {#if shouldShow('growth') && (!normalizedSearch || activeSection === 'growth')}
+        <section class="settings-section settings-wide" aria-labelledby="growth-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Growth & Self-Learning</span><h2 id="growth-settings-title">Transparent character growth</h2><p>Reflection runs outside the active response path and future training remains opt-in, auditable, and reversible.</p></div>
+          <article class="settings-card settings-card-featured"><div class="setting-copy"><span class="setting-kicker">Reflection</span><h3>Self-reflection</h3><p id="self-reflection-description">Allow private review after the conversation settles. Reflection is slower growth, not constant monitoring or rewriting from one fragile moment.</p></div><label class="toggle-switch"><input type="checkbox" checked={$settingsStore.selfReflectionEnabled} onchange={(event) => settingsStore.setSelfReflectionEnabled((event.currentTarget as HTMLInputElement).checked)} aria-describedby="self-reflection-description" /><span>{$settingsStore.selfReflectionEnabled ? 'On' : 'Off'}</span></label></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">Pace</span><h3>Reflection frequency</h3><p>Pick how often Reverie pauses later to understand what mattered.</p></div><div class="option-grid" role="radiogroup" aria-label="Reflection frequency">{#each reflectionFrequencyOptions as option}<button type="button" class:active={$settingsStore.reflectionFrequency === option.value} aria-pressed={$settingsStore.reflectionFrequency === option.value} onclick={() => settingsStore.setReflectionFrequency(option.value)}><strong>{option.label}</strong><span>{option.description}</span></button>{/each}</div></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">Care</span><h3>Reflection sensitivity</h3><p>Choose how cautious Reverie should be before treating a moment as meaningful growth.</p></div><div class="option-grid" role="radiogroup" aria-label="Reflection sensitivity">{#each reflectionSensitivityOptions as option}<button type="button" class:active={$settingsStore.reflectionSensitivity === option.value} aria-pressed={$settingsStore.reflectionSensitivity === option.value} onclick={() => settingsStore.setReflectionSensitivity(option.value)}><strong>{option.label}</strong><span>{option.description}</span></button>{/each}</div></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">Presence</span><h3>Growth notifications</h3><p>Show occasional notes when Reverie notices a meaningful shift—no dashboards, no pressure.</p></div><label class="inline-toggle"><input type="checkbox" checked={$settingsStore.growthNotificationsEnabled} onchange={(event) => settingsStore.setGrowthNotificationsEnabled((event.currentTarget as HTMLInputElement).checked)} /><span>{$settingsStore.growthNotificationsEnabled ? 'Show gentle growth notes' : 'Keep growth quiet'}</span></label></article>
+        </section>
+      {/if}
+
+      {#if shouldShow('memory') && (!normalizedSearch || activeSection === 'memory')}
+        <section class="settings-section settings-wide" aria-labelledby="memory-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Memory</span><h2 id="memory-settings-title">Continuity with pruning controls</h2><p>Protect identity, explicit preferences, boundaries, and important promises while keeping context lean enough for the 8GB target.</p></div>
+          <article class="settings-card settings-card-featured"><div class="setting-copy"><span class="setting-kicker">Durable recall</span><h3>Long-term memory</h3><p id="long-term-memory-description">Let Reverie keep important preferences, promises, and boundaries. Turning this off keeps the current chat intact while durable remembering pauses.</p></div><label class="toggle-switch"><input type="checkbox" checked={$settingsStore.longTermMemoryEnabled} onchange={(event) => settingsStore.setLongTermMemoryEnabled((event.currentTarget as HTMLInputElement).checked)} aria-describedby="long-term-memory-description" /><span>{$settingsStore.longTermMemoryEnabled ? 'On' : 'Off'}</span></label></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">8GB awareness</span><h3>Context budget</h3><p>A simple preset for remembered context. Balanced is designed for smooth local use on the 8GB target.</p></div><div class="budget-grid" role="radiogroup" aria-label="Context budget preset">{#each contextBudgetOptions as option}<button type="button" class:active={$settingsStore.contextBudgetPreset === option.value} aria-pressed={$settingsStore.contextBudgetPreset === option.value} onclick={() => settingsStore.setContextBudgetPreset(option.value)}><span>{option.detail}</span><strong>{option.label}</strong><small>{option.description}</small></button>{/each}</div></article>
+          <article class="settings-card settings-wide"><div class="setting-copy compact"><span class="setting-kicker">Pruning</span><h3>Memory pruning posture</h3><p>Pruning removes noise from retrieval; it should never silently erase user-protected facts or character identity.</p></div><div class="option-grid" role="radiogroup" aria-label="Memory pruning mode">{#each pruningOptions as option}<button type="button" class:active={$settingsStore.memoryPruningMode === option.value} aria-pressed={$settingsStore.memoryPruningMode === option.value} onclick={() => settingsStore.setMemoryPruningMode(option.value)}><strong>{option.label}</strong><span>{option.description}</span></button>{/each}</div></article>
+        </section>
+      {/if}
+
+      {#if shouldShow('performance') && (!normalizedSearch || activeSection === 'performance')}
+        <section class="settings-section settings-wide" aria-labelledby="performance-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Performance & 8GB</span><h2 id="performance-settings-title">Guardrails you can understand</h2><p>Heavy media and learning work must stay queued, explain downgrades, and yield to chat/voice responsiveness.</p></div>
+          <article class="settings-card settings-wide performance-settings-card">
+            <div class="option-grid" role="radiogroup" aria-label="Performance preset">{#each performancePresetOptions as option}<button type="button" class:active={$settingsStore.performancePreset === option.value} aria-pressed={$settingsStore.performancePreset === option.value} onclick={() => settingsStore.setPerformancePreset(option.value)}><strong>{option.label}</strong><span>{option.description}</span><small>{option.detail}</small></button>{/each}</div>
+            <label class="range-setting"><span>Background task limit <strong>{$settingsStore.backgroundTaskLimit}</strong></span><small>Caps non-interactive jobs like indexing, gallery refreshes, and media helpers so chat and voice stay responsive.</small><input type="range" min="1" max="3" step="1" value={$settingsStore.backgroundTaskLimit} onchange={(event) => settingsStore.setBackgroundTaskLimit(Number((event.currentTarget as HTMLInputElement).value))} /></label>
+            <label class="checkbox-setting"><input type="checkbox" checked={$settingsStore.proactiveResourceWarnings} onchange={(event) => settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked)} /><span>Show proactive VRAM warnings and auto-downgrade explanations.</span></label>
+            <p class="performance-explainer">TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.</p>
+          </article>
+        </section>
+      {/if}
+
+      {#if shouldShow('extensibility') && (!normalizedSearch || activeSection === 'extensibility')}
+        <section class="settings-section settings-wide" aria-labelledby="extension-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Extensibility</span><h2 id="extension-settings-title">Extension settings</h2><p>Extensions can add small, typed settings here without coupling to core markup. Bad manifests stay isolated and are reported instead of crashing the app.</p></div>
+          <article class="settings-card settings-wide extension-settings-card">
+            <div class="extension-status" aria-live="polite">{#if extensionsLoading}<span>Loading extension contracts…</span>{:else if extensionError}<span class="error">{extensionError}</span>{:else if extensionStatus}<span>{extensionStatus}</span>{/if}</div>
+            {#if visibleExtensionSections.length === 0}
+              <p class="performance-explainer">No extension setting sections match this view yet.</p>
             {:else}
-              <button type="button" class="record-button" onclick={startRecording}>Record reference</button>
-            {/if}
-            <span>Keep it natural, quiet, and short. Piper still remains available if Orpheus cannot fit in VRAM.</span>
-          </div>
-
-          {#if cloneRecordingUrl}
-            <audio controls src={cloneRecordingUrl} aria-label="Voice reference preview"></audio>
-          {/if}
-
-          <button type="button" class="create-voice-button" disabled={!cloneAudio || !cloneName.trim() || isCreatingVoice} onclick={createVoiceProfile}>
-            {isCreatingVoice ? 'Creating voice profile…' : 'Create local voice profile'}
-          </button>
-
-          <div class="clone-status" aria-live="polite">
-            {#if cloneError}
-              <span class="error">{cloneError}</span>
-            {:else if cloneStatus}
-              <span>{cloneStatus}</span>
-            {/if}
-          </div>
-        </div>
-      </section>
-    </article>
-
-    <article class="settings-card settings-wide performance-settings-card">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Performance</span>
-        <h2>8GB resource mode</h2>
-        <p>Choose how aggressively Reverie protects VRAM when TTS, ComfyUI images, VN assets, and memory jobs coexist.</p>
-      </div>
-
-      <div class="option-grid" role="radiogroup" aria-label="Performance preset">
-        {#each performancePresetOptions as option}
-          <button
-            type="button"
-            class:active={$settingsStore.performancePreset === option.value}
-            aria-pressed={$settingsStore.performancePreset === option.value}
-            onclick={() => settingsStore.setPerformancePreset(option.value)}
-          >
-            <strong>{option.label}</strong>
-            <span>{option.description}</span>
-            <small>{option.detail}</small>
-          </button>
-        {/each}
-      </div>
-
-      <label class="range-setting">
-        <span>Background task limit <strong>{$settingsStore.backgroundTaskLimit}</strong></span>
-        <small>Caps non-interactive jobs like indexing, gallery refreshes, and media helpers so chat and voice stay responsive.</small>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="1"
-          value={$settingsStore.backgroundTaskLimit}
-          onchange={(event) => settingsStore.setBackgroundTaskLimit(Number((event.currentTarget as HTMLInputElement).value))}
-        />
-      </label>
-
-      <label class="checkbox-setting">
-        <input
-          type="checkbox"
-          checked={$settingsStore.proactiveResourceWarnings}
-          onchange={(event) => settingsStore.setProactiveResourceWarnings((event.currentTarget as HTMLInputElement).checked)}
-        />
-        <span>Show proactive VRAM warnings and auto-downgrade explanations.</span>
-      </label>
-
-      <p class="performance-explainer">
-        TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.
-      </p>
-    </article>
-
-    <article class="settings-card settings-wide extension-settings-card">
-      <div class="setting-copy compact">
-        <span class="setting-kicker">Extensibility</span>
-        <h2>Extension settings</h2>
-        <p>Extensions can add small, typed settings here without coupling to the core settings markup. Bad manifests stay isolated and are reported instead of crashing the app.</p>
-      </div>
-
-      <div class="extension-status" aria-live="polite">
-        {#if extensionsLoading}
-          <span>Loading extension contracts…</span>
-        {:else if extensionError}
-          <span class="error">{extensionError}</span>
-        {:else if extensionStatus}
-          <span>{extensionStatus}</span>
-        {/if}
-      </div>
-
-      {#if $extensionSettingsSections.length === 0}
-        <p class="performance-explainer">No extension setting sections are registered yet.</p>
-      {:else}
-        <div class="extension-section-list">
-          {#each $extensionSettingsSections as section (`${section.extensionId}:${section.section_id}`)}
-            <section class="extension-section" aria-label={section.title}>
-              <div>
-                <span class="setting-kicker">{section.extensionName}</span>
-                <h3>{section.title}</h3>
-                {#if section.description}
-                  <p>{section.description}</p>
-                {/if}
-              </div>
-
-              <div class="extension-field-list">
-                {#each section.fields as field (`${section.extensionId}:${section.section_id}:${field.key}`)}
-                  {#if field.kind === 'boolean'}
-                    <label class="checkbox-setting">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(extensionSettingValue(section.extensionId, field))}
-                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
-                      />
-                      <span>{field.label}{field.description ? ` — ${field.description}` : ''}</span>
-                    </label>
-                  {:else if field.kind === 'number'}
-                    <label class="text-setting">
-                      <span>{field.label}</span>
-                      {#if field.description}<small>{field.description}</small>{/if}
-                      <input
-                        type="number"
-                        min={field.min_value ?? undefined}
-                        max={field.max_value ?? undefined}
-                        value={Number(extensionSettingValue(section.extensionId, field) ?? 0)}
-                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
-                      />
-                    </label>
-                  {:else if field.kind === 'select'}
-                    <label class="text-setting">
-                      <span>{field.label}</span>
-                      {#if field.description}<small>{field.description}</small>{/if}
-                      <select value={String(extensionSettingValue(section.extensionId, field) ?? '')} onchange={(event) => handleExtensionInput(section.extensionId, field, event)}>
-                        {#each field.options as option}
-                          <option value={option}>{option}</option>
-                        {/each}
-                      </select>
-                    </label>
-                  {:else}
-                    <label class="text-setting">
-                      <span>{field.label}</span>
-                      {#if field.description}<small>{field.description}</small>{/if}
-                      <input
-                        type="text"
-                        value={String(extensionSettingValue(section.extensionId, field) ?? '')}
-                        maxlength="500"
-                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
-                      />
-                    </label>
-                  {/if}
+              <div class="extension-section-list">
+                {#each visibleExtensionSections as section (`${section.extensionId}:${section.section_id}`)}
+                  <section class="extension-section" aria-label={section.title}>
+                    <div><span class="setting-kicker">{section.extensionName}</span><h3>{section.title}</h3>{#if section.description}<p>{section.description}</p>{/if}</div>
+                    <div class="extension-field-list">
+                      {#each section.fields as field (`${section.extensionId}:${section.section_id}:${field.key}`)}
+                        {#if field.kind === 'boolean'}<label class="checkbox-setting"><input type="checkbox" checked={Boolean(extensionSettingValue(section.extensionId, field))} onchange={(event) => handleExtensionInput(section.extensionId, field, event)} /><span>{field.label}{field.description ? ` — ${field.description}` : ''}</span></label>
+                        {:else if field.kind === 'number'}<label class="text-setting"><span>{field.label}</span>{#if field.description}<small>{field.description}</small>{/if}<input type="number" min={field.min_value ?? undefined} max={field.max_value ?? undefined} value={Number(extensionSettingValue(section.extensionId, field) ?? 0)} onchange={(event) => handleExtensionInput(section.extensionId, field, event)} /></label>
+                        {:else if field.kind === 'select'}<label class="text-setting"><span>{field.label}</span>{#if field.description}<small>{field.description}</small>{/if}<select value={String(extensionSettingValue(section.extensionId, field) ?? '')} onchange={(event) => handleExtensionInput(section.extensionId, field, event)}>{#each field.options as option}<option value={option}>{option}</option>{/each}</select></label>
+                        {:else}<label class="text-setting"><span>{field.label}</span>{#if field.description}<small>{field.description}</small>{/if}<input type="text" value={String(extensionSettingValue(section.extensionId, field) ?? '')} maxlength="500" onchange={(event) => handleExtensionInput(section.extensionId, field, event)} /></label>{/if}
+                      {/each}
+                    </div>
+                  </section>
                 {/each}
               </div>
-            </section>
-          {/each}
-        </div>
+            {/if}
+          </article>
+        </section>
       {/if}
-    </article>
 
-    <aside class="settings-trust-note" aria-label="Memory and reflection trust note">
-      <span aria-hidden="true">✦</span>
-      <div>
-        <strong>You stay in control.</strong>
-        <p>
-          These settings are saved in local storage for now and are shaped to match Reverie's transparent growth rules: remember explicit evidence, reflect outside the active response path, and keep future advanced schedules out of the MVP controls.
-        </p>
-      </div>
-      <button type="button" onclick={() => settingsStore.resetMemoryReflectionSettings()}>Restore calm defaults</button>
-    </aside>
+      {#if shouldShow('backup') && (!normalizedSearch || activeSection === 'backup')}
+        <section class="settings-section settings-wide" aria-labelledby="backup-settings-title">
+          <div class="settings-section-heading"><span class="setting-kicker">Import / Export / Backup</span><h2 id="backup-settings-title">Your data stays portable</h2><p>Use lightweight JSON exports for the current control hub and local UI state. Connected backend exports can later plug into the same hub actions.</p></div>
+          <article class="settings-card settings-wide backup-card">
+            <div class="backup-grid">
+              <button type="button" onclick={() => exportBackup('characters')}><strong>Export characters</strong><span>Character and voice-facing local keys.</span></button>
+              <button type="button" onclick={() => exportBackup('growth')}><strong>Export growth data</strong><span>Journal, reflection, growth, memory, and training-facing local keys.</span></button>
+              <button type="button" onclick={() => exportBackup('settings')}><strong>Export settings</strong><span>Core settings, extension settings, and API base URL.</span></button>
+              <button type="button" onclick={() => exportBackup('full')}><strong>Full local backup</strong><span>Every current reverie.* browser key plus settings snapshot.</span></button>
+            </div>
+            <div class="backup-actions">
+              <button type="button" class="hub-secondary-action" onclick={() => importFileInput?.click()}>Import backup</button>
+              <button type="button" class="hub-danger-action" onclick={resetWithConfirmation}>Reset to defaults</button>
+              <input bind:this={importFileInput} class="visually-hidden" type="file" accept="application/json,.json" onchange={importBackup} />
+            </div>
+            <div class="clone-status" aria-live="polite">{#if backupError}<span class="error">{backupError}</span>{:else if backupStatus}<span>{backupStatus}</span>{/if}</div>
+          </article>
+        </section>
+      {/if}
+
+      <aside class="settings-trust-note settings-wide" aria-label="Settings trust note">
+        <span aria-hidden="true">✦</span>
+        <div><strong>You stay in control.</strong><p>Settings are grouped for trust: core memory/growth choices stay explicit, 8GB impact is explained before quality increases, and extensions render only through bounded declarative sections.</p></div>
+        <button type="button" onclick={resetWithConfirmation}>Restore calm defaults</button>
+      </aside>
+    </div>
   </div>
 </section>
