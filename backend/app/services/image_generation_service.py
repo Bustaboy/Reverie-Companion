@@ -41,6 +41,7 @@ from app.models.image import (
     ImageJobStatus,
     ImageQualityPreset,
 )
+from app.services.image_prompt_engine import ImagePromptEngine
 from app.services.resource_coordinator import (
     LocalResourceCoordinator,
     resource_coordinator,
@@ -122,6 +123,7 @@ TERMINAL_STATUSES = {
 class ImageJob:
     job_id: str
     prompt: str
+    negative_prompt: str
     context: dict[str, Any] | None
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
@@ -148,6 +150,7 @@ class ImageJob:
             job_id=self.job_id,
             status=self.status,
             prompt=self.prompt,
+            negative_prompt=self.negative_prompt,
             requested_preset=self.requested_preset,
             active_preset=self.active_preset,
             created_at=self.created_at,
@@ -266,6 +269,7 @@ class ComfyUIFluxAdapter:
                 "class_type": "ReveriePrompt",
                 "inputs": {
                     "text": job.prompt,
+                    "negative_text": job.negative_prompt,
                     "context": job.context or {},
                     "seed": 0,
                     "width": preset.width,
@@ -301,10 +305,12 @@ class ImageGenerationService:
         *,
         coordinator: LocalResourceCoordinator = resource_coordinator,
         adapter: ComfyUIFluxAdapter | None = None,
+        prompt_engine: ImagePromptEngine | None = None,
     ) -> None:
         self._settings = settings
         self._coordinator = coordinator
         self._adapter = adapter or ComfyUIFluxAdapter(settings)
+        self._prompt_engine = prompt_engine or ImagePromptEngine()
         self._jobs: dict[str, ImageJob] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue(
             maxsize=settings.image_generation_max_queue_size
@@ -326,10 +332,24 @@ class ImageGenerationService:
             if hasattr(request.context, "model_dump")
             else request.context
         )
+        normalized_context = context if isinstance(context, dict) else None
+        engineered = self._prompt_engine.build(
+            prompt=request.prompt,
+            context=normalized_context,
+            negative_prompt=request.negative_prompt,
+        )
+        enriched_context = dict(normalized_context or {})
+        enriched_context["image_prompt_engine"] = {
+            "style_notes": engineered.style_notes,
+            "framing_notes": engineered.framing_notes,
+            "detected_scene_tags": engineered.detected_scene_tags,
+            "deterministic": True,
+        }
         job = ImageJob(
             job_id=job_id,
-            prompt=request.prompt,
-            context=context if isinstance(context, dict) else None,
+            prompt=engineered.prompt,
+            negative_prompt=engineered.negative_prompt,
+            context=enriched_context,
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )

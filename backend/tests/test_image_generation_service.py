@@ -141,3 +141,35 @@ def test_image_job_pauses_while_tts_is_active(tmp_path) -> None:
         assert "tts_priority" in events
 
     asyncio.run(run_test())
+
+
+def test_image_job_stores_engineered_prompt_and_negative_prompt(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                prompt="intimate bedroom embrace with us together",
+                negative_prompt="flat lighting",
+                context={
+                    "character": {
+                        "name": "Mira",
+                        "appearance": "silver hair and violet eyes",
+                    },
+                    "participants": ["user", "character"],
+                    "scene_tags": ["nsfw", "intimate"],
+                },
+            )
+        )
+
+        queued = service.get_job(job.job_id)
+        assert "Mira as the main character" in queued.prompt
+        assert "silver hair and violet eyes" in queued.prompt
+        assert "avoid showing the user's face" in queued.prompt
+        assert "user face visible" in queued.negative_prompt
+        assert "flat lighting" in queued.negative_prompt
+        assert service._jobs[job.job_id].context["image_prompt_engine"]["deterministic"] is True
+
+    asyncio.run(run_test())

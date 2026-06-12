@@ -393,9 +393,22 @@ Reverie now has a local-first backend foundation for in-chat image generation th
 - **8GB quality presets**: `preview_8gb`, `balanced_8gb`, and `high_8gb` define bounded dimensions, steps, guidance, and minimum-free-VRAM budgets. The service automatically degrades to a lower preset when current VRAM cannot safely satisfy the requested tier.
 - **TTS priority and automatic pause/resume**: `LocalResourceCoordinator` exposes process-wide TTS activity and VRAM snapshots. Orpheus/Piper synthesis enters a priority section; image jobs pause before starting when TTS is active, resume after TTS finishes, and can ask ComfyUI to interrupt/retry if TTS begins during an active image attempt. TTS always wins over image generation.
 - **VRAM-aware queueing**: every image job checks live VRAM through `torch.cuda.mem_get_info()` when available, then `nvidia-smi`, before starting. If VRAM telemetry is unavailable, the service uses the preview preset by default rather than assuming the GPU is safe.
-- **API foundation**: `POST /api/images/generate` queues a job from `prompt`, compact `context`, and `quality_preset`; `GET /api/images/{job_id}/events` streams SSE progress; `GET /api/images/{job_id}` returns current state; and `POST /api/images/{job_id}/cancel` cancels queued/running work.
+- **API foundation**: `POST /api/images/generate` queues a job from `prompt`, optional `negative_prompt`, compact `context`, and `quality_preset`; `GET /api/images/{job_id}/events` streams SSE progress; `GET /api/images/{job_id}` returns current state; and `POST /api/images/{job_id}/cancel` cancels queued/running work.
 - **Graceful degradation**: the backend reports calm, typed local-resource errors, logs fallback/resource decisions without dumping private prompt content, retries once at preview quality after OOM-like failures, and can pass CPU-fallback intent to the ComfyUI workflow metadata when enabled.
 
-This task deliberately does **not** add advanced prompt engineering or frontend image display. Later tasks can enrich prompts with character/memory state and build gallery/chat presentation on top of this safe queue/event contract.
+Task 3A deliberately did **not** add frontend image display. Later tasks can build gallery/chat presentation on top of this safe queue/event contract.
+
+---
+
+## Milestone 3 Task 3B Update — Basic Context-Aware Prompt Engine
+
+Task 3B adds deterministic prompt engineering on top of the safe Task 3A image queue:
+
+- **ImagePromptEngine**: `backend/app/services/image_prompt_engine.py` builds bounded positive and negative prompt text without extra LLM calls. It accepts a simple user prompt plus optional context and composes character continuity, VN scene state, recent chat intent, memory tags, reflection themes, growth cues, and mood controls into one prompt-friendly description. A compatibility import remains at `backend/services/image_prompt_engine.py`.
+- **Character and style consistency**: when character card or voice-profile metadata is present, the engine preserves name, appearance, outfit/clothing, mood, personality, voice/profile tone, visual style tags, and canonical identifying details so generated images remain recognizably the same character across jobs.
+- **Chat/VN/memory context use**: the engine reads `visual_state` / scene / background for current staging, recent chat messages for the latest user action and who should appear, `memory_tags` or compact memory summaries for continuity, `reflection_themes` for emotional subtext, `growth_cues` for relationship evolution, and per-character mood settings for expressiveness/intimacy hints. These inputs are treated as evidence and compressed; no durable memory is created by image generation.
+- **NSFW-aware framing**: intimate scenes involving both the user and character keep the character emotionally readable while adding deterministic framing instructions to include only the user's body as needed and avoid showing the user's face through over-shoulder, back-view, cropped, or implied-POV composition. The negative prompt also discourages visible/detailed user faces in those scenes.
+- **Negative prompts and ComfyUI contract**: `/api/images/generate` can now accept `negative_prompt`; ImageGenerationService merges it with Reverie's default quality/anatomy/style negatives, stores the engineered prompt on the job, and passes both `text` and `negative_text` to the ComfyUI workflow metadata.
+- **8GB behavior**: prompt construction is pure Python string/rule processing, deterministic, bounded, and performed before the queued ComfyUI job starts. It does not load models, allocate GPU memory, or block chat/TTS beyond normal request validation.
 
 *End of Source of Truth Document v1.0*
