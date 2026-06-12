@@ -25,6 +25,8 @@
         type="button"
         disabled={!item.enabled}
         aria-current={item.id === activeSection ? 'page' : undefined}
+        aria-label={`${item.label}: ${item.hint}`}
+        title={item.hint}
         onclick={() => item.enabled && onNavigate(item.id)}
       >
         <span>{item.label}</span>
