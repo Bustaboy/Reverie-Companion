@@ -1,12 +1,15 @@
-import { browser } from '$app/environment';
-import { get, writable } from 'svelte/store';
+import { browser } from "$app/environment";
+import { get, writable } from "svelte/store";
 
-export type ReflectionFrequency = 'low' | 'balanced' | 'high';
-export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
-export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
-export type TTSLatencyPreset = 'quality' | 'balanced' | 'speed';
-export type ImageDefaultPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
-export type PerformancePreset = '8gb_safe' | 'balanced' | 'quality';
+export type ReflectionFrequency = "low" | "balanced" | "high";
+export type ReflectionSensitivity = "conservative" | "balanced" | "responsive";
+export type ContextBudgetPreset = "gentle" | "balanced" | "roomy";
+export type TTSLatencyPreset = "quality" | "balanced" | "speed";
+export type ImageDefaultPreset = "preview_8gb" | "balanced_8gb" | "high_8gb";
+export type PerformancePreset = "8gb_safe" | "balanced" | "quality";
+export type AppearanceTheme = "warm_dark" | "ember" | "midnight";
+export type InterfaceDensity = "comfortable" | "compact";
+export type MemoryPruningMode = "protective" | "balanced" | "lean";
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -25,6 +28,10 @@ export interface MemoryReflectionSettings {
   performancePreset: PerformancePreset;
   backgroundTaskLimit: number;
   proactiveResourceWarnings: boolean;
+  appearanceTheme: AppearanceTheme;
+  interfaceDensity: InterfaceDensity;
+  reducedMotionPreference: boolean;
+  memoryPruningMode: MemoryPruningMode;
 }
 
 export type ExtensionSettingValue = boolean | number | string | null;
@@ -39,79 +46,115 @@ type PersistedSettings = Partial<MemoryReflectionSettings> & {
   extensionSettings?: Record<string, Record<string, ExtensionSettingValue>>;
 };
 
-const STORAGE_KEY = 'reverie.memoryReflectionSettings.v2';
+const STORAGE_KEY = "reverie.memoryReflectionSettings.v2";
 
 export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   longTermMemoryEnabled: true,
   selfReflectionEnabled: true,
-  reflectionFrequency: 'balanced',
-  reflectionSensitivity: 'balanced',
+  reflectionFrequency: "balanced",
+  reflectionSensitivity: "balanced",
   growthNotificationsEnabled: true,
-  contextBudgetPreset: 'balanced',
+  contextBudgetPreset: "balanced",
   ttsEnabled: true,
   ttsAutoPlay: true,
   ttsVolume: 0.86,
   ttsSpeed: 1,
-  ttsLatencyPreset: 'balanced',
+  ttsLatencyPreset: "balanced",
   imageAutoGenerateOnAssistant: false,
-  imageDefaultPreset: 'preview_8gb',
-  performancePreset: '8gb_safe',
+  imageDefaultPreset: "preview_8gb",
+  performancePreset: "8gb_safe",
   backgroundTaskLimit: 1,
-  proactiveResourceWarnings: true
+  proactiveResourceWarnings: true,
+  appearanceTheme: "warm_dark",
+  interfaceDensity: "comfortable",
+  reducedMotionPreference: false,
+  memoryPruningMode: "balanced",
 };
 
 const INITIAL_STATE: SettingsState = {
   ...DEFAULT_MEMORY_REFLECTION_SETTINGS,
   savedAt: null,
-  extensionSettings: {}
+  extensionSettings: {},
 };
 
 const isReflectionFrequency = (value: unknown): value is ReflectionFrequency =>
-  value === 'low' || value === 'balanced' || value === 'high';
+  value === "low" || value === "balanced" || value === "high";
 
-const isReflectionSensitivity = (value: unknown): value is ReflectionSensitivity =>
-  value === 'conservative' || value === 'balanced' || value === 'responsive';
+const isReflectionSensitivity = (
+  value: unknown,
+): value is ReflectionSensitivity =>
+  value === "conservative" || value === "balanced" || value === "responsive";
 
 const isContextBudgetPreset = (value: unknown): value is ContextBudgetPreset =>
-  value === 'gentle' || value === 'balanced' || value === 'roomy';
+  value === "gentle" || value === "balanced" || value === "roomy";
 
 const isTTSLatencyPreset = (value: unknown): value is TTSLatencyPreset =>
-  value === 'quality' || value === 'balanced' || value === 'speed';
+  value === "quality" || value === "balanced" || value === "speed";
 
 const isImageDefaultPreset = (value: unknown): value is ImageDefaultPreset =>
-  value === 'preview_8gb' || value === 'balanced_8gb' || value === 'high_8gb';
+  value === "preview_8gb" || value === "balanced_8gb" || value === "high_8gb";
 
 const isPerformancePreset = (value: unknown): value is PerformancePreset =>
-  value === '8gb_safe' || value === 'balanced' || value === 'quality';
+  value === "8gb_safe" || value === "balanced" || value === "quality";
 
-const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
-const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
-  const numberValue = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const isAppearanceTheme = (value: unknown): value is AppearanceTheme =>
+  value === "warm_dark" || value === "ember" || value === "midnight";
+
+const isInterfaceDensity = (value: unknown): value is InterfaceDensity =>
+  value === "comfortable" || value === "compact";
+
+const isMemoryPruningMode = (value: unknown): value is MemoryPruningMode =>
+  value === "protective" || value === "balanced" || value === "lean";
+
+const toBoolean = (value: unknown, fallback: boolean): boolean =>
+  typeof value === "boolean" ? value : fallback;
+const clampNumber = (
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const numberValue =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.min(max, Math.max(min, numberValue));
 };
 
-const isExtensionSettingValue = (value: unknown): value is ExtensionSettingValue =>
-  value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string';
+const isExtensionSettingValue = (
+  value: unknown,
+): value is ExtensionSettingValue =>
+  value === null ||
+  typeof value === "boolean" ||
+  typeof value === "number" ||
+  typeof value === "string";
 
-const normalizeExtensionSettings = (value: unknown): Record<string, Record<string, ExtensionSettingValue>> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+const normalizeExtensionSettings = (
+  value: unknown,
+): Record<string, Record<string, ExtensionSettingValue>> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const normalized: Record<string, Record<string, ExtensionSettingValue>> = {};
   for (const [extensionId, settings] of Object.entries(value)) {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) continue;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings))
+      continue;
     normalized[extensionId] = {};
     for (const [key, settingValue] of Object.entries(settings)) {
-      if (isExtensionSettingValue(settingValue)) normalized[extensionId][key] = settingValue;
+      if (isExtensionSettingValue(settingValue))
+        normalized[extensionId][key] = settingValue;
     }
   }
   return normalized;
 };
 
-const normalizePersistedSettings = (value: PersistedSettings): SettingsState => ({
+const normalizePersistedSettings = (
+  value: PersistedSettings,
+): SettingsState => ({
   longTermMemoryEnabled: toBoolean(
     value.longTermMemoryEnabled,
-    DEFAULT_MEMORY_REFLECTION_SETTINGS.longTermMemoryEnabled
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.longTermMemoryEnabled,
   ),
-  selfReflectionEnabled: toBoolean(value.selfReflectionEnabled, DEFAULT_MEMORY_REFLECTION_SETTINGS.selfReflectionEnabled),
+  selfReflectionEnabled: toBoolean(
+    value.selfReflectionEnabled,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.selfReflectionEnabled,
+  ),
   reflectionFrequency: isReflectionFrequency(value.reflectionFrequency)
     ? value.reflectionFrequency
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.reflectionFrequency,
@@ -120,21 +163,37 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.reflectionSensitivity,
   growthNotificationsEnabled: toBoolean(
     value.growthNotificationsEnabled,
-    DEFAULT_MEMORY_REFLECTION_SETTINGS.growthNotificationsEnabled
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.growthNotificationsEnabled,
   ),
   contextBudgetPreset: isContextBudgetPreset(value.contextBudgetPreset)
     ? value.contextBudgetPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.contextBudgetPreset,
-  ttsEnabled: toBoolean(value.ttsEnabled, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsEnabled),
-  ttsAutoPlay: toBoolean(value.ttsAutoPlay, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsAutoPlay),
-  ttsVolume: clampNumber(value.ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1),
-  ttsSpeed: clampNumber(value.ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35),
+  ttsEnabled: toBoolean(
+    value.ttsEnabled,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsEnabled,
+  ),
+  ttsAutoPlay: toBoolean(
+    value.ttsAutoPlay,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsAutoPlay,
+  ),
+  ttsVolume: clampNumber(
+    value.ttsVolume,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume,
+    0,
+    1,
+  ),
+  ttsSpeed: clampNumber(
+    value.ttsSpeed,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed,
+    0.75,
+    1.35,
+  ),
   ttsLatencyPreset: isTTSLatencyPreset(value.ttsLatencyPreset)
     ? value.ttsLatencyPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsLatencyPreset,
   imageAutoGenerateOnAssistant: toBoolean(
     value.imageAutoGenerateOnAssistant,
-    DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateOnAssistant
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateOnAssistant,
   ),
   imageDefaultPreset: isImageDefaultPreset(value.imageDefaultPreset)
     ? value.imageDefaultPreset
@@ -146,14 +205,27 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
     value.backgroundTaskLimit,
     DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit,
     1,
-    3
+    3,
   ),
   proactiveResourceWarnings: toBoolean(
     value.proactiveResourceWarnings,
-    DEFAULT_MEMORY_REFLECTION_SETTINGS.proactiveResourceWarnings
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.proactiveResourceWarnings,
   ),
-  savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null,
-  extensionSettings: normalizeExtensionSettings(value.extensionSettings)
+  appearanceTheme: isAppearanceTheme(value.appearanceTheme)
+    ? value.appearanceTheme
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.appearanceTheme,
+  interfaceDensity: isInterfaceDensity(value.interfaceDensity)
+    ? value.interfaceDensity
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.interfaceDensity,
+  reducedMotionPreference: toBoolean(
+    value.reducedMotionPreference,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.reducedMotionPreference,
+  ),
+  memoryPruningMode: isMemoryPruningMode(value.memoryPruningMode)
+    ? value.memoryPruningMode
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.memoryPruningMode,
+  savedAt: typeof value.savedAt === "string" ? new Date(value.savedAt) : null,
+  extensionSettings: normalizeExtensionSettings(value.extensionSettings),
 });
 
 const readPersistedSettings = (): SettingsState => {
@@ -163,7 +235,9 @@ const readPersistedSettings = (): SettingsState => {
   if (!rawSettings) return INITIAL_STATE;
 
   try {
-    return normalizePersistedSettings(JSON.parse(rawSettings) as PersistedSettings);
+    return normalizePersistedSettings(
+      JSON.parse(rawSettings) as PersistedSettings,
+    );
   } catch {
     return INITIAL_STATE;
   }
@@ -189,8 +263,12 @@ const persistSettings = (state: SettingsState) => {
     performancePreset: state.performancePreset,
     backgroundTaskLimit: state.backgroundTaskLimit,
     proactiveResourceWarnings: state.proactiveResourceWarnings,
+    appearanceTheme: state.appearanceTheme,
+    interfaceDensity: state.interfaceDensity,
+    reducedMotionPreference: state.reducedMotionPreference,
+    memoryPruningMode: state.memoryPruningMode,
     extensionSettings: state.extensionSettings,
-    savedAt: state.savedAt?.toISOString() ?? null
+    savedAt: state.savedAt?.toISOString() ?? null,
   };
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -207,7 +285,7 @@ function createSettingsStore() {
     store.update((state) => ({
       ...state,
       ...patch,
-      savedAt: new Date()
+      savedAt: new Date(),
     }));
   };
 
@@ -238,10 +316,24 @@ function createSettingsStore() {
       save({ ttsAutoPlay });
     },
     setTTSVolume(ttsVolume: number) {
-      save({ ttsVolume: clampNumber(ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1) });
+      save({
+        ttsVolume: clampNumber(
+          ttsVolume,
+          DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume,
+          0,
+          1,
+        ),
+      });
     },
     setTTSSpeed(ttsSpeed: number) {
-      save({ ttsSpeed: clampNumber(ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35) });
+      save({
+        ttsSpeed: clampNumber(
+          ttsSpeed,
+          DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed,
+          0.75,
+          1.35,
+        ),
+      });
     },
     setTTSLatencyPreset(ttsLatencyPreset: TTSLatencyPreset) {
       save({ ttsLatencyPreset });
@@ -253,42 +345,97 @@ function createSettingsStore() {
       save({ imageDefaultPreset });
     },
     setPerformancePreset(performancePreset: PerformancePreset) {
-      const patchByPreset: Record<PerformancePreset, Partial<MemoryReflectionSettings>> = {
-        '8gb_safe': { performancePreset, backgroundTaskLimit: 1, imageDefaultPreset: 'preview_8gb', contextBudgetPreset: 'gentle', ttsLatencyPreset: 'speed' },
-        balanced: { performancePreset, backgroundTaskLimit: 1, imageDefaultPreset: 'preview_8gb', contextBudgetPreset: 'balanced', ttsLatencyPreset: 'balanced' },
-        quality: { performancePreset, backgroundTaskLimit: 2, imageDefaultPreset: 'balanced_8gb', contextBudgetPreset: 'roomy', ttsLatencyPreset: 'quality' }
+      const patchByPreset: Record<
+        PerformancePreset,
+        Partial<MemoryReflectionSettings>
+      > = {
+        "8gb_safe": {
+          performancePreset,
+          backgroundTaskLimit: 1,
+          imageDefaultPreset: "preview_8gb",
+          contextBudgetPreset: "gentle",
+          ttsLatencyPreset: "speed",
+        },
+        balanced: {
+          performancePreset,
+          backgroundTaskLimit: 1,
+          imageDefaultPreset: "preview_8gb",
+          contextBudgetPreset: "balanced",
+          ttsLatencyPreset: "balanced",
+        },
+        quality: {
+          performancePreset,
+          backgroundTaskLimit: 2,
+          imageDefaultPreset: "balanced_8gb",
+          contextBudgetPreset: "roomy",
+          ttsLatencyPreset: "quality",
+        },
       };
       save(patchByPreset[performancePreset]);
     },
     setBackgroundTaskLimit(backgroundTaskLimit: number) {
-      save({ backgroundTaskLimit: Math.round(clampNumber(backgroundTaskLimit, DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit, 1, 3)) });
+      save({
+        backgroundTaskLimit: Math.round(
+          clampNumber(
+            backgroundTaskLimit,
+            DEFAULT_MEMORY_REFLECTION_SETTINGS.backgroundTaskLimit,
+            1,
+            3,
+          ),
+        ),
+      });
     },
     setProactiveResourceWarnings(proactiveResourceWarnings: boolean) {
       save({ proactiveResourceWarnings });
     },
-    setExtensionSetting(extensionId: string, key: string, value: ExtensionSettingValue) {
+    setAppearanceTheme(appearanceTheme: AppearanceTheme) {
+      save({ appearanceTheme });
+    },
+    setInterfaceDensity(interfaceDensity: InterfaceDensity) {
+      save({ interfaceDensity });
+    },
+    setReducedMotionPreference(reducedMotionPreference: boolean) {
+      save({ reducedMotionPreference });
+    },
+    setMemoryPruningMode(memoryPruningMode: MemoryPruningMode) {
+      save({ memoryPruningMode });
+    },
+    importSettingsPayload(value: unknown) {
+      const normalized = normalizePersistedSettings(
+        value && typeof value === "object" ? (value as PersistedSettings) : {},
+      );
+      store.set({
+        ...normalized,
+        savedAt: new Date(),
+      });
+    },
+    setExtensionSetting(
+      extensionId: string,
+      key: string,
+      value: ExtensionSettingValue,
+    ) {
       store.update((state) => ({
         ...state,
         extensionSettings: {
           ...state.extensionSettings,
           [extensionId]: {
             ...(state.extensionSettings[extensionId] ?? {}),
-            [key]: value
-          }
+            [key]: value,
+          },
         },
-        savedAt: new Date()
+        savedAt: new Date(),
       }));
     },
     resetMemoryReflectionSettings() {
       store.set({
         ...DEFAULT_MEMORY_REFLECTION_SETTINGS,
         extensionSettings: {},
-        savedAt: new Date()
+        savedAt: new Date(),
       });
     },
     getSnapshot() {
       return get(store);
-    }
+    },
   };
 }
 
