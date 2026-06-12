@@ -3,7 +3,7 @@ import type { VisualAssetRef } from '$lib/types/visualNovel';
 interface SvgPlaceholderOptions {
   alt: string;
   label: string;
-  kind: 'sprite' | 'background';
+  kind: 'sprite' | 'background' | 'base-layer' | 'expression-layer' | 'clothing-layer';
   primary?: string;
   secondary?: string;
 }
@@ -38,6 +38,41 @@ const spriteSvg = ({ label, primary = '#f09a9f', secondary = '#7a4a84' }: SvgPla
   </g>
 </svg>`;
 
+
+const transparentLayerSvg = ({ label, kind, primary = '#f09a9f', secondary = '#7a4a84' }: SvgPlaceholderOptions): string => {
+  const layerMarkup =
+    kind === 'base-layer'
+      ? `<path d="M360 86c150 0 238 106 238 253v420c0 86-70 156-156 156H278c-86 0-156-70-156-156V339C122 192 210 86 360 86Z" fill="url(#body)"/>
+         <circle cx="360" cy="344" r="122" fill="#fff8f7" opacity="0.12" stroke="#ffffff" stroke-opacity="0.14" stroke-width="3"/>`
+      : kind === 'expression-layer'
+        ? `<circle cx="315" cy="334" r="12" fill="#2a1f2e" opacity="0.78"/>
+           <circle cx="405" cy="334" r="12" fill="#2a1f2e" opacity="0.78"/>
+           <path d="M319 393c28 25 54 25 82 0" fill="none" stroke="#fff2ef" stroke-width="10" stroke-linecap="round" opacity="0.82"/>
+           <text x="360" y="620" text-anchor="middle" fill="#fff1ef" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="800">R</text>`
+        : `<path d="M178 506c80 44 145 66 182 66s102-22 182-66v275c0 74-60 134-134 134h-96c-74 0-134-60-134-134V506Z" fill="url(#cloth)" opacity="0.72"/>
+           <path d="M228 548c42 24 86 36 132 36s90-12 132-36" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="8" stroke-linecap="round"/>`;
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1000" role="img" aria-label="${label}">
+  <defs>
+    <radialGradient id="body" cx="50%" cy="20%" r="55%">
+      <stop offset="0%" stop-color="#fff1ef" stop-opacity="0.34"/>
+      <stop offset="48%" stop-color="${primary}" stop-opacity="0.68"/>
+      <stop offset="100%" stop-color="${secondary}" stop-opacity="0.86"/>
+    </radialGradient>
+    <linearGradient id="cloth" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#ffd8d4" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="${secondary}" stop-opacity="0.8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="720" height="1000" fill="none"/>
+  <g filter="url(#shadow)">${layerMarkup}</g>
+</svg>`;
+};
+
 const backgroundSvg = ({ label, primary = '#211826', secondary = '#100d14' }: SvgPlaceholderOptions): string => `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-label="${label}">
   <defs>
@@ -65,7 +100,7 @@ const backgroundSvg = ({ label, primary = '#211826', secondary = '#100d14' }: Sv
 
 export const createSvgPlaceholderAsset = (options: SvgPlaceholderOptions): VisualAssetRef => ({
   kind: 'image',
-  src: encodeSvg(options.kind === 'sprite' ? spriteSvg(options) : backgroundSvg(options)),
+  src: encodeSvg(options.kind === 'sprite' ? spriteSvg(options) : options.kind === 'background' ? backgroundSvg(options) : transparentLayerSvg(options)),
   alt: options.alt,
   dominantColor: options.primary
 });

@@ -13,12 +13,52 @@ export type VisualBackground = 'default' | 'bedroom' | 'cafe' | 'night';
 
 export type VisualAssetKind = 'image' | 'placeholder';
 
+export interface VisualSpriteFrame {
+  /** X coordinate of the frame within a future sprite sheet, in pixels. */
+  x: number;
+  /** Y coordinate of the frame within a future sprite sheet, in pixels. */
+  y: number;
+  /** Frame width, in pixels. */
+  width: number;
+  /** Frame height, in pixels. */
+  height: number;
+  /** Full sprite sheet width, in pixels. */
+  sheetWidth: number;
+  /** Full sprite sheet height, in pixels. */
+  sheetHeight: number;
+}
+
 export interface VisualAssetRef {
   kind: VisualAssetKind;
-  /** Lightweight local path or future Tauri asset URL. Undefined means render CSS fallback. */
+  /** Lightweight local path, data URL, or future Tauri asset URL. Undefined means render CSS fallback. */
   src?: string;
   alt: string;
   dominantColor?: string;
+  /** Optional frame metadata so the same renderer can support future sprite sheets without a schema break. */
+  frame?: VisualSpriteFrame;
+}
+
+export type VisualLayerSlot = 'base' | 'expression' | 'clothing' | 'accessory' | 'effect' | string;
+export type VisualLayerExpressionKey = VisualExpression | 'default';
+
+export interface CharacterVisualLayerDefinition {
+  id: string;
+  slot: VisualLayerSlot;
+  label: string;
+  /** Lower values render behind higher values. Defaults to manifest order. */
+  order?: number;
+  /** Required layers receive a safe placeholder/fallback if all authored assets are missing. */
+  required?: boolean;
+  assets: Partial<Record<VisualPose, Partial<Record<VisualLayerExpressionKey, VisualAssetRef>>>>;
+}
+
+export interface ResolvedVisualLayer {
+  id: string;
+  slot: VisualLayerSlot;
+  label: string;
+  order: number;
+  asset: VisualAssetRef;
+  usedFallback: boolean;
 }
 
 export interface CharacterVisualManifest {
@@ -35,7 +75,9 @@ export interface CharacterVisualManifest {
   expressions: Record<VisualExpression, { label: string }>;
   poses: Record<VisualPose, { label: string }>;
   backgrounds: Record<VisualBackground, VisualAssetRef>;
-  /** One full sprite image per pose/expression slot for the MVP; layering is intentionally out of scope. */
+  /** Preferred layered character composition: base → expression → clothing/accessories/effects. */
+  layers?: CharacterVisualLayerDefinition[];
+  /** Legacy/full-body sprite fallback per pose/expression slot. */
   sprites: Record<VisualPose, Partial<Record<VisualExpression, VisualAssetRef>>>;
 }
 
@@ -72,7 +114,10 @@ export interface NormalizedVisualState {
 export interface ResolvedVisualNovelScene {
   manifest: CharacterVisualManifest;
   state: NormalizedVisualState;
+  /** Legacy single-sprite fallback retained for imported MVP manifests without layers. */
   sprite: VisualAssetRef;
+  /** Ordered resolved layer stack for compositing base → expression → clothing etc. */
+  characterLayers: ResolvedVisualLayer[];
   background: VisualAssetRef;
   expressionLabel: string;
   poseLabel: string;
