@@ -18,6 +18,8 @@ export interface MemoryReflectionSettings {
   ttsVolume: number;
   ttsSpeed: number;
   ttsLatencyPreset: TTSLatencyPreset;
+  imageAutoGenerateChat: boolean;
+  imageAutoGenerateVisualNovel: boolean;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -41,7 +43,9 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   ttsAutoPlay: true,
   ttsVolume: 0.86,
   ttsSpeed: 1,
-  ttsLatencyPreset: 'balanced'
+  ttsLatencyPreset: 'balanced',
+  imageAutoGenerateChat: false,
+  imageAutoGenerateVisualNovel: false
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -93,6 +97,11 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   ttsLatencyPreset: isTTSLatencyPreset(value.ttsLatencyPreset)
     ? value.ttsLatencyPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsLatencyPreset,
+  imageAutoGenerateChat: toBoolean(value.imageAutoGenerateChat, DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateChat),
+  imageAutoGenerateVisualNovel: toBoolean(
+    value.imageAutoGenerateVisualNovel,
+    DEFAULT_MEMORY_REFLECTION_SETTINGS.imageAutoGenerateVisualNovel
+  ),
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -124,6 +133,8 @@ const persistSettings = (state: SettingsState) => {
     ttsVolume: state.ttsVolume,
     ttsSpeed: state.ttsSpeed,
     ttsLatencyPreset: state.ttsLatencyPreset,
+    imageAutoGenerateChat: state.imageAutoGenerateChat,
+    imageAutoGenerateVisualNovel: state.imageAutoGenerateVisualNovel,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -179,6 +190,12 @@ function createSettingsStore() {
     },
     setTTSLatencyPreset(ttsLatencyPreset: TTSLatencyPreset) {
       save({ ttsLatencyPreset });
+    },
+    setImageAutoGenerateChat(imageAutoGenerateChat: boolean) {
+      save({ imageAutoGenerateChat });
+    },
+    setImageAutoGenerateVisualNovel(imageAutoGenerateVisualNovel: boolean) {
+      save({ imageAutoGenerateVisualNovel });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

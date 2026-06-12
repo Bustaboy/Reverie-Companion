@@ -1,5 +1,7 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
@@ -19,6 +21,8 @@
   });
 
   const canPlayTTS = $derived(message.role === 'assistant' && message.status !== 'streaming' && message.content.trim().length > 0);
+  const canGenerateImage = $derived(message.status !== 'streaming' && message.content.trim().length > 0);
+  const imageJobs = $derived(imageGenerationStore.jobsForMessage(message.id));
   const isCurrentVoiceLine = $derived(
     ttsStore.current?.messageId === message.id &&
       (ttsStore.presenceState === 'preparing' || ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'paused')
@@ -27,6 +31,14 @@
   const playMessageAudio = () => {
     ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
   };
+
+  const generateMessageImage = () => {
+    void imageGenerationStore.generateFromMessage(message);
+  };
+
+  $effect(() => {
+    imageGenerationStore.maybeAutoGenerateFromMessage(message);
+  });
 
   const memoryHint = $derived.by(() => {
     if (message.role !== 'assistant' || !message.memoryContext?.used) {
@@ -66,6 +78,18 @@
           <span>{isCurrentVoiceLine ? ttsStore.presenceState === 'paused' ? 'Paused' : 'Speaking' : voiceLabel}</span>
         </button>
       {/if}
+      {#if canGenerateImage}
+        <button
+          type="button"
+          class="message-voice-button image-action-button"
+          aria-label="Generate an image from this message"
+          title={imageGenerationStore.resourceLabel}
+          onclick={generateMessageImage}
+        >
+          <span aria-hidden="true">▧</span>
+          <span>Generate Image</span>
+        </button>
+      {/if}
     </div>
 
     <div class="bubble">
@@ -89,6 +113,14 @@
         {/if}
       {:else}
         <p>{message.content}</p>
+      {/if}
+
+      {#if imageJobs.length > 0}
+        <div class="message-image-stack" aria-live="polite">
+          {#each imageJobs as job (job.id)}
+            <ImageJobCard {job} />
+          {/each}
+        </div>
       {/if}
     </div>
   </div>

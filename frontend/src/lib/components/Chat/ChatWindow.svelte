@@ -3,6 +3,7 @@
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
 
   const handleSend = (content: string) => {
@@ -12,6 +13,7 @@
   const statusLabel = $derived.by(() => {
     if ($chatStore.generationState !== 'idle') return 'Reverie is responding';
     if (ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing') return ttsStore.presenceLabel;
+    if (imageGenerationStore.hasActiveJobs) return 'Composing image in background';
     return 'Local backend ready';
   });
 
@@ -39,6 +41,7 @@
     <div
       class:streaming={$chatStore.generationState !== 'idle'}
       class:voice-active={ttsStore.presenceState === 'speaking' || ttsStore.presenceState === 'preparing'}
+      class:image-active={imageGenerationStore.hasActiveJobs}
       class="status-pill"
       aria-label="Companion status"
     >

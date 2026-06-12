@@ -411,4 +411,20 @@ Task 3B adds deterministic prompt engineering on top of the safe Task 3A image q
 - **Negative prompts and ComfyUI contract**: `/api/images/generate` can now accept `negative_prompt`; ImageGenerationService merges it with Reverie's default quality/anatomy/style negatives, stores the engineered prompt on the job, and passes both `text` and `negative_text` to the ComfyUI workflow metadata.
 - **8GB behavior**: prompt construction is pure Python string/rule processing, deterministic, bounded, and performed before the queued ComfyUI job starts. It does not load models, allocate GPU memory, or block chat/TTS beyond normal request validation.
 
+
+---
+
+## Milestone 3 Task 3C Update — Frontend Image Generation Integration
+
+Task 3C connects the Task 3A/3B backend image foundation to the Svelte/Tauri frontend without making media generation part of the hot chat or voice path:
+
+- **Typed frontend image boundary**: `frontend/src/lib/api/imageService.ts` wraps `/api/images/generate`, `/events`, cancellation, and output URL resolution. Components do not call `fetch` directly for image jobs.
+- **Svelte 5 imageGenerationStore**: `frontend/src/lib/stores/imageGenerationStore.svelte.ts` owns local image job state, optimistic queue entries, SSE progress, cancellation, backend error normalization, output URL mapping, and resource-aware copy. It observes `ttsStore` presence so UI explains that image work yields to speech instead of blocking TTS.
+- **Chat integration**: chat messages expose a manual **Generate Image** action. Generated jobs render inside the message bubble as warm dark expandable image cards with progress, cancel controls, VRAM/fallback hints, errors, and completed image previews. Optional chat auto-generation is disabled by default and requires explicit user consent in settings.
+- **Visual Novel integration**: VN mode exposes a contextual **Visualize Scene** action using current expression, pose, mood/tags, and latest assistant line as compact prompt context. Completed VN images appear as a soft scene enhancement/background overlay while in-progress or failed jobs show a compact status card inside the dialogue panel. Optional VN auto-generation is disabled by default and user-controlled.
+- **Output serving**: the backend image router now includes a safe completed-output route that serves only filenames already attached to the requested job from the configured generated-image directory, avoiding arbitrary path exposure.
+- **Graceful 8GB degradation**: the UI treats queued, paused, low-VRAM, unknown-VRAM preview, fallback, cancelled, and failed states as normal local-resource outcomes. Chat, streaming text, and TTS remain usable while image generation queues, pauses, resumes, or fails.
+
+Task 3C intentionally does **not** add image history/gallery, advanced image controls, or asset management. Those remain reserved for Task 3D/future media workflows.
+
 *End of Source of Truth Document v1.0*

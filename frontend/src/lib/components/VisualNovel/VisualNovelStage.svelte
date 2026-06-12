@@ -1,7 +1,9 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
   import { AudioPlayer } from '$lib/components/TTS';
   import { chatStore } from '$lib/stores/chatStore';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { visualNovelScene, visualNovelStore } from '$lib/stores/visualNovelStore';
   import type { ResolvedVisualLayer, VisualAssetRef } from '$lib/types/visualNovel';
@@ -64,10 +66,22 @@
   const growthIntensityStyle = $derived(
     growthModifier ? `--vn-growth-intensity: ${growthModifier.intensity.toFixed(2)}` : '--vn-growth-intensity: 0'
   );
+  const latestImageJob = $derived(imageGenerationStore.latestVisualNovelJob);
+  const latestImageUrl = $derived(latestImageJob?.status === 'completed' ? latestImageJob.outputUrls[0] : null);
 
   const handleAssetError = (src?: string) => {
     visualNovelStore.markAssetFailed(src);
   };
+
+  const visualizeScene = () => {
+    void imageGenerationStore.visualizeScene($visualNovelScene, latestAssistantLine);
+  };
+
+  $effect(() => {
+    if (imageGenerationStore.autoGenerateVisualNovel && !latestImageJob) {
+      void imageGenerationStore.visualizeScene($visualNovelScene, latestAssistantLine, { source: 'auto-vn' });
+    }
+  });
 
   const handleStageKeydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && $visualNovelStore.fullImmersive) {
@@ -105,6 +119,17 @@
       {/if}
     {/key}
 
+    {#if latestImageUrl}
+      <img
+        class="vn-generated-background"
+        src={latestImageUrl}
+        alt="Generated visual novel scene enhancement"
+        loading="lazy"
+        decoding="async"
+        transition:fade={{ duration: visualTransitionMs }}
+      />
+    {/if}
+
     <div class="vn-topbar" aria-label="Visual novel controls">
       <div>
         <p class="eyebrow">Visual novel foundation</p>
@@ -113,6 +138,7 @@
 
       <div class="vn-actions">
         <button type="button" class="ghost-button" aria-label="Return to chat mode" onclick={onReturnToChat}>Chat</button>
+        <button type="button" class="ghost-button" title={imageGenerationStore.resourceLabel} onclick={visualizeScene}>Visualize Scene</button>
         <button
           type="button"
           class="ghost-button"
@@ -191,6 +217,9 @@
       <p>{latestAssistantLine}</p>
       {#if $visualNovelScene.usedFallback}
         <small>Using safe fallback visuals until every authored layer is available.</small>
+      {/if}
+      {#if latestImageJob}
+        <ImageJobCard job={latestImageJob} compact />
       {/if}
       <AudioPlayer compact label="Visual novel voice playback" />
     </div>

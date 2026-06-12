@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from app.core.config import Settings, get_settings
 from app.models.image import ImageGenerateRequest, ImageGenerateResponse, ImageJobRead
@@ -79,6 +81,44 @@ async def get_image_job(
         return service.get_job(job_id)
     except ImageGenerationError as exc:
         raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+
+
+@router.get("/{job_id}/outputs/{filename}")
+async def get_image_output(
+    job_id: str,
+    filename: str,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse | RedirectResponse:
+    """Serve completed local image outputs without exposing arbitrary paths."""
+
+    try:
+        job = service.get_job(job_id)
+    except ImageGenerationError as exc:
+        raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+
+    safe_name = Path(filename).name
+    output_names = {Path(output_path).name for output_path in job.output_paths}
+    if safe_name not in output_names:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image output was not found for this job.",
+        )
+
+    output_path = (Path(settings.image_generation_output_dir) / safe_name).resolve()
+    output_root = Path(settings.image_generation_output_dir).resolve()
+    if output_root not in output_path.parents and output_path != output_root:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image output path is invalid.",
+        )
+    if output_path.is_file():
+        return FileResponse(output_path)
+
+    comfy_query = urlencode({'filename': safe_name, 'type': 'output'})
+    comfy_base_url = settings.image_generation_comfyui_url.rstrip('/')
+    comfy_view_url = f'{comfy_base_url}/view?{comfy_query}'
+    return RedirectResponse(comfy_view_url)
 
 
 @router.post("/{job_id}/cancel", response_model=ImageJobRead)

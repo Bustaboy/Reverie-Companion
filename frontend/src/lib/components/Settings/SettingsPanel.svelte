@@ -176,6 +176,14 @@
     settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
   };
 
+  const handleImageAutoGenerateChatChange = (event: Event) => {
+    settingsStore.setImageAutoGenerateChat((event.currentTarget as HTMLInputElement).checked);
+  };
+
+  const handleImageAutoGenerateVisualNovelChange = (event: Event) => {
+    settingsStore.setImageAutoGenerateVisualNovel((event.currentTarget as HTMLInputElement).checked);
+  };
+
   const handleCloneFileChange = (event: Event) => {
     const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
     cloneFile = file;
@@ -399,6 +407,34 @@
             <small>{option.description}</small>
           </button>
         {/each}
+      </div>
+    </article>
+
+    <article class="settings-card settings-wide image-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Images</span>
+        <h2>Local image generation</h2>
+        <p>Manual image buttons are always available. Auto-generation stays opt-in because Flux/ComfyUI uses a low-priority 8GB media queue and pauses for voice.</p>
+      </div>
+
+      <div class="voice-settings-grid">
+        <label class="inline-toggle">
+          <input
+            type="checkbox"
+            checked={$settingsStore.imageAutoGenerateChat}
+            onchange={handleImageAutoGenerateChatChange}
+          />
+          <span>{ $settingsStore.imageAutoGenerateChat ? 'Auto-visualize assistant replies' : 'Ask before chat images' }</span>
+        </label>
+
+        <label class="inline-toggle">
+          <input
+            type="checkbox"
+            checked={$settingsStore.imageAutoGenerateVisualNovel}
+            onchange={handleImageAutoGenerateVisualNovelChange}
+          />
+          <span>{ $settingsStore.imageAutoGenerateVisualNovel ? 'Auto-visualize VN scenes' : 'Ask before VN scene images' }</span>
+        </label>
       </div>
     </article>
 
