@@ -599,4 +599,6 @@ Extensibility from Task 5C is now treated as a first-class hub section. Extensio
 
 Import/export/reset controls are centralized. Users can export character-facing local keys, growth/journal/reflection/memory/training-facing local keys, settings-only payloads, or a full `reverie.*` local backup; backups can be imported with confirmation; and reset-to-defaults requires confirmation before clearing core and extension hub settings. **Task 5D is complete.**
 
+Task 5D quick polish keeps the PR #98 hub structure while tightening responsive behavior and data-portability UX: the section rail now reports search matches, clears searches directly, provides an explicit no-results state, and becomes a horizontal snap navigation surface on tablet/mobile widths. Backup exports now include stable backup metadata, sorted local-storage keys, safer downloadable filenames, delayed object URL cleanup, clearer import validation, detailed confirmation copy, import-cancel feedback, and a typed reset phrase before destructive default restoration.
+
 *End of Source of Truth Document v1.0*

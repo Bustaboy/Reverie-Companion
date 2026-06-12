@@ -32,6 +32,9 @@
 
   const SETTINGS_STORAGE_KEY = 'reverie.memoryReflectionSettings.v2';
   const PINNED_JOURNAL_STORAGE_KEY = 'reverie.journal.pinnedEntryIds.v1';
+  const BACKUP_KIND = 'reverie.settings_control_hub.backup';
+
+  type BackupScope = 'characters' | 'growth' | 'settings' | 'full';
 
   const settingsSections: Array<{
     id: SettingsSectionId;
@@ -103,6 +106,13 @@
       description: 'Export characters, growth data, settings, or a full local backup.',
       search: 'backup export import characters growth settings restore reset defaults'
     }
+  ];
+
+  const backupScopeOptions: Array<{ scope: BackupScope; label: string; description: string }> = [
+    { scope: 'characters', label: 'characters', description: 'character and voice-facing local keys' },
+    { scope: 'growth', label: 'growth data', description: 'journal, reflection, memory, growth, and training-facing local keys' },
+    { scope: 'settings', label: 'settings', description: 'core settings, extension settings, and API base URL' },
+    { scope: 'full', label: 'full local backup', description: 'every current reverie.* browser key plus the settings snapshot' }
   ];
 
   const appearanceOptions: Array<{ value: AppearanceTheme; label: string; description: string }> = [
@@ -187,12 +197,14 @@
 
   const cloneAudio = $derived(cloneRecording ?? cloneFile);
   const normalizedSearch = $derived(searchQuery.trim().toLowerCase());
-  const visibleSectionIds = $derived(
-    new Set(
-      settingsSections
-        .filter((section) => !normalizedSearch || `${section.label} ${section.description} ${section.search}`.toLowerCase().includes(normalizedSearch))
-        .map((section) => section.id)
-    )
+  const matchingSections = $derived(
+    settingsSections.filter((section) => !normalizedSearch || `${section.label} ${section.description} ${section.search}`.toLowerCase().includes(normalizedSearch))
+  );
+  const visibleSectionIds = $derived(new Set(matchingSections.map((section) => section.id)));
+  const searchSummary = $derived(
+    normalizedSearch
+      ? `${matchingSections.length} matching section${matchingSections.length === 1 ? '' : 's'}`
+      : 'All core controls visible'
   );
   const savedLabel = $derived(
     $settingsStore.savedAt
@@ -354,7 +366,7 @@
     }
   };
 
-  const localStorageEntriesForScope = (scope: 'characters' | 'growth' | 'settings' | 'full') => {
+  const localStorageEntriesForScope = (scope: BackupScope) => {
     if (!browser) return {};
     const entries: Record<string, string> = {};
     for (let index = 0; index < window.localStorage.length; index += 1) {
@@ -374,7 +386,7 @@
     if (scope === 'growth' && window.localStorage.getItem(PINNED_JOURNAL_STORAGE_KEY)) {
       entries[PINNED_JOURNAL_STORAGE_KEY] = window.localStorage.getItem(PINNED_JOURNAL_STORAGE_KEY) ?? '';
     }
-    return entries;
+    return Object.fromEntries(Object.entries(entries).sort(([left], [right]) => left.localeCompare(right)));
   };
 
   const downloadJson = (filename: string, payload: unknown) => {
@@ -383,58 +395,96 @@
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 750);
   };
 
-  const exportBackup = (scope: 'characters' | 'growth' | 'settings' | 'full') => {
+  const exportBackup = (scope: BackupScope) => {
     backupError = null;
+    const scopeCopy = backupScopeOptions.find((option) => option.scope === scope) ?? backupScopeOptions[3];
+    const localStorage = localStorageEntriesForScope(scope);
+    const exportedAt = new Date();
     const payload = {
-      kind: 'reverie.settings_control_hub.backup',
+      kind: BACKUP_KIND,
       version: 1,
       scope,
-      exported_at: new Date().toISOString(),
+      scope_label: scopeCopy.label,
+      exported_at: exportedAt.toISOString(),
+      source: 'Reverie Settings & Control Hub',
       note: 'Local-first export. Backend character/growth databases remain authoritative when connected; this captures current browser-side control hub state.',
+      included_local_storage_keys: Object.keys(localStorage),
+      control_hub_snapshot: settingsStore.getSnapshot(),
       settings: settingsStore.getSnapshot(),
-      local_storage: localStorageEntriesForScope(scope)
+      local_storage: localStorage
     };
-    downloadJson(`reverie-${scope}-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
-    backupStatus = `Exported ${scope === 'full' ? 'a full local backup' : scope} backup.`;
+    const stamp = exportedAt.toISOString().replace(/[:.]/g, '-');
+    downloadJson(`reverie-${scope}-backup-${stamp}.json`, payload);
+    backupStatus = `Exported ${scopeCopy.label} (${Object.keys(localStorage).length} local key${Object.keys(localStorage).length === 1 ? '' : 's'}).`;
   };
 
   const importBackup = async (event: Event) => {
-    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
     if (!file) return;
     backupError = null;
+    backupStatus = `Reading ${file.name}…`;
     try {
       const payload = JSON.parse(await file.text()) as {
+        kind?: string;
+        scope?: BackupScope;
         settings?: unknown;
-        local_storage?: Record<string, string>;
+        control_hub_snapshot?: unknown;
+        local_storage?: Record<string, unknown>;
       };
-      if (!confirm('Import this Reverie backup? Current local settings with matching keys will be replaced.')) return;
-      if (browser && payload.local_storage && typeof payload.local_storage === 'object') {
-        for (const [key, value] of Object.entries(payload.local_storage)) {
-          if (key.startsWith('reverie.') && typeof value === 'string') window.localStorage.setItem(key, value);
-        }
+      if (payload.kind && payload.kind !== BACKUP_KIND) {
+        throw new Error('This JSON file is not a Reverie Settings & Control Hub backup.');
       }
-      if (payload.settings) {
-        settingsStore.importSettingsPayload(payload.settings);
+      const safeEntries = Object.entries(payload.local_storage ?? {}).filter(
+        (entry): entry is [string, string] => entry[0].startsWith('reverie.') && typeof entry[1] === 'string'
+      );
+      const scopeLabel = payload.scope ? (backupScopeOptions.find((option) => option.scope === payload.scope)?.label ?? payload.scope) : 'local';
+      const hasSettings = Boolean(payload.settings ?? payload.control_hub_snapshot);
+      if (safeEntries.length === 0 && !hasSettings) {
+        throw new Error('That backup did not contain importable Reverie settings or local storage keys.');
+      }
+      const confirmed = confirm(
+        `Import ${file.name}?\n\nThis will replace ${safeEntries.length} matching local key${safeEntries.length === 1 ? '' : 's'} from the ${scopeLabel} backup${hasSettings ? ' and refresh Control Hub settings' : ''}.`
+      );
+      if (!confirmed) {
+        backupStatus = 'Import cancelled. No local data was changed.';
+        return;
+      }
+      if (browser) {
+        for (const [key, value] of safeEntries) window.localStorage.setItem(key, value);
+      }
+      const settingsPayload = payload.settings ?? payload.control_hub_snapshot;
+      if (settingsPayload) {
+        settingsStore.importSettingsPayload(settingsPayload);
       } else if (browser) {
         const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
         if (rawSettings) settingsStore.importSettingsPayload(JSON.parse(rawSettings));
       }
-      backupStatus = `Imported ${file.name}.`;
+      backupStatus = `Imported ${file.name}: ${safeEntries.length} local key${safeEntries.length === 1 ? '' : 's'} restored.`;
     } catch (error) {
       backupError = error instanceof Error ? error.message : 'That file was not a readable Reverie backup.';
+      backupStatus = null;
     } finally {
-      (event.currentTarget as HTMLInputElement).value = '';
+      input.value = '';
     }
   };
 
   const resetWithConfirmation = () => {
-    if (!confirm('Reset Settings & Control Hub to calm defaults? Extension settings saved under the hub will also be cleared.')) return;
+    const phrase = prompt('Type RESET to restore calm defaults. Extension settings saved under the hub will also be cleared.');
+    if (phrase !== 'RESET') {
+      backupStatus = 'Reset cancelled. No settings were changed.';
+      return;
+    }
     settingsStore.resetMemoryReflectionSettings();
     backupStatus = 'Restored calm defaults.';
+    backupError = null;
   };
 </script>
 
@@ -460,7 +510,7 @@
         <input type="search" bind:value={searchQuery} placeholder="Try “8GB”, “voice”, “backup”…" aria-label="Search settings" />
       </label>
       <nav>
-        {#each settingsSections as section}
+        {#each matchingSections as section}
           {#if shouldShow(section.id)}
             <button type="button" class:active={activeSection === section.id} onclick={() => (activeSection = section.id)}>
               <span>{section.eyebrow}</span>
@@ -469,10 +519,23 @@
           {/if}
         {/each}
       </nav>
+      <div class="settings-nav-meta" aria-live="polite">
+        <span>{searchSummary}</span>
+        <button type="button" disabled={!normalizedSearch} onclick={() => (searchQuery = '')}>Clear search</button>
+      </div>
       <p class="settings-nav-note">Core controls save instantly to this device. Backend safety gates can still downgrade heavy jobs to protect the 8GB target.</p>
     </aside>
 
     <div class="settings-content control-hub-content">
+      {#if matchingSections.length === 0}
+        <section class="settings-empty-state settings-wide" aria-live="polite">
+          <span aria-hidden="true">⌕</span>
+          <h2>No settings matched “{searchQuery}”.</h2>
+          <p>Try a broader word like “voice”, “memory”, “8GB”, “backup”, or clear search to return to the full Control Hub.</p>
+          <button type="button" class="hub-secondary-action" onclick={() => (searchQuery = '')}>Clear search</button>
+        </section>
+      {/if}
+
       {#if shouldShow('general') && (!normalizedSearch || activeSection === 'general')}
         <section class="settings-section settings-wide" aria-labelledby="general-settings-title">
           <div class="settings-section-heading">
@@ -696,17 +759,16 @@
           <div class="settings-section-heading"><span class="setting-kicker">Import / Export / Backup</span><h2 id="backup-settings-title">Your data stays portable</h2><p>Use lightweight JSON exports for the current control hub and local UI state. Connected backend exports can later plug into the same hub actions.</p></div>
           <article class="settings-card settings-wide backup-card">
             <div class="backup-grid">
-              <button type="button" onclick={() => exportBackup('characters')}><strong>Export characters</strong><span>Character and voice-facing local keys.</span></button>
-              <button type="button" onclick={() => exportBackup('growth')}><strong>Export growth data</strong><span>Journal, reflection, growth, memory, and training-facing local keys.</span></button>
-              <button type="button" onclick={() => exportBackup('settings')}><strong>Export settings</strong><span>Core settings, extension settings, and API base URL.</span></button>
-              <button type="button" onclick={() => exportBackup('full')}><strong>Full local backup</strong><span>Every current reverie.* browser key plus settings snapshot.</span></button>
+              {#each backupScopeOptions as option}
+                <button type="button" onclick={() => exportBackup(option.scope)}><strong>Export {option.label}</strong><span>{option.description}.</span></button>
+              {/each}
             </div>
             <div class="backup-actions">
               <button type="button" class="hub-secondary-action" onclick={() => importFileInput?.click()}>Import backup</button>
               <button type="button" class="hub-danger-action" onclick={resetWithConfirmation}>Reset to defaults</button>
               <input bind:this={importFileInput} class="visually-hidden" type="file" accept="application/json,.json" onchange={importBackup} />
             </div>
-            <div class="clone-status" aria-live="polite">{#if backupError}<span class="error">{backupError}</span>{:else if backupStatus}<span>{backupStatus}</span>{/if}</div>
+            <div class="backup-status-card" aria-live="polite">{#if backupError}<span class="error">{backupError}</span>{:else if backupStatus}<span>{backupStatus}</span>{:else}<span>Exports are plain JSON files. Import only backups you trust from your own device.</span>{/if}</div>
           </article>
         </section>
       {/if}
