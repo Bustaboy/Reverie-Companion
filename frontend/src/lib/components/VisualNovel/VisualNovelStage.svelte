@@ -20,6 +20,12 @@
     `${$visualNovelScene.expressionLabel} expression, ${$visualNovelScene.poseLabel.toLowerCase()} pose`
   );
 
+  const growthModifierStyle = $derived(
+    $visualNovelScene.growthModifier
+      ? `--growth-modifier-intensity: ${$visualNovelScene.growthModifier.intensity.toFixed(2)}`
+      : '--growth-modifier-intensity: 0'
+  );
+
   const handleSpriteError = () => {
     visualNovelStore.markAssetFailed($visualNovelScene.sprite.src);
   };
@@ -68,7 +74,12 @@
       </div>
     </div>
 
-    <div class="vn-character-layer" aria-label={`Reverie visual state: ${stateSummary}`}>
+    <div
+      class:growth-modified={Boolean($visualNovelScene.growthModifier)}
+      class={`vn-character-layer expression-${$visualNovelScene.state.expression} pose-${$visualNovelScene.state.pose}`}
+      aria-label={`Reverie visual state: ${stateSummary}`}
+      style={growthModifierStyle}
+    >
       {#if $visualNovelScene.sprite.kind === 'image' && $visualNovelScene.sprite.src}
         <img
           class="vn-character-sprite"
@@ -96,7 +107,9 @@
         <span>{stateSummary}</span>
       </div>
       <p>{latestAssistantLine}</p>
-      {#if $visualNovelScene.usedFallback}
+      {#if $visualNovelScene.growthModifier}
+        <small>Growth cue: {$visualNovelScene.growthModifier.cue}</small>
+      {:else if $visualNovelScene.usedFallback}
         <small>Using neutral fallback visuals until character assets are available.</small>
       {/if}
     </div>

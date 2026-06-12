@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings, get_settings
+from app.core.emotion import EmotionInferenceContext, EmotionInferenceEngine
 from app.core.lora import PersonalLoRATrainer, get_personal_lora_trainer
 from app.core.memory import MemoryManager, get_memory_manager
 from app.core.reflection import (
@@ -24,6 +25,7 @@ from app.models.chat import (
     ChatMessage,
     ChatRequest,
     GrowthNotification,
+    VisualStateMetadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,7 @@ class GrowthOrchestrator:
         self._reflection_manager = reflection_manager
         self._lora_trainer = lora_trainer
         self._reflection_scheduler = ReflectionScheduler.from_settings(self._settings)
+        self._emotion_engine = EmotionInferenceEngine()
 
     @classmethod
     def with_defaults(cls, settings: Settings | None = None) -> "GrowthOrchestrator":
@@ -276,6 +279,29 @@ class GrowthOrchestrator:
                     "trigger_reason": trigger_reason,
                 },
             )
+
+    def infer_visual_state_on_done(
+        self,
+        request: ChatRequest,
+        assistant_response: str,
+        growth_context: GrowthContext,
+    ) -> VisualStateMetadata:
+        """Infer visual state once a chat turn is complete.
+
+        This is intentionally called from non-streaming completion handling or the
+        terminal SSE `done` frame after all assistant chunks have been collected;
+        it must not run per token.
+        """
+
+        return self._emotion_engine.infer(
+            EmotionInferenceContext(
+                request=request,
+                assistant_response=assistant_response,
+                memory_context=growth_context.memory_context,
+                reflection_entries=growth_context.reflection_entries,
+                growth_notification=growth_context.growth_notification,
+            )
+        )
 
     def select_growth_notification(
         self,
@@ -482,10 +508,16 @@ class GrowthOrchestrator:
                 "Unexpected reflection task failure", extra={"error": str(exc)}
             )
 
-    def inject_growth_notification_into_done_sse(
-        self, frame: str, growth_notification: GrowthNotification | None
+    def inject_done_metadata_into_sse(
+        self,
+        frame: str,
+        *,
+        growth_notification: GrowthNotification | None = None,
+        visual_state: VisualStateMetadata | None = None,
     ) -> str:
-        if growth_notification is None or "event: done" not in frame:
+        """Attach final-turn metadata to an SSE done frame only."""
+
+        if "event: done" not in frame:
             return frame
         data_lines: list[str] = []
         other_lines: list[str] = []
@@ -500,8 +532,18 @@ class GrowthOrchestrator:
             payload = {"done": True}
         if not isinstance(payload, dict):
             payload = {"done": True}
-        payload["growth_notification"] = growth_notification.model_dump()
+        if growth_notification is not None:
+            payload["growth_notification"] = growth_notification.model_dump()
+        if visual_state is not None:
+            payload["visual_state"] = visual_state.model_dump()
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
+
+    def inject_growth_notification_into_done_sse(
+        self, frame: str, growth_notification: GrowthNotification | None
+    ) -> str:
+        return self.inject_done_metadata_into_sse(
+            frame, growth_notification=growth_notification
+        )
 
     def tokenize(self, text: str) -> list[str]:
         return [

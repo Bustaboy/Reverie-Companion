@@ -5,7 +5,8 @@ import type {
   CharacterVisualManifest,
   NormalizedVisualState,
   ResolvedVisualNovelScene,
-  VisualStateMetadata
+  VisualStateMetadata,
+  GrowthVisualModifier
 } from '$lib/types/visualNovel';
 
 export interface VisualNovelState {
@@ -14,9 +15,11 @@ export interface VisualNovelState {
   fullImmersive: boolean;
   /** Small LRU of image URLs that failed to decode so the resolver stops retrying them. */
   failedAssetUrls: string[];
+  growthModifier?: GrowthVisualModifier;
 }
 
 const FAILED_ASSET_CACHE_LIMIT = 16;
+const GROWTH_MODIFIER_DECAY_MS = 45_000;
 
 const initialManifest = DEFAULT_CHARACTER_VISUAL_MANIFEST;
 const initialVisualState = expressionManager.normalizeState(initialManifest);
@@ -25,7 +28,8 @@ const INITIAL_STATE: VisualNovelState = {
   manifest: initialManifest,
   currentVisualState: initialVisualState,
   fullImmersive: false,
-  failedAssetUrls: []
+  failedAssetUrls: [],
+  growthModifier: undefined
 };
 
 const addFailedAssetUrl = (urls: string[], url: string): string[] => {
@@ -38,10 +42,27 @@ const addFailedAssetUrl = (urls: string[], url: string): string[] => {
 
 function createVisualNovelStore() {
   const store = writable<VisualNovelState>(INITIAL_STATE);
+  let growthModifierTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+  const clearGrowthModifierTimer = () => {
+    if (growthModifierTimer) {
+      globalThis.clearTimeout(growthModifierTimer);
+      growthModifierTimer = undefined;
+    }
+  };
+
+  const scheduleGrowthModifierDecay = () => {
+    clearGrowthModifierTimer();
+    growthModifierTimer = globalThis.setTimeout(() => {
+      store.update((state) => ({ ...state, growthModifier: undefined }));
+      growthModifierTimer = undefined;
+    }, GROWTH_MODIFIER_DECAY_MS);
+  };
 
   const scene = derived(store, ($store): ResolvedVisualNovelScene => {
     const failedAssetUrls = new Set($store.failedAssetUrls);
-    return expressionManager.resolveScene($store.manifest, $store.currentVisualState, failedAssetUrls);
+    const resolved = expressionManager.resolveScene($store.manifest, $store.currentVisualState, failedAssetUrls);
+    return { ...resolved, growthModifier: $store.growthModifier };
   });
 
   return {
@@ -50,10 +71,28 @@ function createVisualNovelStore() {
     applyVisualState(metadata?: VisualStateMetadata | null) {
       if (!metadata) return;
 
-      store.update((state) => ({
-        ...state,
-        currentVisualState: expressionManager.normalizeState(state.manifest, metadata)
-      }));
+      store.update((state) => {
+        const currentVisualState = expressionManager.normalizeState(state.manifest, metadata);
+        const now = Date.now();
+        const growthModifier = currentVisualState.growthCue
+          ? {
+              cue: currentVisualState.growthCue,
+              startedAt: now,
+              expiresAt: now + GROWTH_MODIFIER_DECAY_MS,
+              intensity: Math.min(1, Math.max(0.35, currentVisualState.confidence || 0.55))
+            }
+          : state.growthModifier;
+
+        if (currentVisualState.growthCue) {
+          scheduleGrowthModifierDecay();
+        }
+
+        return {
+          ...state,
+          currentVisualState,
+          growthModifier
+        };
+      });
     },
     setFullImmersive(enabled: boolean) {
       store.update((state) => ({ ...state, fullImmersive: enabled }));

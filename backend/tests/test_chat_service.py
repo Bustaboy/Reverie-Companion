@@ -12,8 +12,9 @@ from app.services.chat_service import ChatService
 
 
 class FakeOllamaClient:
-    def __init__(self) -> None:
+    def __init__(self, stream_frames: list[str] | None = None) -> None:
         self.requests: list[ChatRequest] = []
+        self.stream_frames = stream_frames or []
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
@@ -23,6 +24,11 @@ class FakeOllamaClient:
             model="fake-model",
             message=ChatMessage(role="assistant", content="I hear you."),
         )
+
+    async def stream_chat(self, request: ChatRequest, *, request_id: str | None = None):
+        self.requests.append(request)
+        for frame in self.stream_frames:
+            yield frame
 
 
 class FakeMemoryManager:
@@ -348,6 +354,88 @@ class ChatServiceReflectionTests(unittest.TestCase):
             request, request_id="req-growth-disabled"
         )
         self.assertIsNone(disabled.growth_notification)
+
+    def test_emotion_inference_attaches_neutral_fallback_when_confidence_is_low(
+        self,
+    ) -> None:
+        asyncio.run(self._assert_emotion_inference_neutral_fallback())
+
+    async def _assert_emotion_inference_neutral_fallback(self) -> None:
+        service = ChatService(
+            settings=Settings(memory_enabled=False, reflection_enabled=False),
+            ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
+        )
+
+        response = await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[ChatMessage(role="user", content="The lamp is on the desk.")],
+            ),
+            request_id="req-neutral-visual",
+        )
+
+        self.assertIsNotNone(response.visual_state)
+        self.assertEqual(response.visual_state.expression, "neutral")
+        self.assertLessEqual(response.visual_state.confidence, 0.34)
+
+    def test_stream_emotion_inference_runs_only_on_done_with_growth_cue(self) -> None:
+        asyncio.run(self._assert_stream_emotion_inference_done_only())
+
+    async def _assert_stream_emotion_inference_done_only(self) -> None:
+        entry = {
+            "entry_id": "journal_growth_visual",
+            "status": "active",
+            "character_summary": "I am learning a gentler reassurance rhythm.",
+            "themes": ["growth", "reassurance"],
+            "confidence": 0.82,
+            "growth_notification": {
+                "id": "growth_visual",
+                "journal_entry_id": "journal_growth_visual",
+                "created_at": "2026-06-11T00:00:00Z",
+                "message": "Reverie is practicing gentler reassurance.",
+                "why": "A private reflection noticed a growth pattern.",
+                "theme": "growth",
+            },
+        }
+        service = ChatService(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_min_interval_seconds=999,
+                growth_notification_min_user_messages=1,
+                growth_notification_message_interval=1,
+                growth_notification_min_interval_seconds=0,
+            ),
+            ollama_client=FakeOllamaClient(
+                stream_frames=[
+                    'event: message\ndata: {"content": "I am learning ", "request_id": "req"}\n\n',
+                    'event: message\ndata: {"content": "to reassure you gently.", "request_id": "req"}\n\n',
+                    'event: done\ndata: {"done": true, "request_id": "req"}\n\n',
+                ]
+            ),  # type: ignore[arg-type]
+            reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
+        )
+
+        frames = [
+            frame
+            async for frame in await service.stream_chat(
+                ChatRequest(
+                    stream=True,
+                    messages=[
+                        ChatMessage(
+                            role="user",
+                            content="I feel anxious but want to trust the process.",
+                        )
+                    ],
+                ),
+                request_id="req-stream-visual",
+            )
+        ]
+
+        self.assertNotIn("visual_state", frames[0])
+        self.assertNotIn("visual_state", frames[1])
+        self.assertIn("visual_state", frames[2])
+        self.assertIn('"growth_cue": "growth"', frames[2])
+        self.assertIn("growth_notification", frames[2])
 
 
 if __name__ == "__main__":

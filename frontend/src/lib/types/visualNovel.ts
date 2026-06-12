@@ -44,6 +44,11 @@ export interface VisualStateMetadata {
   expression?: string;
   pose?: string;
   background?: string;
+  confidence?: number;
+  emotion?: string;
+  growthCue?: string;
+  memoryRecallUsed?: boolean;
+  reflectionThemes?: string[];
 }
 
 export interface NormalizedVisualState {
@@ -51,6 +56,18 @@ export interface NormalizedVisualState {
   expression: VisualExpression;
   pose: VisualPose;
   background: VisualBackground;
+  confidence: number;
+  emotion: VisualExpression;
+  growthCue?: string;
+  memoryRecallUsed: boolean;
+  reflectionThemes: string[];
+}
+
+export interface GrowthVisualModifier {
+  cue: string;
+  startedAt: number;
+  expiresAt: number;
+  intensity: number;
 }
 
 export interface ResolvedVisualNovelScene {
@@ -61,4 +78,5 @@ export interface ResolvedVisualNovelScene {
   expressionLabel: string;
   poseLabel: string;
   usedFallback: boolean;
+  growthModifier?: GrowthVisualModifier;
 }

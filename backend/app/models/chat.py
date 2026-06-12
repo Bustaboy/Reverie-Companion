@@ -75,6 +75,20 @@ class ChatRequest(BaseModel):
         return value
 
 
+class VisualStateMetadata(BaseModel):
+    """Lightweight visual state emitted only after a completed chat turn."""
+
+    character_id: str | None = None
+    expression: str = "neutral"
+    pose: str = "idle"
+    background: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    emotion: str = "neutral"
+    growth_cue: str | None = None
+    memory_recall_used: bool = False
+    reflection_themes: list[str] = Field(default_factory=list)
+
+
 class GrowthNotification(BaseModel):
     """Subtle, user-visible note that a grounded growth signal was recorded."""
 
@@ -97,3 +111,4 @@ class ChatResponse(BaseModel):
     message: ChatMessage
     done: bool = True
     growth_notification: GrowthNotification | None = None
+    visual_state: VisualStateMetadata | None = None

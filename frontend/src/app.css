@@ -2074,10 +2074,36 @@ h1 {
 }
 
 .vn-character-layer {
+  --growth-modifier-intensity: 0;
   display: grid;
   place-items: end center;
   min-height: 0;
   padding: 0 1rem;
+  transform: translateX(0) translateY(0);
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms ease;
+}
+
+.vn-character-layer.pose-leaning {
+  transform: translateX(-0.35rem) translateY(-0.2rem);
+}
+
+.vn-character-layer.pose-speaking {
+  transform: translateY(-0.12rem);
+}
+
+.vn-character-layer.growth-modified {
+  filter: saturate(calc(1 + (var(--growth-modifier-intensity) * 0.1)));
+  transform: translateX(calc(var(--growth-modifier-intensity) * -0.55rem)) translateY(calc(var(--growth-modifier-intensity) * -0.32rem));
+}
+
+.vn-character-layer.growth-modified.expression-concerned,
+.vn-character-layer.growth-modified.expression-thinking {
+  transform: translateX(calc(var(--growth-modifier-intensity) * 0.38rem)) translateY(calc(var(--growth-modifier-intensity) * -0.22rem));
+}
+
+.vn-character-layer.growth-modified.expression-flirty,
+.vn-character-layer.growth-modified.expression-happy {
+  transform: translateX(calc(var(--growth-modifier-intensity) * -0.72rem)) translateY(calc(var(--growth-modifier-intensity) * -0.4rem)) scale(calc(1 + (var(--growth-modifier-intensity) * 0.012)));
 }
 
 .vn-character-sprite {
@@ -2168,10 +2194,23 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .vn-background-image,
+  .vn-character-layer,
   .vn-character-sprite,
   .vn-character-placeholder,
   .vn-dialogue-panel {
     transition: none;
+  }
+
+  .vn-character-layer,
+  .vn-character-layer.pose-leaning,
+  .vn-character-layer.pose-speaking,
+  .vn-character-layer.growth-modified,
+  .vn-character-layer.growth-modified.expression-concerned,
+  .vn-character-layer.growth-modified.expression-thinking,
+  .vn-character-layer.growth-modified.expression-flirty,
+  .vn-character-layer.growth-modified.expression-happy {
+    filter: none;
+    transform: none;
   }
 }
 

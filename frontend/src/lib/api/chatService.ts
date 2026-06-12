@@ -537,12 +537,30 @@ export class ChatService {
     const pose = this.normalizeText(raw.pose ?? raw.stance);
     const background = this.normalizeText(raw.background ?? raw.scene ?? raw.location);
     const characterId = this.normalizeText(raw.character_id ?? raw.characterId ?? raw.character);
+    const confidence = this.normalizeNumber(raw.confidence);
+    const emotion = this.normalizeText(raw.emotion ?? raw.mood ?? raw.expression);
+    const growthCue = this.normalizeText(raw.growth_cue ?? raw.growthCue);
+    const memoryRecallUsed = raw.memory_recall_used === true || raw.memoryRecallUsed === true;
+    const rawThemes = raw.reflection_themes ?? raw.reflectionThemes;
+    const reflectionThemes = Array.isArray(rawThemes)
+      ? rawThemes.filter((theme): theme is string => typeof theme === 'string').slice(0, 4)
+      : undefined;
 
-    if (!expression && !pose && !background && !characterId) {
+    if (!expression && !pose && !background && !characterId && !growthCue && !emotion) {
       return undefined;
     }
 
-    return { characterId, expression, pose, background };
+    return {
+      characterId,
+      expression,
+      pose,
+      background,
+      confidence,
+      emotion,
+      growthCue,
+      memoryRecallUsed,
+      reflectionThemes
+    };
   }
 
   private getNestedVisualState(body: BackendVisualStateBody | Record<string, unknown>): unknown {
@@ -716,6 +734,10 @@ export class ChatService {
 
   private normalizeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  }
+
+  private normalizeNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
   private readRequestId(

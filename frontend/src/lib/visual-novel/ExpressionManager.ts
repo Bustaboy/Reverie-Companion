@@ -56,7 +56,14 @@ export class ExpressionManager {
       characterId: metadata?.characterId?.trim() || manifest.id,
       expression: pickKnown(metadata?.expression, manifest.defaults.expression, manifest.expressions, EXPRESSION_ALIASES),
       pose: pickKnown(metadata?.pose, manifest.defaults.pose, manifest.poses, POSE_ALIASES),
-      background: pickKnown(metadata?.background, manifest.defaults.background, manifest.backgrounds, BACKGROUND_ALIASES)
+      background: pickKnown(metadata?.background, manifest.defaults.background, manifest.backgrounds, BACKGROUND_ALIASES),
+      confidence: clampConfidence(metadata?.confidence),
+      emotion: pickKnown(metadata?.emotion ?? metadata?.expression, manifest.defaults.expression, manifest.expressions, EXPRESSION_ALIASES),
+      growthCue: metadata?.growthCue?.trim() || undefined,
+      memoryRecallUsed: metadata?.memoryRecallUsed === true,
+      reflectionThemes: Array.isArray(metadata?.reflectionThemes)
+        ? metadata.reflectionThemes.filter((theme): theme is string => typeof theme === 'string').slice(0, 4)
+        : []
     };
   }
 
@@ -155,3 +162,8 @@ const resolveAssetPath = (src: string, assetBasePath?: string): string => {
 };
 
 export const expressionManager = new ExpressionManager();
+
+const clampConfidence = (value?: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+};

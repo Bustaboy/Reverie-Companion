@@ -137,13 +137,14 @@ This flow ensures the character both **grows personally** and **contributes to t
 
 Milestone 3 introduces a minimal, 8GB-friendly Visual Novel foundation that stays deliberately lightweight:
 
-- **CharacterVisualManifest** defines the character name, versioned defaults, supported expressions, supported poses, backgrounds, and one resolved sprite image per pose/expression slot. Layered rendering, clothing stacks, and weighted emotion inference are intentionally excluded until later milestones.
+- **CharacterVisualManifest** defines the character name, versioned defaults, supported expressions, supported poses, backgrounds, and one resolved sprite image per pose/expression slot. Layered rendering and clothing stacks remain later work, but the manifest now has a typed path for emotion-driven state.
+- **EmotionInferenceEngine** runs once after a chat turn is complete (SSE `done`, never per streamed token) and uses a deterministic weighted heuristic: latest user tone 30%, assistant response tone 25%, retrieved memory/strong recall cues 20%, recent reflection themes 15%, and growth cues 10% with a small priority boost. Low-confidence or ambiguous results always fall back to **neutral**.
 - **ExpressionManager** normalizes `visual_state` metadata from chat into known expression, pose, and background values, resolves relative manifest asset paths, and keeps alias handling deterministic. Unknown or missing values always fall back to **neutral + idle + default background** so broken assets never interrupt chat or immersion.
-- **visualNovelStore** owns the current resolved visual state, full-immersive toggle, and a small failed-asset cache. This keeps Svelte components reactive without repeatedly retrying missing images or expanding memory use.
-- **VisualNovelStage** renders the scene canvas, character visual, dialogue panel, and basic ARIA labels. It uses lazy image loading, lightweight SVG placeholders, and CSS fallbacks so the MVP remains smooth on RTX 4070 8GB mobile systems.
-- Chat SSE `message` and `done` events may include `visual_state` / `visualState` metadata. The frontend applies those updates to VN mode without blocking streaming text.
+- **visualNovelStore** owns the current resolved visual state, full-immersive toggle, a small failed-asset cache, and temporary growth visual modifiers. `growth_cue` metadata applies a lightweight modifier for roughly 45 seconds before Svelte/CSS transitions decay back to base state.
+- **VisualNovelStage** renders the scene canvas, character visual, dialogue panel, and basic ARIA labels. It uses lazy image loading, lightweight SVG placeholders, smooth warm-dark transitions, and `prefers-reduced-motion` safeguards so the MVP remains smooth on RTX 4070 8GB mobile systems.
+- Chat SSE `done` events may include `visual_state` / `visualState` metadata generated from completed-turn evidence. The frontend applies those updates immediately to VN mode without adding a resident LLM or blocking streamed text.
 
-This foundation is the approved bridge between chat-first companion behavior and future Futa-Vision/reactive visual work. Future tasks may add richer inference, growth-linked visual modifiers, asset packs, or layered sprites, but only behind these typed boundaries.
+This foundation is the approved bridge between chat-first companion behavior and future Futa-Vision/reactive visual work. Task 1C should build on these typed boundaries with richer asset packs/layering, optional emotional voice/TTS synchronization, and more inspectable controls for visual reactivity while keeping the 8GB budget intact.
 
 ### 3.4 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
