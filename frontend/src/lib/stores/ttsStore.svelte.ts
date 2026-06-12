@@ -46,6 +46,15 @@ const normalizeAudioError = (error: unknown): string => {
   }
 
   if (error instanceof TTSServiceError) {
+    if (error.code === 'tts_backend_unavailable') {
+      return 'No local voice backend is available right now. Text chat is safe; check Orpheus/Piper paths in settings.';
+    }
+    if (error.code === 'tts_text_too_long') {
+      return 'That reply is too long for one voice line. Try playing a shorter message.';
+    }
+    if (error.retryable) {
+      return `${error.message} You can try again in a moment.`;
+    }
     return error.message;
   }
 
@@ -442,7 +451,9 @@ class TTSStore {
                 is_narration: nextItem.ttsContext.isNarration,
                 mode: nextItem.ttsContext.mode,
                 emotion_hint: nextItem.ttsContext.emotionHint,
-                intensity: nextItem.ttsContext.intensity
+                intensity: nextItem.ttsContext.intensity,
+                mood_settings: nextItem.ttsContext.moodSettings,
+                scene_tags: nextItem.ttsContext.sceneTags
               }
             : undefined,
           emotion: nextItem.emotion

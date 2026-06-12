@@ -10,6 +10,31 @@ MAX_REFERENCE_AUDIO_PATH_LENGTH = 500
 VoiceProfileType = Literal["character", "narrator"]
 
 
+class VoiceMoodSettings(BaseModel):
+    """Per-character speech mood controls stored with durable voice profiles.
+
+    The values are intentionally small scalar knobs so the UI can fine-tune
+    deterministic emotion tagging without loading extra models or increasing
+    8GB memory pressure. ``1.0`` means neutral/default behavior.
+    """
+
+    baseline_expressiveness: float = Field(
+        default=1.0, ge=0.0, le=2.0, description="Default prosody warmth."
+    )
+    emotional_sensitivity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="How quickly emotional cues boost intensity.",
+    )
+    nsfw_intensity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="How strongly intimate scene cues affect speech.",
+    )
+
+
 class VoiceProfile(BaseModel):
     """Durable voice profile used by TTS and future voice cloning.
 
@@ -25,6 +50,7 @@ class VoiceProfile(BaseModel):
         default=None, max_length=MAX_REFERENCE_AUDIO_PATH_LENGTH
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+    mood_settings: VoiceMoodSettings = Field(default_factory=VoiceMoodSettings)
 
     @field_validator("voice_id", "name")
     @classmethod
@@ -62,6 +88,7 @@ class VoiceProfileUpdate(BaseModel):
         default=None, max_length=MAX_REFERENCE_AUDIO_PATH_LENGTH
     )
     metadata: dict[str, Any] | None = None
+    mood_settings: VoiceMoodSettings | None = None
 
     @field_validator("name")
     @classmethod

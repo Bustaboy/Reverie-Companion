@@ -2619,3 +2619,74 @@ h1 {
 .clone-status .error {
   color: #ffb3a7;
 }
+
+.voice-mood-section {
+  margin-top: 1.35rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 214, 179, 0.14);
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(255, 238, 224, 0.055), rgba(40, 27, 24, 0.46));
+}
+
+.voice-mood-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.voice-mood-empty {
+  margin: 0;
+  color: rgba(255, 238, 224, 0.72);
+}
+
+.voice-mood-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 1rem;
+  background: rgba(20, 15, 16, 0.56);
+}
+
+.voice-mood-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.voice-mood-header strong,
+.voice-mood-header span {
+  display: block;
+}
+
+.voice-mood-header strong {
+  color: #fff3e8;
+}
+
+.voice-mood-header span,
+.voice-mood-header small {
+  color: rgba(255, 238, 224, 0.62);
+  font-size: 0.78rem;
+}
+
+.mood-range {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.audio-player-copy.error small {
+  color: #ffb3a7;
+}
+
+.tts-error-action {
+  justify-self: start;
+  margin-top: 0.35rem;
+  border: 1px solid rgba(255, 179, 167, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 179, 167, 0.09);
+  color: #ffd4cc;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.32rem 0.62rem;
+}

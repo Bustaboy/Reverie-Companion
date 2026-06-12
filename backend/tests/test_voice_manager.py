@@ -1,7 +1,7 @@
 """Tests for durable voice profile management."""
 
 from app.core.config import Settings
-from app.models.voice import VoiceProfile, VoiceProfileUpdate
+from app.models.voice import VoiceMoodSettings, VoiceProfile, VoiceProfileUpdate
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 
@@ -94,3 +94,35 @@ def test_create_zero_shot_voice_profile_stores_reference_and_assignment(
     assert profile.metadata["clone_backend"] == "orpheus_zero_shot"
     assert profile.reference_audio_path is not None
     assert manager.get_voice_for_character("tara") == profile
+
+
+def test_voice_profile_persists_mood_settings(tmp_path) -> None:
+    manager = make_manager(tmp_path)
+    profile = VoiceProfile(
+        voice_id="tara_mood",
+        name="Tara Mood",
+        type="character",
+        mood_settings=VoiceMoodSettings(
+            baseline_expressiveness=1.3,
+            emotional_sensitivity=1.6,
+            nsfw_intensity=0.8,
+        ),
+    )
+
+    manager.create_voice_profile(profile)
+    updated = manager.update_voice_profile(
+        "tara_mood",
+        VoiceProfileUpdate(
+            mood_settings=VoiceMoodSettings(
+                baseline_expressiveness=0.8,
+                emotional_sensitivity=1.2,
+                nsfw_intensity=1.7,
+            )
+        ),
+    )
+
+    assert updated.mood_settings.nsfw_intensity == 1.7
+    assert (
+        make_manager(tmp_path).require_voice_profile("tara_mood").mood_settings
+        == updated.mood_settings
+    )

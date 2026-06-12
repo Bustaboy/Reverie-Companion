@@ -43,10 +43,13 @@
     <span></span>
   </div>
 
-  <div class="audio-player-copy">
+  <div class:error={Boolean(ttsStore.error)} class="audio-player-copy">
     <p>{statusLabel}</p>
     <small aria-live="polite">{ttsStore.error ?? ttsStore.announcement}</small>
     <div class="tts-progress" aria-hidden="true" style={progressStyle}></div>
+    {#if ttsStore.error}
+      <button type="button" class="tts-error-action" onclick={() => ttsStore.clearError()}>Dismiss</button>
+    {/if}
   </div>
 
   <div class="audio-controls">
