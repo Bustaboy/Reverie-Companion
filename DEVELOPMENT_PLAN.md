@@ -129,31 +129,19 @@ Repo: https://github.com/Bustaboy/Reverie-Companion
 
 **Milestone 2 completion summary (June 11, 2026):** Reverie can now remember durable conversation evidence, reflect privately after meaningful turns, surface journal entries for review, whisper rare growth notices, and collect training candidates only under explicit user control. The implementation remains MVP-lightweight: no hidden cloud calls, no chat-blocking growth work, and no adapter training without approved examples.
 
-## Milestone 3: Immersion & Production Foundations (Current)
-**Goals**:
-- Make characters feel even more alive: Visual Novel mode with dynamic expressions + emotional voice.
-- Deepen growth loop visibility (Journal, Notifications, user controls).
-- Add local image generation (tied to chat/memory).
-- Production polish: Modern UI, SillyTavern card import, basic extensibility, 8GB performance validation.
-- Maintain clean custom architecture + Futa-Vision future hooks.
+## Milestone 3: Immersion & Production Foundations — Complete
+**Completion date**: June 12, 2026
 
-**Prioritized Sequence**:
-1. **Visual Novel Foundation + Dynamic Expressions** (Highest "alive" impact)
-2. **Emotional Voice / TTS Integration**
-3. **Growth Visibility & User Controls** (Journal enhancements, Notifications, manual approval)
-4. **Image Generation Integration** (ComfyUI + Flux GGUF patterns)
-5. **Character Import & UI Polish** (SillyTavern cards, guided creator refinements)
-6. **Performance, Extensibility & Alpha Readiness** (8GB gates, basic plugin system, testing)
+**Goals achieved**:
+- ✅ Visual Novel foundation with dynamic expressions, full immersive mode, and future Futa-Vision scene hooks.
+- ✅ Emotional TTS integration with local provider abstraction, voice profiles, context routing, mood/prosody shaping, streaming playback, and per-character polish.
+- ✅ Growth visibility and user controls through Growth Dashboard, Diary Journal, Memory Browser, Personal LoRA review, and Character Encyclopedia.
+- ✅ Local image generation integration with context-aware prompts, ComfyUI/Flux-oriented low-VRAM jobs, chat/VN display hooks, gallery history, and controls.
+- ✅ Performance, reliability, and 8GB validation foundations through shared resource coordination, VRAM pressure states, TTS-vs-image priority, pause/preempt behavior, and user-facing guardrails.
+- ✅ Extensibility foundations through typed `extension.v1` manifests, declarative settings, isolated runtime errors, and extension developer documentation.
+- ✅ Unified Settings & Control Hub with What’s New, media/growth/memory/performance controls, extension settings, backup/import/reset, onboarding, and final release documentation.
 
-**First Task (Ready)**: Visual Novel Mode foundation (see separate prompt below or in chat).
-
-**Research Integration**: All tasks reference `RESEARCH_Milestone3.md` for tech choices (Unsloth, Coqui/StyleTTS, custom sprites, Flux GGUF + ComfyUI lowvram).
-
-**Quality Gates for M3**:
-- Smooth chat + VN toggle + occasional image/voice on 8GB RTX 4070 mobile.
-- Character visibly "grows" (Journal + notifications + expression changes).
-- Clean modular code aligned with custom backend vision.
-- Easy path to Futa-Vision video triggering from scenes.
+**Milestone 3 completion summary (June 12, 2026):** Reverie now has a coherent local immersion stack: characters can appear in Visual Novel mode, speak through emotional TTS, generate local scene images, expose their growth through inspectable surfaces, protect 8GB hardware through resource guardrails, and support future extensions through stable contracts. This closes the first alpha-foundation production polish milestone.
 
 ## Future Milestones (High-Level)
 - M4: Full self-learning loop polish + data contribution backend.

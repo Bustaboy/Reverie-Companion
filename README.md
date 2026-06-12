@@ -13,8 +13,8 @@ A modern, high-quality companion that prioritizes:
 - **True long-term memory** with local LanceDB persistence, Ollama embeddings, and bounded prompt context.
 - **Genuine self-learning & growth** through reflection, first-person journaling, growth notices, and explicit Personal LoRA review controls.
 - **User trust and control**: local-first storage, inspectable journal artifacts, opt-in training collection, approved-only training jobs, and deletion-aware pipelines.
-- **Modern, warm, beginner-friendly UI** across Chat, Journal, Settings, and Training panels.
-- **Strict optimization for RTX 4070 8GB mobile** with background reflection, conservative context budgets, and low-rank adapter defaults.
+- **Modern, warm, beginner-friendly UI** across Chat, Visual Novel, TTS, Images, Growth, Journal, Memory, Training, Encyclopedia, and Settings panels.
+- **Strict optimization for RTX 4070 8GB mobile** with resource coordination, queued media jobs, conservative context budgets, and low-rank adapter defaults.
 - Future integration with local media/video generation tools behind clean APIs.
 
 ## Current Capabilities
@@ -23,9 +23,10 @@ A modern, high-quality companion that prioritizes:
 - Memory foundation using local embeddings plus embedded LanceDB, with optional mem0 write-through.
 - Growth orchestrator that prepares memory context, reflection journal context, rare growth notifications, and Personal LoRA collection hooks without blocking active chat.
 - Self-reflection journal API and frontend Journal panel for private, inspectable growth entries.
-- Settings UI for memory, reflection cadence/sensitivity, growth notification visibility, and context budget presets.
+- Unified Settings & Control Hub for memory, reflection, TTS, image generation, performance presets, extensions, backup/import/reset, and Milestone 3 release notes.
 - Training UI for Personal LoRA review: collection opt-in, training opt-in, pending candidate approval/rejection/deletion, and safe starter training jobs.
-- Tauri + Svelte desktop shell with warm dark styling and local backend integration.
+- Visual Novel mode, emotional TTS playback, local image generation gallery, Growth Dashboard, Memory Browser, and Character Encyclopedia foundations.
+- Tauri + Svelte desktop shell with warm dark styling, local backend integration, and first-run Milestone 3 onboarding.
 
 ## Documentation
 
@@ -39,7 +40,7 @@ A modern, high-quality companion that prioritizes:
 
 - ✅ Milestone 1 foundation complete: repository structure, backend shell, frontend shell, core documentation.
 - ✅ Milestone 2 Memory & Self-Learning complete: memory context, reflection journal, growth orchestration, Journal/Settings/Training UI, growth notifications, and Personal LoRA foundation.
-- 🚧 Moving toward Milestone 3: MVP completion, character controls, trust features, broader testing, and 8GB validation.
+- ✅ Milestone 3 Immersion & Production Foundations complete: Visual Novel foundation, emotional TTS, local image generation, growth visibility, extensibility, 8GB resource guardrails, Settings Hub, onboarding, and release documentation.
 
 ## Philosophy
 

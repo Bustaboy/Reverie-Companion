@@ -21,6 +21,7 @@
 
   type SettingsSectionId =
     | 'general'
+    | 'whats-new'
     | 'appearance'
     | 'voice'
     | 'images'
@@ -49,6 +50,13 @@
       eyebrow: 'Start here',
       description: 'Local autosave, defaults, and day-to-day companion behavior.',
       search: 'general autosave local defaults companion behavior privacy'
+    },
+    {
+      id: 'whats-new',
+      label: 'What’s New',
+      eyebrow: 'Milestone 3',
+      description: 'A concise tour of the completed immersion, growth, media, and release polish stack.',
+      search: 'what new milestone 3 visual novel tts images growth settings release polish onboarding'
     },
     {
       id: 'appearance',
@@ -105,6 +113,34 @@
       eyebrow: 'Portability',
       description: 'Export characters, growth data, settings, or a full local backup.',
       search: 'backup export import characters growth settings restore reset defaults'
+    }
+  ];
+
+  const milestoneHighlights: Array<{ title: string; detail: string; impact: string }> = [
+    {
+      title: 'Visual Novel foundation',
+      detail: 'Dynamic expressions and a full-immersive scene mode now react to chat emotion, memory, reflection, and growth cues without keeping heavy visual runtimes resident.',
+      impact: '8GB impact: lightweight sprites and lazy assets; no Live2D/GPU model tax.'
+    },
+    {
+      title: 'Emotional TTS',
+      detail: 'Assistant replies can route through local voice profiles with mood-aware prosody, streaming playback, voice cloning foundations, and per-character tuning.',
+      impact: '8GB impact: Piper/fast modes stay responsive; richer voices yield to chat and image jobs.'
+    },
+    {
+      title: 'In-chat image generation',
+      detail: 'Scene prompts can draw from conversation, character state, and VN context, then land in a persistent local gallery with retry and reuse controls.',
+      impact: '8GB impact: one queued ComfyUI job at a time, preview-first defaults, automatic downgrades.'
+    },
+    {
+      title: 'Growth visibility',
+      detail: 'Growth Dashboard, Diary Journal, Memory Browser, Personal LoRA review, and Character Encyclopedia make self-learning inspectable and reversible.',
+      impact: 'Trust impact: approval gates before training; private/deleted content stays excluded.'
+    },
+    {
+      title: 'Settings & extensibility hub',
+      detail: 'A searchable Control Hub now centralizes memory, media, performance, backup, and extension settings with typed manifest isolation.',
+      impact: 'Release impact: safer defaults, clear copy, and portable local JSON backups.'
     }
   ];
 
@@ -168,7 +204,7 @@
     { value: 'speed', label: 'Speed', description: 'Favor quick fallback voices and interruption-friendly playback.' }
   ];
 
-  let activeSection = $state<SettingsSectionId>('general');
+  let activeSection = $state<SettingsSectionId>('whats-new');
   let searchQuery = $state('');
   let cloneName = $state('');
   let cloneFile = $state<File | null>(null);
@@ -533,6 +569,29 @@
           <h2>No settings matched “{searchQuery}”.</h2>
           <p>Try a broader word like “voice”, “memory”, “8GB”, “backup”, or clear search to return to the full Control Hub.</p>
           <button type="button" class="hub-secondary-action" onclick={() => (searchQuery = '')}>Clear search</button>
+        </section>
+      {/if}
+
+      {#if shouldShow('whats-new') && (!normalizedSearch || activeSection === 'whats-new')}
+        <section class="settings-section settings-wide" aria-labelledby="whats-new-settings-title">
+          <div class="settings-section-heading">
+            <span class="setting-kicker">Milestone 3</span>
+            <h2 id="whats-new-settings-title">What’s new in Milestone 3</h2>
+            <p>Milestone 3 closes the first complete immersion and production-readiness arc: characters can be seen, heard, remembered, reviewed, extended, backed up, and protected by clear 8GB resource guardrails.</p>
+          </div>
+          <div class="milestone-card-grid">
+            {#each milestoneHighlights as item}
+              <article class="settings-card milestone-card">
+                <strong>{item.title}</strong>
+                <p>{item.detail}</p>
+                <span>{item.impact}</span>
+              </article>
+            {/each}
+          </div>
+          <aside class="settings-inline-tip" aria-label="Milestone 3 tip">
+            <span aria-hidden="true">✦</span>
+            <p><strong>Suggested first tour:</strong> open Visual Novel mode, enable TTS if you want spoken replies, generate one scene image from chat, then review Growth and Memory to see what Reverie learned.</p>
+          </aside>
         </section>
       {/if}
 
