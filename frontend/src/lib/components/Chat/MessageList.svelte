@@ -58,7 +58,7 @@
   });
 </script>
 
-<section bind:this={listElement} class="message-list" aria-label="Conversation messages" onscroll={updateStickyScrollPreference}>
+<section bind:this={listElement} class="message-list" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions text" onscroll={updateStickyScrollPreference}>
   <div class="message-list-inner">
     {#each messages as message (message.id)}
       <MessageBubble {message} />

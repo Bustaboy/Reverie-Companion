@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { memoryStore } from '$lib/stores/memoryStore';
   import type { MemoryRecord } from '$lib/types/memory';
 
@@ -21,6 +21,7 @@
   let pruneDate = $state('');
   let selectedIds = $state<string[]>([]);
   let deleteWarning = $state<string | null>(null);
+  let modalElement = $state<HTMLElement>();
 
   onMount(() => {
     memoryStore.loadMemories();
@@ -59,6 +60,10 @@
   const closeModal = () => {
     detailMemory = null;
     deleteWarning = null;
+  };
+
+  const handleModalKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') closeModal();
   };
 
   const saveMemory = async () => {
@@ -130,6 +135,15 @@
     }).format(date);
   };
 
+
+  $effect(() => {
+    if (!detailMemory) return;
+
+    // Move keyboard focus into the editor whenever it opens so screen reader
+    // and keyboard users do not remain stranded behind the modal backdrop.
+    void tick().then(() => modalElement?.focus());
+  });
+
   const provenanceRows = (memory: MemoryRecord) => [
     ['Created', formatDate(memory.created_at, 'long')],
     ['Updated', formatDate(memory.updated_at, 'long')],
@@ -140,6 +154,8 @@
     ['Rollback', String(memory.metadata?.rollback_id ?? 'Not linked')]
   ];
 </script>
+
+<svelte:window onkeydown={handleModalKeydown} />
 
 <section class="memory-browser" aria-label="Memory Browser">
   <header class="memory-hero">
@@ -273,11 +289,12 @@
 
 {#if detailMemory}
   <div class="modal-backdrop" role="presentation" onclick={closeModal}></div>
-  <div class="memory-modal" role="dialog" aria-modal="true" aria-label="Memory detail editor">
+  <div bind:this={modalElement} class="memory-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="memory-editor-title" aria-describedby="memory-editor-description">
     <header>
       <div>
         <p class="eyebrow">Learned from {sourceFor(detailMemory)}</p>
-        <h2>Review and edit memory</h2>
+        <h2 id="memory-editor-title">Review and edit memory</h2>
+        <p id="memory-editor-description" class="sr-only">Edit the memory text, tags, importance, and provenance review state. Press Escape to close.</p>
       </div>
       <button class="ghost-button" type="button" onclick={closeModal}>Close</button>
     </header>
@@ -298,7 +315,7 @@
         <h3>Signals</h3>
         <div class="signal-stack">
           <span>Importance {percent(draftImportance)}</span>
-          <input type="range" min="0" max="1" step="0.01" bind:value={draftImportance} />
+          <input type="range" min="0" max="1" step="0.01" bind:value={draftImportance} aria-label="Memory importance score" />
           <span>Confidence {percent(scoreFor(detailMemory, 'confidence'))}</span>
         </div>
       </aside>

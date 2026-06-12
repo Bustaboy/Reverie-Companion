@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { imageGenerationStore, type ImageGalleryItem } from '$lib/stores/imageGenerationStore.svelte';
 
   interface Props {
@@ -9,6 +9,7 @@
   let { compact = false }: Props = $props();
   let selected: ImageGalleryItem | null = $state(null);
   let unavailableImages = $state<string[]>([]);
+  let lightboxElement = $state<HTMLElement>();
 
   onMount(() => {
     void imageGenerationStore.loadGallery();
@@ -34,6 +35,14 @@
   const handleLightboxKeydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') closeLightbox();
   };
+
+  $effect(() => {
+    if (!selected) return;
+
+    // Keep lightbox focus inside the surfaced preview for predictable keyboard
+    // dismissal and immediate screen reader context.
+    void tick().then(() => lightboxElement?.focus());
+  });
 </script>
 
 <section class:compact class="image-gallery-panel" aria-label="Image history gallery">
@@ -101,7 +110,7 @@
 {#if selected}
   <div class="image-lightbox" role="presentation">
     <button type="button" class="lightbox-backdrop" aria-label="Close image preview" onclick={closeLightbox}></button>
-    <div class="lightbox-dialog" role="dialog" aria-modal="true" tabindex="-1" aria-label="Generated image preview" onkeydown={handleLightboxKeydown}>
+    <div bind:this={lightboxElement} class="lightbox-dialog" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="lightbox-title" aria-describedby="lightbox-description" onkeydown={handleLightboxKeydown}>
       <button type="button" class="lightbox-close" onclick={closeLightbox} aria-label="Close image preview">×</button>
       {#if imageUnavailable(selected)}
         <div class="lightbox-missing" role="status">
@@ -112,8 +121,8 @@
         <img src={selected.imageUrls[0]} alt={selected.prompt_summary} loading="lazy" decoding="async" onerror={() => markImageUnavailable(selected!)} />
       {/if}
       <div>
-        <strong>{selected.prompt_summary}</strong>
-        <p>{selected.prompt}</p>
+        <strong id="lightbox-title">{selected.prompt_summary}</strong>
+        <p id="lightbox-description">{selected.prompt}</p>
         <div class="gallery-actions">
           <button type="button" onclick={() => imageGenerationStore.regenerate(selected!)}>Regenerate</button>
           <button type="button" onclick={() => imageGenerationStore.vary(selected!)}>Create variation</button>

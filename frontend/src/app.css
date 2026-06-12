@@ -8,6 +8,7 @@
   --panel: rgba(27, 23, 35, 0.84);
   --panel-strong: rgba(39, 31, 48, 0.9);
   --panel-soft: rgba(255, 255, 255, 0.045);
+  --panel-glass: linear-gradient(180deg, rgba(255, 255, 255, 0.064), rgba(255, 255, 255, 0.028)), var(--panel);
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.14);
   --text: #f7eff7;
@@ -19,7 +20,18 @@
   --assistant: rgba(255, 255, 255, 0.068);
   --user: linear-gradient(135deg, #7d4057, #bc6b6f);
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  --shadow-soft: 0 18px 46px rgba(0, 0, 0, 0.24);
+  --focus-ring: 0 0 0 3px rgba(255, 176, 166, 0.16), 0 0 0 1px rgba(255, 176, 166, 0.48);
+  --radius-panel: 1.8rem;
+  --radius-card: 1.25rem;
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/*
+  Reverie UI polish tokens: these shared variables and selectors keep the
+  premium warm-dark language consistent across chat, growth, memory, VN,
+  image, TTS, and settings surfaces without adding expensive GPU effects.
+*/
 
 * {
   box-sizing: border-box;
@@ -42,12 +54,49 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input,
+select {
   font: inherit;
 }
 
 button {
   border: 0;
+}
+
+button,
+input,
+textarea,
+select,
+summary {
+  transition:
+    border-color 160ms var(--ease-premium),
+    background 160ms var(--ease-premium),
+    box-shadow 160ms var(--ease-premium),
+    color 160ms var(--ease-premium),
+    opacity 160ms var(--ease-premium),
+    transform 160ms var(--ease-premium);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled {
+  transform: none !important;
+}
+
+::selection {
+  color: #1f151c;
+  background: rgba(255, 176, 166, 0.82);
 }
 
 .sr-only {
@@ -73,7 +122,7 @@ button {
 .sidebar,
 .chat-window {
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--panel-glass);
   box-shadow: var(--shadow);
   backdrop-filter: blur(24px);
 }
@@ -138,6 +187,14 @@ button {
   color: var(--muted);
   border-radius: 1rem;
   background: transparent;
+  cursor: pointer;
+}
+
+.nav-list button:not(:disabled):hover,
+.nav-list button:focus-visible {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+  transform: translateX(2px);
 }
 
 .nav-list button.active {
@@ -194,7 +251,7 @@ button {
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   overflow: hidden;
-  border-radius: 1.8rem;
+  border-radius: var(--radius-panel);
 }
 
 .chat-header {
@@ -331,7 +388,16 @@ h1 {
   color: #f8f1f8;
   line-height: 1.6;
   overflow-wrap: anywhere;
+  transition:
+    transform 180ms var(--ease-premium),
+    border-color 180ms var(--ease-premium),
+    background 180ms var(--ease-premium);
 }
+
+.message-row:hover .bubble {
+  transform: translateY(-1px);
+}
+
 
 .from-assistant.is-streaming .bubble {
   border-color: rgba(240, 154, 159, 0.24);
@@ -573,6 +639,86 @@ h1 {
   cursor: pointer;
 }
 
+
+/* Shared responsive polish for cards, controls, and empty/error states used across feature areas. */
+.empty-card,
+.gallery-empty,
+.gallery-error,
+.memory-error,
+.training-notice,
+.journal-notice,
+.image-status-banner,
+.chat-error-banner,
+.growth-notification {
+  animation: reverie-soft-enter 220ms var(--ease-premium) both;
+}
+
+.journal-entry-card,
+.training-card,
+.candidate-card,
+.gallery-card,
+.memory-card,
+.settings-card,
+.insight-card,
+.image-job-card,
+.voice-mood-card {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.012), var(--shadow-soft);
+}
+
+.gallery-card:hover,
+.memory-card:hover,
+.training-card:hover,
+.candidate-card:hover,
+.settings-card:hover,
+.image-job-card:hover,
+.voice-mood-card:hover {
+  border-color: rgba(255, 176, 166, 0.2);
+  transform: translateY(-1px);
+}
+
+.primary-button,
+.soft-button,
+.danger-button,
+.image-job-action,
+.gallery-actions button,
+.gallery-error button,
+.round-control,
+.record-button,
+.create-voice-button,
+.tts-error-action {
+  min-height: 2.25rem;
+}
+
+.primary-button:hover:not(:disabled),
+.soft-button:hover:not(:disabled),
+.danger-button:hover:not(:disabled),
+.image-job-action:hover:not(:disabled),
+.gallery-actions button:hover:not(:disabled),
+.gallery-error button:hover:not(:disabled),
+.round-control:hover:not(:disabled),
+.record-button:hover:not(:disabled),
+.create-voice-button:hover:not(:disabled),
+.tts-error-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8d7e91;
+}
+
+@keyframes reverie-soft-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes reverie-cursor-pulse {
   0%,
   100% {
@@ -636,13 +782,40 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+
+  .empty-card,
+  .gallery-empty,
+  .gallery-error,
+  .memory-error,
+  .training-notice,
+  .journal-notice,
+  .image-status-banner,
+  .chat-error-banner,
+  .growth-notification,
   .status-pill.streaming span,
   .stream-cursor,
   .thinking-orb,
   .thinking-dots i {
     animation: none;
   }
+
+  .message-row:hover .bubble,
+  .gallery-card:hover,
+  .memory-card:hover,
+  .training-card:hover,
+  .candidate-card:hover,
+  .settings-card:hover,
+  .image-job-card:hover,
+  .voice-mood-card:hover {
+    transform: none;
+  }
 }
+
 
 .markdown-content :global(*) {
   margin-top: 0;
@@ -724,8 +897,13 @@ h1 {
   background: linear-gradient(135deg, var(--accent-strong), var(--accent));
   font-weight: 900;
   cursor: pointer;
-  transition: transform 140ms ease, opacity 140ms ease;
+  transition: transform 140ms var(--ease-premium), opacity 140ms var(--ease-premium), box-shadow 140ms var(--ease-premium);
 }
+
+.message-composer button:not(:disabled):focus-visible {
+  box-shadow: var(--focus-ring), 0 14px 30px rgba(240, 154, 159, 0.14);
+}
+
 
 .message-composer button:disabled {
   cursor: default;

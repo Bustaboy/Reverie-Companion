@@ -37,7 +37,7 @@
   {#if !(activeSection === 'visual-novel' && $visualNovelStore.fullImmersive)}
     <Sidebar activeSection={activeSection} onNavigate={navigate} />
   {/if}
-  <main class="main-panel">
+  <main class="main-panel" aria-label="Reverie workspace" tabindex="-1">
     {#if activeSection === 'growth'}
       <GrowthDashboard />
     {:else if activeSection === 'journal'}

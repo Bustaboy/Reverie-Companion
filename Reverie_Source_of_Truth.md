@@ -290,7 +290,20 @@ Milestone 3 Task 4E completes the first Growth-system arc with a Character Encyc
 
 Task 4E completes the merged Task 4 Growth suite by making self-learning legible from four angles: Growth shows emotional trajectory, Journal shows reflective reasoning, Memory exposes durable recall controls, Training governs LoRA consent, and Encyclopedia turns the accumulated evidence into a beautiful living character profile.
 
-### 3.15 Futa-Vision Integration Vision (Future)
+### 3.15 UI/UX Consistency & Polish (Milestone 3 Task 5A)
+
+Milestone 3 Task 5A completes a senior UI/UX consistency pass across the current desktop application without changing feature contracts or adding heavy runtime work:
+
+- **Shared visual tokens**: the Svelte app now treats the warm premium dark aesthetic as a common system through glass-panel backgrounds, consistent rose focus rings, softer shared shadows, reusable easing, and unified placeholder/selection/focus treatment across Chat, VN, Growth, Journal, Memory, Encyclopedia, Settings, Image Gallery, and TTS controls.
+- **Interaction polish**: navigation, cards, primary/secondary/destructive buttons, chat bubbles, empty states, error banners, gallery cards, job cards, TTS controls, and growth notices share subtle hover/focus movement and entry feedback. Motion is restricted to inexpensive transform/opacity/border/background changes so local inference, TTS, image generation, and future training remain prioritized on 8GB hardware.
+- **Reduced-motion behavior**: decorative entry animation, card lift, chat-bubble hover movement, typing/thinking pulses, streaming cursors, voice waves, VN transitions, and image progress transitions respect `prefers-reduced-motion`, leaving state information visible without constant motion.
+- **Accessibility polish**: chat message updates are announced politely, the main workspace has an explicit landmark label, memory editor and image lightbox dialogs move focus into the surfaced panel, both support Escape dismissal, and dialog labels/descriptions now provide clear screen-reader context. Memory importance controls also expose a direct range label.
+- **State language**: loading, empty, paused, missing-file, local-resource, and error surfaces use calm user-centered copy and shared visual treatment. They explain what is happening and preserve trust rather than exposing raw technical failure as the default experience.
+- **8GB behavior**: no new model calls, polling loops, residents, canvas effects, particles, heavy blur expansion, or expensive layout work were added. The pass is CSS/Svelte-shell polish plus bounded focus-management logic and remains compatible with the existing Task 1–4 VN, TTS, image, Growth, Journal, Memory, Training, and Encyclopedia foundations.
+
+**Task 5A is complete.** Reverie's current MVP UI now has a more cohesive premium dark system, more consistent micro-interactions, clearer accessibility affordances, and better cross-feature polish while preserving local-first performance and existing behavior.
+
+### 3.16 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
