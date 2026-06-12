@@ -1,5 +1,7 @@
 """FastAPI application entrypoint for the Reverie backend."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import logging
 import platform
 import sys
@@ -17,6 +19,7 @@ from app.api.routes.journal import router as journal_router
 from app.api.routes.tts import router as tts_router
 from app.core.config import Settings, get_settings
 from app.core.ollama_client import OllamaClient, OllamaClientError
+from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,21 @@ async def validation_exception_handler(
     )
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Run lightweight local startup tasks before serving requests."""
+
+    settings = get_settings()
+    try:
+        VoiceManager(settings).ensure_default_narrator_voice()
+    except VoiceManagerError as exc:
+        logger.warning(
+            "Default narrator voice setup failed",
+            extra={"code": exc.code, "details": exc.details},
+        )
+    yield
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -80,6 +98,7 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         debug=settings.debug,
         description="Local-first backend foundation for Reverie companion experiences.",
+        lifespan=lifespan,
     )
 
     app.add_exception_handler(RequestValidationError, validation_exception_handler)

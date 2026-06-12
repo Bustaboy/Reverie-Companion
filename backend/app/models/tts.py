@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 MAX_TTS_TEXT_LENGTH = 2_000
 MAX_TTS_VOICE_ID_LENGTH = 80
+MAX_TTS_CHARACTER_ID_LENGTH = 120
 AudioFormat = Literal["wav", "pcm", "mp3"]
 TTSBackendName = Literal["orpheus", "piper"]
 
@@ -23,7 +24,16 @@ class TTSGenerateRequest(BaseModel):
         default=None,
         min_length=1,
         max_length=MAX_TTS_VOICE_ID_LENGTH,
-        description="Simple voice identifier. Character voice profiles arrive later.",
+        description="Voice profile identifier. Defaults to the narrator voice.",
+    )
+    character_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_TTS_CHARACTER_ID_LENGTH,
+        description=(
+            "Optional character whose assigned voice should be used when "
+            "voice_id is omitted."
+        ),
     )
     stream: bool = Field(
         default=False,
@@ -42,13 +52,13 @@ class TTSGenerateRequest(BaseModel):
             raise ValueError("TTS text cannot be empty.")
         return value.strip()
 
-    @field_validator("voice_id")
+    @field_validator("voice_id", "character_id")
     @classmethod
-    def voice_id_must_not_be_blank(cls, value: str | None) -> str | None:
-        """Reject blank voice IDs while still allowing settings fallback."""
+    def optional_ids_must_not_be_blank(cls, value: str | None) -> str | None:
+        """Reject blank IDs while still allowing settings fallback."""
 
         if value is not None and not value.strip():
-            raise ValueError("voice_id cannot be empty.")
+            raise ValueError("IDs cannot be empty.")
         return value.strip() if value is not None else value
 
 

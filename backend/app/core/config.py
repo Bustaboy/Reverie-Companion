@@ -113,6 +113,18 @@ class Settings(BaseSettings):
     personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
     personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
 
+    # Voice profiles are a lightweight JSON-backed routing layer over local TTS.
+    # They persist narrator/character identity and future zero-shot cloning
+    # metadata without loading any voice cloning models on startup. Character
+    # requests without an assignment reuse the narrator by default so TTS can
+    # gracefully degrade until users create per-character voices.
+    voice_profiles_path: str = "./data/voice_profiles.json"
+    voice_default_narrator_voice_id: str = "reverie_default_narrator"
+    voice_default_narrator_name: str = "Reverie Narrator"
+    voice_default_character_behavior: str = Field(
+        default="narrator", pattern="^(narrator|none)$"
+    )
+
     # TTS defaults are local-first and 8GB-aware. Orpheus TTS 3B is the
     # primary high-quality emotional backend and is loaded lazily with 4-bit
     # quantization by default; Piper stays available as a fast CPU fallback.
@@ -128,7 +140,7 @@ class Settings(BaseSettings):
     tts_device: str = Field(default="auto", pattern="^(auto|cuda|cpu)$")
     tts_quantization: str = Field(default="4bit", pattern="^(4bit|8bit|none)$")
     tts_min_free_vram_mb: int = Field(default=3600, ge=0, le=8192)
-    tts_default_voice_id: str = "reverie_default"
+    tts_default_voice_id: str = "reverie_default_narrator"
     tts_sample_rate: int = Field(default=24000, gt=0)
     tts_max_text_chars: int = Field(default=2000, gt=0, le=8000)
     tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)

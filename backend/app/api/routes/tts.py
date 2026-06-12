@@ -11,13 +11,23 @@ from fastapi.responses import StreamingResponse
 from app.core.config import Settings, get_settings
 from app.models.tts import TTSGenerateRequest, TTSGenerateResponse
 from app.services.tts_service import TTSBackendUnavailable, TTSService, TTSServiceError
+from app.services.voice_manager import VoiceManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 
+def get_voice_manager(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> VoiceManager:
+    """Provide persisted voice profiles without loading TTS models."""
+
+    return VoiceManager(settings=settings)
+
+
 def get_tts_service(
     settings: Annotated[Settings, Depends(get_settings)],
+    voice_manager: Annotated[VoiceManager, Depends(get_voice_manager)],
 ) -> TTSService:
     """Provide a TTS service with lazy local model loading."""
 
@@ -33,7 +43,7 @@ def get_tts_service(
                 }
             },
         )
-    return TTSService(settings=settings)
+    return TTSService(settings=settings, voice_manager=voice_manager)
 
 
 @router.post("/generate", response_model=None)
@@ -55,6 +65,7 @@ async def generate_tts(
         extra={
             "request_id": request_id,
             "voice_id": voice_id,
+            "character_id": request.character_id,
             "stream": request.stream,
             "text_chars": len(request.text),
         },
@@ -64,6 +75,7 @@ async def generate_tts(
         result = await tts_service.generate_speech(
             text=request.text,
             voice_id=voice_id,
+            character_id=request.character_id,
             audio_format=request.audio_format,
             request_id=request_id,
         )

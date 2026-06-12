@@ -23,6 +23,7 @@ from time import perf_counter
 from typing import Protocol
 
 from app.core.config import Settings
+from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -400,8 +401,11 @@ class PiperBackend:
 class TTSService:
     """Business workflow for local text-to-speech generation."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, *, voice_manager: VoiceManager | None = None
+    ) -> None:
         self._settings = settings
+        self._voice_manager = voice_manager
         self._orpheus = OrpheusBackend(settings)
         self._piper = PiperBackend(settings)
 
@@ -416,13 +420,16 @@ class TTSService:
         *,
         text: str,
         voice_id: str | None = None,
+        character_id: str | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> TTSGenerationResult:
         """Generate speech from text with Orpheus primary and Piper fallback."""
 
         normalized_text = text.strip()
-        resolved_voice_id = voice_id or self._settings.tts_default_voice_id
+        resolved_voice_id = self._resolve_voice_id(
+            voice_id=voice_id, character_id=character_id
+        )
         if len(normalized_text) > self._settings.tts_max_text_chars:
             raise TTSServiceError(
                 "TTS text exceeds the configured maximum length.",
@@ -499,6 +506,7 @@ class TTSService:
         *,
         text: str,
         voice_id: str | None = None,
+        character_id: str | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> AsyncIterator[bytes]:
@@ -512,6 +520,7 @@ class TTSService:
         result = await self.generate_speech(
             text=text,
             voice_id=voice_id,
+            character_id=character_id,
             audio_format=audio_format,
             request_id=request_id,
         )
@@ -519,6 +528,26 @@ class TTSService:
         with io.BytesIO(result.audio_bytes) as audio:
             while chunk := audio.read(chunk_size):
                 yield chunk
+
+    def _resolve_voice_id(
+        self, *, voice_id: str | None, character_id: str | None
+    ) -> str:
+        """Resolve request voice routing through VoiceManager when available."""
+
+        if self._voice_manager is None:
+            return voice_id or self._settings.tts_default_voice_id
+        try:
+            profile = self._voice_manager.resolve_voice_profile(
+                voice_id=voice_id, character_id=character_id
+            )
+        except VoiceManagerError as exc:
+            raise TTSServiceError(
+                exc.message,
+                code=exc.code,
+                retryable=False,
+                details=exc.details,
+            ) from exc
+        return profile.voice_id
 
     def _backend_order(self) -> list[tuple[TTSBackend, bool]]:
         primary = self._settings.tts_primary_backend

@@ -5,12 +5,14 @@ import asyncio
 import pytest
 
 from app.core.config import Settings
+from app.models.voice import VoiceProfile
 from app.services.tts_service import (
     TTSBackendUnavailable,
     TTSGenerationResult,
     TTSService,
     TTSServiceError,
 )
+from app.services.voice_manager import VoiceManager
 
 
 class FakeBackend:
@@ -115,5 +117,48 @@ def test_generate_speech_reports_all_backends_unavailable() -> None:
 
         assert exc_info.value.code == "tts_backend_unavailable"
         assert len(exc_info.value.details["attempts"]) == 2
+
+    asyncio.run(run_test())
+
+
+def test_generate_speech_resolves_character_voice_profile(tmp_path) -> None:
+    async def run_test() -> None:
+        settings = Settings(
+            tts_orpheus_timeout_seconds=1.0,
+            tts_piper_timeout_seconds=1.0,
+            voice_profiles_path=str(tmp_path / "voices.json"),
+        )
+        voice_manager = VoiceManager(settings)
+        voice_manager.ensure_default_narrator_voice()
+        voice_manager.create_voice_profile(
+            VoiceProfile(
+                voice_id="aurora_voice",
+                name="Aurora",
+                type="character",
+                reference_audio_path="voices/aurora.wav",
+                metadata={"style": "warm"},
+            )
+        )
+        voice_manager.assign_voice_to_character("aurora", "aurora_voice")
+        service = TTSService(settings, voice_manager=voice_manager)
+        orpheus_result = TTSGenerationResult(
+            audio_bytes=b"profile wav",
+            backend="orpheus",
+            voice_id="aurora_voice",
+            audio_format="wav",
+            sample_rate=24_000,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", result=orpheus_result
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", error=AssertionError("fallback not expected")
+        )
+
+        result = await service.generate_speech(
+            text="Hello", character_id="aurora", request_id="req_profile"
+        )
+
+        assert result.voice_id == "aurora_voice"
 
     asyncio.run(run_test())
