@@ -6,6 +6,7 @@ interface JournalState {
   entries: JournalEntry[];
   selectedEntryId: string | null;
   loadState: 'idle' | 'loading' | 'refreshing' | 'loaded' | 'error';
+  actionState: 'idle' | 'reflecting';
   error: string | null;
   lastLoadedAt: Date | null;
 }
@@ -14,6 +15,7 @@ const INITIAL_STATE: JournalState = {
   entries: [],
   selectedEntryId: null,
   loadState: 'idle',
+  actionState: 'idle',
   error: null,
   lastLoadedAt: null
 };
@@ -75,6 +77,32 @@ function createJournalStore() {
     },
     selectEntry(entryId: string) {
       store.update((state) => ({ ...state, selectedEntryId: entryId }));
+    },
+    async triggerReflection(messages: { role: 'user' | 'assistant'; content: string }[]) {
+      if (messages.length === 0) {
+        store.update((state) => ({
+          ...state,
+          error: 'Start a conversation first, then Reverie can write a reflection from it.'
+        }));
+        return;
+      }
+
+      store.update((state) => ({ ...state, actionState: 'reflecting', error: null }));
+      try {
+        const entry = await journalService.triggerReflection(messages);
+        store.update((state) => ({
+          ...state,
+          entries: [entry, ...state.entries.filter((existing) => existing.entry_id !== entry.entry_id)],
+          selectedEntryId: entry.entry_id,
+          loadState: 'loaded',
+          error: null,
+          lastLoadedAt: new Date()
+        }));
+      } catch (error) {
+        store.update((state) => ({ ...state, error: friendlyError(error) }));
+      } finally {
+        store.update((state) => ({ ...state, actionState: 'idle' }));
+      }
     },
     clearError() {
       store.update((state) => ({ ...state, error: null, loadState: state.entries.length ? 'loaded' : 'idle' }));

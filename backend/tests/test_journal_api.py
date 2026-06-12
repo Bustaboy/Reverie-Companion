@@ -35,6 +35,18 @@ class FakeJournalManager:
             }
         ][:limit]
 
+    def trigger_reflection(self, history: list[dict[str, str]]) -> dict[str, object]:
+        return {
+            "entry_id": "journal_manual",
+            "created_at": "2026-06-11T12:05:00+00:00",
+            "status": "active",
+            "character_summary": f"I paused over {len(history)} messages and wrote what mattered.",
+            "themes": ["trust"],
+            "confidence": 0.74,
+            "insights": [],
+            "metadata": {"memory_promotion": {"should_promote": False}},
+        }
+
 
 class JournalApiTests(unittest.TestCase):
     def tearDown(self) -> None:
@@ -51,6 +63,25 @@ class JournalApiTests(unittest.TestCase):
         self.assertEqual(body["count"], 1)
         self.assertEqual(body["entries"][0]["entry_id"], "journal_test")
         self.assertEqual(body["entries"][0]["themes"], ["trust", "growth"])
+
+    def test_manual_journal_reflection_returns_created_entry(self) -> None:
+        app.dependency_overrides[get_journal_manager] = lambda: FakeJournalManager()
+        client = TestClient(app)
+
+        response = client.post(
+            "/journal/reflect",
+            json={
+                "messages": [
+                    {"role": "user", "content": "Please remember that reassurance helps."},
+                    {"role": "assistant", "content": "I will keep that close."},
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["entry"]["entry_id"], "journal_manual")
+        self.assertIn("2 messages", body["entry"]["character_summary"])
 
 
 if __name__ == "__main__":

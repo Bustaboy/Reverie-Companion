@@ -1,5 +1,5 @@
 import { dev } from '$app/environment';
-import type { JournalEntriesResponse, JournalEntry } from '$lib/types/journal';
+import type { JournalEntriesResponse, JournalEntry, JournalReflectionRequest, JournalReflectionResponse } from '$lib/types/journal';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -67,6 +67,40 @@ export class JournalService {
         : [];
       if (dev) console.debug('[Reverie API] Journal entries', { count: entries.length });
       return entries;
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
+  }
+
+  async triggerReflection(messages: JournalReflectionRequest['messages']): Promise<JournalEntry> {
+    const url = `${this.baseUrl}/journal/reflect`;
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+
+    if (dev) console.debug('[Reverie API] POST', url);
+
+    try {
+      const response = await this.fetcher(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ messages }),
+        signal: controller.signal
+      });
+      const body = await this.parseJsonResponse<JournalReflectionResponse | BackendErrorBody>(response);
+
+      if (!response.ok) {
+        throw this.toServiceError(response, body as BackendErrorBody);
+      }
+
+      const entry = (body as JournalReflectionResponse).entry;
+      if (!entry) throw new JournalServiceError('The journal did not return the new reflection.');
+      if (dev) console.debug('[Reverie API] Manual reflection', { entryId: entry.entry_id });
+      return entry;
     } catch (error) {
       throw this.toUserFriendlyError(error);
     } finally {
