@@ -150,15 +150,27 @@ Task 1A–1C now complete the approved Visual Novel foundation bridge between ch
 
 Milestone 3 Task 2A establishes Reverie's local-first TTS backend foundation:
 
-- **TTSService** owns speech generation workflow behind a typed service boundary. It accepts plain `text`, a simple `voice_id`, requested audio format, and optional streaming mode without introducing multi-character voice profiles, emotion routing, or context-aware voice selection yet.
+- **TTSService** owns speech generation workflow behind a typed service boundary. It accepts plain `text`, an optional durable `voice_id`, optional `character_id` assignment resolution, requested audio format, and optional streaming mode without introducing emotion routing or context-aware prosody yet.
 - **Orpheus TTS 3B** is the primary quality backend for emotionally richer voice. It is lazily imported and loaded only on the first TTS request, supports `auto`/`cuda`/`cpu` device selection, defaults to 4-bit quantization for RTX 4070 8GB mobile safety, checks free CUDA VRAM before loading, unloads after CUDA OOM paths, and reports stable error codes when dependencies, model paths, or VRAM are unavailable.
 - **Piper TTS** is the fast CPU-friendly fallback. When Orpheus is unavailable, too slow, missing dependencies, missing model files, or over the configured VRAM budget, Reverie attempts Piper through the local binary and configured voice model path.
-- **Configuration** now exposes TTS model IDs/paths, Piper binary/voice paths, backend choice, timeouts, device selection, quantization level, free-VRAM guardrails, default voice ID, sample rate, text length limit, and streaming chunk size under the existing `REVERIE_` environment prefix.
+- **Configuration** now exposes TTS model IDs/paths, Piper binary/voice paths, backend choice, timeouts, device selection, quantization level, free-VRAM guardrails, default voice ID, sample rate, text length limit, streaming chunk size, voice-profile store path, default narrator voice ID, and default character voice fallback behavior under the existing `REVERIE_` environment prefix.
 - **API surface** adds `POST /api/tts/generate`, returning base64 WAV audio for simple non-streaming clients or bounded audio-byte streaming for early voice playback. The route stays thin, logs request metadata without raw private text, and returns structured errors for UI handling.
 
-This foundation intentionally avoids Task 2B–2D scope: no durable voice-profile system, no emotion tags, no memory/reflection-driven prosody, and no character/context routing. Future work can layer those features on top of the same service and router contracts while preserving the 8GB-first lazy-loading and fallback behavior.
+This foundation now avoids only Task 2C–2D scope: no emotion tags, no memory/reflection-driven prosody, and no context-sensitive voice routing. Future work can layer those features on top of the same service and router contracts while preserving the 8GB-first lazy-loading and fallback behavior.
 
-### 3.5 Futa-Vision Integration Vision (Future)
+### 3.5 Voice Profile System (Milestone 3 Task 2B)
+
+Milestone 3 Task 2B adds a durable, local-first voice profile layer on top of the Task 2A TTS foundation:
+
+- **VoiceProfile schema** stores `voice_id`, display `name`, `type` (`character` or `narrator`), optional `reference_audio_path`, and open-ended `metadata`. The reference path and metadata fields are explicitly future-proofing for zero-shot voice cloning, backend voice aliases, gender/style notes, and other cloning inputs without implementing cloning in this milestone.
+- **VoiceManager** owns voice-profile CRUD, JSON persistence, default narrator creation, character-to-voice assignment, assignment clearing, and TTS voice resolution. It writes a compact local JSON store with schema version, profiles, and character assignments, keeping the system inspectable and easy to migrate later.
+- **Default narrator startup behavior** ensures Reverie creates a configured narrator voice profile when no narrator exists, so first-run TTS has a stable local fallback. The profile maps to the existing backend default voice through metadata rather than forcing every backend to understand profile records.
+- **TTS integration** resolves requested `voice_id`s through VoiceManager, can resolve assigned `character_id` voices, and passes the concrete backend voice key (`metadata.backend_voice_id` when present, otherwise `voice_id`) to Orpheus/Piper while returning the durable profile ID to clients. Unknown explicit profile IDs fail with a stable `voice_profile_not_found` error instead of silently using the wrong character voice.
+- **8GB behavior** remains unchanged from Task 2A: profiles are lightweight JSON records, no voice model is loaded at startup, no cloning model is invoked, and Orpheus/Piper lazy loading and fallback continue to guard GPU/CPU pressure.
+
+Short design summary: voice profiles are a durable identity layer, VoiceManager is the local persistence and assignment boundary, and TTSService remains the synthesis workflow that resolves a profile into the backend-specific voice key just before generation. This keeps current TTS simple while leaving clean extension points for future cloning and emotion/prosody routing.
+
+### 3.6 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

@@ -129,6 +129,16 @@ class Settings(BaseSettings):
     tts_quantization: str = Field(default="4bit", pattern="^(4bit|8bit|none)$")
     tts_min_free_vram_mb: int = Field(default=3600, ge=0, le=8192)
     tts_default_voice_id: str = "reverie_default"
+    voice_profile_store_path: str = "./data/voices/voice_profiles.json"
+    voice_default_narrator_voice_id: str = "reverie_default"
+    voice_default_character_voice_behavior: str = Field(
+        default="narrator",
+        pattern="^(narrator|none)$",
+        description=(
+            "Fallback for characters without an assigned voice. 'narrator' uses "
+            "the default narrator profile; 'none' requires explicit assignment."
+        ),
+    )
     tts_sample_rate: int = Field(default=24000, gt=0)
     tts_max_text_chars: int = Field(default=2000, gt=0, le=8000)
     tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)
