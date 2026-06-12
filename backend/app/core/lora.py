@@ -29,6 +29,7 @@ LoRAExampleStatus = Literal["pending_review", "approved", "rejected", "deleted"]
 LoRATrainingStatus = Literal[
     "idle", "queued", "running", "cancelled", "completed", "failed"
 ]
+LoRAApplyStatus = Literal["not_ready", "pending_apply", "applied", "rejected"]
 
 
 class PersonalLoRAError(Exception):
@@ -49,6 +50,13 @@ class PersonalLoRASettings(TypedDict, total=False):
     target_vram_gb: int
     pause_during_chat: bool
     require_review_before_training: bool
+    require_approval_before_applying: bool
+    auto_training_enabled: bool
+    training_frequency_hours: int
+    min_training_examples: int
+    min_new_examples_for_auto_training: int
+    min_memory_links_for_auto_training: int
+    max_auto_jobs_per_day: int
     active_adapter_id: str | None
     rollback_adapter_id: str | None
     updated_at: str
@@ -91,6 +99,11 @@ class LoRATrainingJob(TypedDict, total=False):
     progress: float
     message: str
     error: str | None
+    trigger_reason: str | None
+    trigger_summary: str | None
+    trigger_example_ids: list[str]
+    learning_summary: list[str]
+    apply_status: LoRAApplyStatus
 
 
 @dataclass(frozen=True)
@@ -117,6 +130,7 @@ class PersonalLoRATrainerConfig:
     max_example_chars: int = 1_600
     max_examples_per_job: int = 128
     dry_run_step_delay_seconds: float = 0.02
+    min_auto_training_examples: int = 3
 
     @classmethod
     def from_settings(
@@ -198,6 +212,13 @@ class PersonalLoRATrainer:
             "max_sequence_length",
             "pause_during_chat",
             "require_review_before_training",
+            "require_approval_before_applying",
+            "auto_training_enabled",
+            "training_frequency_hours",
+            "min_training_examples",
+            "min_new_examples_for_auto_training",
+            "min_memory_links_for_auto_training",
+            "max_auto_jobs_per_day",
             "active_adapter_id",
             "rollback_adapter_id",
         }
@@ -306,26 +327,30 @@ class PersonalLoRATrainer:
                 return example
         return None
 
-    def start_training(self) -> LoRATrainingJob:
+    def start_training(
+        self,
+        *,
+        trigger_reason: str = "manual",
+        trigger_summary: str | None = None,
+    ) -> LoRATrainingJob:
         """Start a single low-priority personal LoRA job if controls allow it."""
 
         settings = self.get_settings()
         if not settings.get("training_opt_in", False):
             raise PersonalLoRAError("Personal LoRA training requires explicit opt-in.")
-        examples = [
-            example
-            for example in self._read_examples()
-            if example.get("status") == "approved"
-            and example.get("approved_by_user") is True
-        ][-self._config.max_examples_per_job :]
-        if not examples:
-            raise PersonalLoRAError("No approved personal LoRA examples are available.")
+        examples = self._approved_training_examples(settings)
+        if len(examples) < int(settings.get("min_training_examples", 1)):
+            raise PersonalLoRAError(
+                "Not enough approved personal LoRA examples are available."
+            )
 
         with self._lock:
             current = self.get_current_job()
             if current and current.get("status") in {"queued", "running"}:
                 return current
             self._stop_event.clear()
+            selected_examples = examples[-self._config.max_examples_per_job :]
+            learning_summary = self._learning_summary_for_examples(selected_examples)
             job = LoRATrainingJob(
                 job_id=f"lora_job_{uuid4().hex[:12]}",
                 status="queued",
@@ -333,7 +358,7 @@ class PersonalLoRATrainer:
                 started_at=None,
                 completed_at=None,
                 stopped_at=None,
-                example_count=len(examples),
+                example_count=len(selected_examples),
                 rank=int(settings.get("rank", self._config.default_rank)),
                 settings={
                     "rank": settings.get("rank"),
@@ -346,21 +371,127 @@ class PersonalLoRATrainer:
                     "max_sequence_length": settings.get("max_sequence_length"),
                     "target_vram_gb": settings.get("target_vram_gb"),
                     "pause_during_chat": settings.get("pause_during_chat"),
-                    "backend": "foundation_dry_run",
+                    "backend": "unsloth_qlora_foundation_dry_run",
+                    "training_frequency_hours": settings.get("training_frequency_hours"),
+                    "require_approval_before_applying": settings.get(
+                        "require_approval_before_applying"
+                    ),
                 },
                 progress=0.0,
-                message="Queued personal LoRA training in safe foundation mode.",
+                message="Queued lightweight Unsloth QLoRA training in safe foundation mode.",
                 error=None,
+                trigger_reason=trigger_reason,
+                trigger_summary=trigger_summary
+                or self._trigger_summary_for_examples(selected_examples),
+                trigger_example_ids=[
+                    str(example.get("item_id")) for example in selected_examples
+                ],
+                learning_summary=learning_summary,
+                apply_status="not_ready",
             )
             self._append_job(job)
             self._worker = threading.Thread(
                 target=self._run_training_job,
-                args=(job, examples),
+                args=(job, selected_examples),
                 name="personal-lora-trainer",
                 daemon=True,
             )
             self._worker.start()
             return job
+
+    def evaluate_auto_training(
+        self, *, trigger_reason: str = "auto_growth_threshold"
+    ) -> LoRATrainingJob | None:
+        """Start automated training when opt-in settings and data thresholds allow it."""
+
+        settings = self.get_settings()
+        if not (
+            settings.get("collection_opt_in", False)
+            and settings.get("training_opt_in", False)
+            and settings.get("auto_training_enabled", False)
+        ):
+            return None
+        current = self.get_current_job()
+        if current and current.get("status") in {"queued", "running"}:
+            return current
+        examples = self._approved_training_examples(settings)
+        if len(examples) < int(settings.get("min_training_examples", 1)):
+            return None
+        last_completed = self._latest_completed_job()
+        if last_completed is not None:
+            if not self._frequency_elapsed(last_completed, settings):
+                return None
+            new_examples = self._examples_after_completed_job(examples, last_completed)
+        else:
+            new_examples = examples
+        if len(new_examples) < int(
+            settings.get("min_new_examples_for_auto_training", 1)
+        ):
+            return None
+        memory_links = {
+            memory_id
+            for example in new_examples
+            for memory_id in example.get("source_memory_ids", [])
+        }
+        if len(memory_links) < int(
+            settings.get("min_memory_links_for_auto_training", 0)
+        ):
+            return None
+        if self._auto_jobs_started_today() >= int(
+            settings.get("max_auto_jobs_per_day", 1)
+        ):
+            return None
+        return self.start_training(
+            trigger_reason=trigger_reason,
+            trigger_summary=self._trigger_summary_for_examples(new_examples),
+        )
+
+    def get_training_status(self) -> dict[str, Any]:
+        """Return dashboard-friendly automated training and approval state."""
+
+        settings = self.get_settings()
+        jobs = self._read_jobs()
+        current = jobs[-1] if jobs else None
+        completed = next(
+            (job for job in reversed(jobs) if job.get("status") == "completed"), None
+        )
+        examples = self._read_examples()
+        approved_examples = self._approved_training_examples(settings)
+        pending_adapter = self._pending_adapter_job(jobs)
+        return {
+            "status": current.get("status") if current else "idle",
+            "message": (current or {}).get("message") or "LoRA training is idle.",
+            "last_trained_at": (completed or {}).get("completed_at"),
+            "next_scheduled_at": self._next_scheduled_at(
+                completed, settings, approved_examples
+            ),
+            "triggered_by": (current or completed or {}).get("trigger_summary"),
+            "trigger_reason": (current or completed or {}).get("trigger_reason"),
+            "learning_feedback": (current or completed or {}).get(
+                "learning_summary", []
+            ),
+            "auto_training_enabled": settings.get("auto_training_enabled", False),
+            "require_approval_before_applying": settings.get(
+                "require_approval_before_applying", True
+            ),
+            "min_training_examples": settings.get("min_training_examples"),
+            "training_frequency_hours": settings.get("training_frequency_hours"),
+            "approved_example_count": len(approved_examples),
+            "pending_review_count": sum(
+                1 for example in examples if example.get("status") == "pending_review"
+            ),
+            "pending_adapter_update": pending_adapter,
+        }
+
+    def approve_adapter_update(self, adapter_id: str) -> LoRATrainingJob:
+        """Apply a completed adapter manifest after user approval."""
+
+        return self._set_adapter_apply_status(adapter_id, "applied")
+
+    def reject_adapter_update(self, adapter_id: str) -> LoRATrainingJob:
+        """Reject a completed adapter manifest without deleting rollback history."""
+
+        return self._set_adapter_apply_status(adapter_id, "rejected")
 
     def stop_training(self) -> LoRATrainingJob | None:
         """Request cancellation of the active background training job."""
@@ -410,10 +541,17 @@ class PersonalLoRATrainer:
                 "example_count": len(examples),
                 "source_example_ids": [example.get("item_id") for example in examples],
                 "safety": {
-                    "requires_user_enable": True,
+                    "requires_user_enable": bool(
+                        job.get("settings", {}).get(
+                            "require_approval_before_applying", True
+                        )
+                    ),
                     "rollback_supported": True,
                     "identity_regression_required_before_default_enable": True,
+                    "qlora_profile": "Unsloth 4-bit QLoRA, rank <= 16, batch size 1",
                 },
+                "trigger_summary": job.get("trigger_summary"),
+                "learning_summary": job.get("learning_summary", []),
                 "settings": job.get("settings", {}),
             }
             adapter_dir = self.adapters_path / adapter_id
@@ -423,9 +561,17 @@ class PersonalLoRATrainer:
             job["adapter_id"] = adapter_id
             job["completed_at"] = self._utc_now()
             job["progress"] = 1.0
-            job["message"] = (
-                "Personal LoRA foundation job completed; adapter manifest is ready for review."
-            )
+            if job.get("settings", {}).get("require_approval_before_applying", True):
+                job["apply_status"] = "pending_apply"
+                job["message"] = (
+                    "Personal LoRA job completed; the adapter is waiting for approval before applying."
+                )
+            else:
+                job["apply_status"] = "applied"
+                self.update_settings({"active_adapter_id": adapter_id})
+                job["message"] = (
+                    "Personal LoRA job completed and the new local adapter was applied automatically."
+                )
             self._append_job(cast(LoRATrainingJob, job))
         except Exception as exc:  # pragma: no cover - defensive background safety.
             job["status"] = "failed"
@@ -518,6 +664,203 @@ class PersonalLoRATrainer:
             self._rewrite_jsonl(self.examples_path, rewritten)
             return updated
 
+
+    def _approved_training_examples(
+        self, settings: PersonalLoRASettings | None = None
+    ) -> list[LoRATrainingExample]:
+        settings = settings or self.get_settings()
+        require_review = bool(settings.get("require_review_before_training", True))
+        examples = []
+        for example in self._read_examples():
+            if example.get("status") != "approved":
+                continue
+            if require_review and example.get("approved_by_user") is not True:
+                continue
+            examples.append(example)
+        return examples[-self._config.max_examples_per_job :]
+
+    def _latest_completed_job(self) -> LoRATrainingJob | None:
+        return next(
+            (
+                job
+                for job in reversed(self._read_jobs())
+                if job.get("status") == "completed"
+            ),
+            None,
+        )
+
+    def _examples_after_completed_job(
+        self, examples: list[LoRATrainingExample], job: LoRATrainingJob
+    ) -> list[LoRATrainingExample]:
+        completed_at = self._parse_time(job.get("completed_at"))
+        if completed_at is None:
+            return examples
+        return [
+            example
+            for example in examples
+            if (self._parse_time(example.get("created_at")) or completed_at) > completed_at
+        ]
+
+    def _frequency_elapsed(
+        self, job: LoRATrainingJob, settings: PersonalLoRASettings
+    ) -> bool:
+        completed_at = self._parse_time(job.get("completed_at"))
+        if completed_at is None:
+            return True
+        elapsed_hours = (datetime.now(UTC) - completed_at).total_seconds() / 3600
+        return elapsed_hours >= int(settings.get("training_frequency_hours", 24))
+
+    def _auto_jobs_started_today(self) -> int:
+        today = datetime.now(UTC).date()
+        count = 0
+        for job in self._read_jobs():
+            if job.get("trigger_reason") != "auto_growth_threshold":
+                continue
+            started_at = self._parse_time(job.get("started_at"))
+            if started_at and started_at.date() == today:
+                count += 1
+        return count
+
+    def _next_scheduled_at(
+        self,
+        completed: LoRATrainingJob | None,
+        settings: PersonalLoRASettings,
+        approved_examples: list[LoRATrainingExample],
+    ) -> str | None:
+        if not settings.get("auto_training_enabled", False):
+            return None
+        if not settings.get("training_opt_in", False):
+            return None
+        if len(approved_examples) < int(settings.get("min_training_examples", 1)):
+            return None
+        if completed is None:
+            return self._utc_now()
+        completed_at = self._parse_time(completed.get("completed_at"))
+        if completed_at is None:
+            return self._utc_now()
+        frequency_seconds = int(settings.get("training_frequency_hours", 24)) * 3600
+        return datetime.fromtimestamp(
+            completed_at.timestamp() + frequency_seconds, UTC
+        ).isoformat(timespec="seconds")
+
+    def _pending_adapter_job(
+        self, jobs: list[LoRATrainingJob]
+    ) -> LoRATrainingJob | None:
+        return next(
+            (
+                job
+                for job in reversed(jobs)
+                if job.get("status") == "completed"
+                and job.get("adapter_id")
+                and job.get("apply_status") == "pending_apply"
+            ),
+            None,
+        )
+
+    def _set_adapter_apply_status(
+        self, adapter_id: str, apply_status: LoRAApplyStatus
+    ) -> LoRATrainingJob:
+        if apply_status not in {"applied", "rejected"}:
+            raise PersonalLoRAError("Adapter update status is not supported.")
+        with self._lock:
+            jobs = self._read_jobs()
+            target = next(
+                (
+                    dict(job)
+                    for job in reversed(jobs)
+                    if job.get("adapter_id") == adapter_id
+                    and job.get("status") == "completed"
+                ),
+                None,
+            )
+            if target is None:
+                raise PersonalLoRAError(f"Adapter update {adapter_id} was not found.")
+            target["apply_status"] = apply_status
+            target["message"] = (
+                "Personal LoRA adapter was approved and applied."
+                if apply_status == "applied"
+                else "Personal LoRA adapter was rejected and kept out of use."
+            )
+            if apply_status == "applied":
+                self.update_settings({"active_adapter_id": adapter_id})
+            elif self.get_settings().get("active_adapter_id") == adapter_id:
+                self.update_settings({"active_adapter_id": None})
+            self._append_job(cast(LoRATrainingJob, target))
+            return cast(LoRATrainingJob, target)
+
+    def _trigger_summary_for_examples(
+        self, examples: list[LoRATrainingExample]
+    ) -> str:
+        if not examples:
+            return "No new growth data is ready."
+        journal_count = len({example.get("source_journal_id") for example in examples})
+        memory_count = len(
+            {
+                memory_id
+                for example in examples
+                for memory_id in example.get("source_memory_ids", [])
+            }
+        )
+        themes = []
+        for example in examples:
+            for theme in example.get("themes", []):
+                if theme not in themes:
+                    themes.append(str(theme))
+        theme_text = ", ".join(themes[:3]) or "continuity"
+        return (
+            f"{len(examples)} approved examples from {journal_count} reflections "
+            f"and {memory_count} linked memories; strongest signals: {theme_text}."
+        )
+
+    def _learning_summary_for_examples(
+        self, examples: list[LoRATrainingExample]
+    ) -> list[str]:
+        feedback: list[str] = []
+        theme_labels = {
+            "trust": "Stronger emotional memory recall around trust",
+            "reassurance": "Improved reassurance tone toward the user",
+            "affection": "Warmer affectionate continuity",
+            "boundaries": "Better boundary and comfort pacing",
+            "playfulness": "More consistent playful voice",
+            "routine": "Better recall of shared routines",
+            "curiosity": "More attentive curiosity about user preferences",
+        }
+        seen_themes: set[str] = set()
+        for example in examples:
+            for theme in example.get("themes", []):
+                theme = str(theme)
+                if theme in seen_themes:
+                    continue
+                seen_themes.add(theme)
+                if theme in theme_labels:
+                    feedback.append(theme_labels[theme])
+        for example in examples:
+            purpose = str(example.get("purpose") or "")
+            if purpose == "trust_and_reassurance_style":
+                feedback.append("Improved tone toward user during reassurance moments")
+            elif purpose == "comfort_and_boundary_continuity":
+                feedback.append("Stronger comfort and boundary recall")
+            elif purpose == "playful_voice_continuity":
+                feedback.append("More stable playful banter style")
+            if len(feedback) >= 4:
+                break
+        deduped: list[str] = []
+        for item in feedback or ["More consistent character continuity from approved reflections"]:
+            if item not in deduped:
+                deduped.append(item)
+        return deduped[:4]
+
+    def _parse_time(self, value: object) -> datetime | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
     def _normalize_settings(self, raw: dict[str, Any]) -> PersonalLoRASettings:
         settings = dict(self._default_settings())
         settings.update(raw)
@@ -541,6 +884,36 @@ class PersonalLoRATrainer:
         settings["require_review_before_training"] = bool(
             settings.get("require_review_before_training", True)
         )
+        settings["require_approval_before_applying"] = bool(
+            settings.get("require_approval_before_applying", True)
+        )
+        settings["auto_training_enabled"] = bool(
+            settings.get("auto_training_enabled", False)
+        )
+        settings["training_frequency_hours"] = max(
+            6, min(int(settings.get("training_frequency_hours", 24)), 168)
+        )
+        settings["min_training_examples"] = max(
+            1,
+            min(
+                int(
+                    settings.get(
+                        "min_training_examples",
+                        self._config.min_auto_training_examples,
+                    )
+                ),
+                256,
+            ),
+        )
+        settings["min_new_examples_for_auto_training"] = max(
+            1, min(int(settings.get("min_new_examples_for_auto_training", 2)), 64)
+        )
+        settings["min_memory_links_for_auto_training"] = max(
+            0, min(int(settings.get("min_memory_links_for_auto_training", 1)), 64)
+        )
+        settings["max_auto_jobs_per_day"] = max(
+            1, min(int(settings.get("max_auto_jobs_per_day", 1)), 3)
+        )
         settings.setdefault("active_adapter_id", None)
         settings.setdefault("rollback_adapter_id", None)
         settings.setdefault("updated_at", self._utc_now())
@@ -559,6 +932,13 @@ class PersonalLoRATrainer:
             target_vram_gb=8,
             pause_during_chat=True,
             require_review_before_training=True,
+            require_approval_before_applying=True,
+            auto_training_enabled=False,
+            training_frequency_hours=24,
+            min_training_examples=self._config.min_auto_training_examples,
+            min_new_examples_for_auto_training=2,
+            min_memory_links_for_auto_training=1,
+            max_auto_jobs_per_day=1,
             active_adapter_id=None,
             rollback_adapter_id=None,
             updated_at=self._utc_now(),

@@ -256,8 +256,12 @@ class GrowthOrchestrator:
         if self._lora_trainer is None or not self._settings.personal_lora_enabled:
             return
         try:
+            lora_settings = self._lora_trainer.get_settings()
             example = self._lora_trainer.collect_from_journal_entry(
-                entry, approved_by_user=False
+                entry,
+                approved_by_user=not lora_settings.get(
+                    "require_review_before_training", True
+                ),
             )
         except (
             Exception
@@ -269,12 +273,30 @@ class GrowthOrchestrator:
             return
         if example is not None:
             logger.info(
-                "Growth loop collected a reviewable personal LoRA example",
+                "Growth loop collected a personal LoRA example",
                 extra={
                     "request_id": request_id,
                     "item_id": example.get("item_id"),
                     "source_journal_id": example.get("source_journal_id"),
+                    "status": example.get("status"),
                     "trigger_reason": trigger_reason,
+                },
+            )
+        try:
+            job = self._lora_trainer.evaluate_auto_training()
+        except Exception as exc:  # pragma: no cover - auto training must not affect chat.
+            logger.warning(
+                "Automated personal LoRA training check skipped",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return
+        if job is not None:
+            logger.info(
+                "Automated personal LoRA training is queued",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.get("job_id"),
+                    "trigger_reason": job.get("trigger_reason"),
                 },
             )
 

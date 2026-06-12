@@ -1,5 +1,6 @@
 export type LoRAExampleStatus = 'pending_review' | 'approved' | 'rejected' | 'deleted';
 export type LoRATrainingStatus = 'idle' | 'queued' | 'running' | 'cancelled' | 'completed' | 'failed';
+export type LoRAApplyStatus = 'not_ready' | 'pending_apply' | 'applied' | 'rejected';
 
 export interface PersonalLoRASettings {
   collection_opt_in?: boolean;
@@ -13,6 +14,13 @@ export interface PersonalLoRASettings {
   target_vram_gb?: number;
   pause_during_chat?: boolean;
   require_review_before_training?: boolean;
+  require_approval_before_applying?: boolean;
+  auto_training_enabled?: boolean;
+  training_frequency_hours?: number;
+  min_training_examples?: number;
+  min_new_examples_for_auto_training?: number;
+  min_memory_links_for_auto_training?: number;
+  max_auto_jobs_per_day?: number;
   active_adapter_id?: string | null;
   rollback_adapter_id?: string | null;
   updated_at?: string;
@@ -51,6 +59,28 @@ export interface LoRATrainingJob {
   progress?: number;
   message?: string;
   error?: string | null;
+  trigger_reason?: string | null;
+  trigger_summary?: string | null;
+  trigger_example_ids?: string[];
+  learning_summary?: string[];
+  apply_status?: LoRAApplyStatus;
+}
+
+export interface LoRATrainingStatusSummary {
+  status: LoRATrainingStatus;
+  message?: string;
+  last_trained_at?: string | null;
+  next_scheduled_at?: string | null;
+  triggered_by?: string | null;
+  trigger_reason?: string | null;
+  learning_feedback?: string[];
+  auto_training_enabled?: boolean;
+  require_approval_before_applying?: boolean;
+  min_training_examples?: number;
+  training_frequency_hours?: number;
+  approved_example_count?: number;
+  pending_review_count?: number;
+  pending_adapter_update?: LoRATrainingJob | null;
 }
 
 export interface PersonalLoRACounts {
@@ -62,6 +92,7 @@ export interface PersonalLoRACounts {
 export interface PersonalLoRAStatusResponse {
   settings: PersonalLoRASettings;
   current_job: LoRATrainingJob | null;
+  training_status: LoRATrainingStatusSummary;
   examples: LoRATrainingExample[];
   counts: PersonalLoRACounts;
 }
@@ -85,4 +116,11 @@ export type PersonalLoRASettingsUpdate = Pick<
   | 'batch_size'
   | 'pause_during_chat'
   | 'require_review_before_training'
+  | 'require_approval_before_applying'
+  | 'auto_training_enabled'
+  | 'training_frequency_hours'
+  | 'min_training_examples'
+  | 'min_new_examples_for_auto_training'
+  | 'min_memory_links_for_auto_training'
+  | 'max_auto_jobs_per_day'
 >;

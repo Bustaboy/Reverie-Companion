@@ -48,7 +48,11 @@ class PersonalLoRATrainerTests(unittest.TestCase):
             self.assertIsNone(trainer.collect_from_journal_entry(high_quality_entry()))
 
             trainer.update_settings(
-                {"collection_opt_in": True, "training_opt_in": True}
+                {
+                    "collection_opt_in": True,
+                    "training_opt_in": True,
+                    "min_training_examples": 1,
+                }
             )
             example = trainer.collect_from_journal_entry(high_quality_entry())
 
@@ -91,6 +95,43 @@ class PersonalLoRATrainerTests(unittest.TestCase):
             self.assertLessEqual(settings["max_steps"], 120)
             self.assertLessEqual(settings["learning_rate"], 0.0002)
             self.assertLessEqual(settings["max_sequence_length"], 1024)
+
+    def test_auto_training_thresholds_and_adapter_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trainer = PersonalLoRATrainer(
+                PersonalLoRATrainerConfig(
+                    root_path=Path(temp_dir), dry_run_step_delay_seconds=0
+                )
+            )
+            trainer.update_settings(
+                {
+                    "collection_opt_in": True,
+                    "training_opt_in": True,
+                    "auto_training_enabled": True,
+                    "min_training_examples": 1,
+                    "min_new_examples_for_auto_training": 1,
+                    "min_memory_links_for_auto_training": 1,
+                    "max_steps": 1,
+                }
+            )
+            example = trainer.collect_from_journal_entry(high_quality_entry())
+            assert example is not None
+            trainer.approve_example(example["item_id"])
+
+            job = trainer.evaluate_auto_training()
+            self.assertIsNotNone(job)
+            assert job is not None
+            while trainer.get_current_job()["status"] in {"queued", "running"}:  # type: ignore[index]
+                pass
+            status = trainer.get_training_status()
+            self.assertEqual(status["status"], "completed")
+            self.assertTrue(status["learning_feedback"])
+            pending = status["pending_adapter_update"]
+            self.assertIsNotNone(pending)
+            assert pending is not None
+            applied = trainer.approve_adapter_update(pending["adapter_id"])
+            self.assertEqual(applied["apply_status"], "applied")
+            self.assertEqual(trainer.get_settings()["active_adapter_id"], pending["adapter_id"])
 
 
 if __name__ == "__main__":

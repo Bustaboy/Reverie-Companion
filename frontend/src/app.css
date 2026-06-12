@@ -4079,3 +4079,66 @@ h1 {
 .journal-panel {
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
 }
+
+/* Milestone 3 Task 4D: automated LoRA training status and approval polish. */
+.growth-learning-feedback,
+.growth-approval-card,
+.training-learning-feedback,
+.adapter-approval-box {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+  padding: 0.82rem;
+  border: 1px solid rgba(255, 176, 166, 0.16);
+  border-radius: 1rem;
+  background: rgba(240, 154, 159, 0.06);
+}
+
+.growth-learning-feedback strong,
+.growth-approval-card strong,
+.training-learning-feedback strong,
+.adapter-approval-box strong {
+  color: #ffe4e3;
+}
+
+.growth-learning-feedback ul,
+.training-learning-feedback ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.growth-approval-card p,
+.adapter-approval-box p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.growth-approval-card > div,
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.growth-approval-card button,
+.inline-actions button {
+  padding: 0.5rem 0.7rem;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+}
+
+.growth-approval-card button.approve,
+.inline-actions button.approve {
+  color: #20151c;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  font-weight: 900;
+}
