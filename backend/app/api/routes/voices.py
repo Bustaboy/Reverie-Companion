@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.core.config import Settings, get_settings
-from app.models.voice import VoiceProfile
+from app.models.voice import VoiceProfile, VoiceProfileUpdate
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,30 @@ def list_voices(
 
     voice_manager.ensure_default_narrator_voice()
     return voice_manager.list_voice_profiles()
+
+
+@router.patch("/{voice_id}", response_model=VoiceProfile)
+def update_voice_profile(
+    voice_id: str,
+    update: VoiceProfileUpdate,
+    voice_manager: Annotated[VoiceManager, Depends(get_voice_manager)],
+) -> VoiceProfile:
+    """Update editable voice profile details such as per-character mood."""
+
+    try:
+        return voice_manager.update_voice_profile(voice_id, update)
+    except VoiceManagerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                    "retryable": False,
+                }
+            },
+        ) from exc
 
 
 @router.post("/clone", response_model=VoiceProfile, status_code=status.HTTP_201_CREATED)

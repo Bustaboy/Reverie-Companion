@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.models.voice import VoiceMoodSettings
+
 MAX_TTS_TEXT_LENGTH = 2_000
 MAX_TTS_VOICE_ID_LENGTH = 80
 MAX_TTS_READY_TEXT_LENGTH = 2_400
@@ -58,6 +60,15 @@ class TTSContext(BaseModel):
         ge=0.0,
         le=2.0,
         description="Emotion intensity multiplier for deterministic TTS tag injection.",
+    )
+    mood_settings: VoiceMoodSettings | None = Field(
+        default=None,
+        description="Resolved per-character mood controls from the linked voice profile.",
+    )
+    scene_tags: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="Lightweight current scene/memory/growth tags for prosody scoring.",
     )
 
     @field_validator("character_id", "emotion_hint")

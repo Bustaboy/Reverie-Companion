@@ -574,12 +574,46 @@ export class ChatService {
     const emotionHint = this.normalizeText(context.emotion_hint ?? context.emotionHint);
     const intensity = this.readUnitNumber(context, ['intensity']);
     const isNarration = this.readBoolean(context, ['is_narration', 'isNarration']);
+    const moodSettings = this.normalizeMoodSettings(context.mood_settings ?? context.moodSettings);
+    const rawSceneTags = context.scene_tags ?? context.sceneTags;
+    const sceneTags = Array.isArray(rawSceneTags)
+      ? rawSceneTags
+          .map((tag: unknown) => this.normalizeText(tag))
+          .filter((tag): tag is string => Boolean(tag))
+      : undefined;
 
-    if (!characterId && !mode && !emotionHint && intensity === undefined && isNarration === undefined) {
+    if (
+      !characterId &&
+      !mode &&
+      !emotionHint &&
+      intensity === undefined &&
+      isNarration === undefined &&
+      !moodSettings &&
+      !sceneTags?.length
+    ) {
       return undefined;
     }
 
-    return { characterId, mode, emotionHint, intensity, isNarration };
+    return { characterId, mode, emotionHint, intensity, isNarration, moodSettings, sceneTags };
+  }
+
+  private normalizeMoodSettings(mood: unknown): TTSContextMetadata['moodSettings'] | undefined {
+    if (!this.isRecord(mood)) {
+      return undefined;
+    }
+
+    const baseline = this.readRangeNumber(mood, ['baseline_expressiveness', 'baselineExpressiveness'], 0, 2);
+    const sensitivity = this.readRangeNumber(mood, ['emotional_sensitivity', 'emotionalSensitivity'], 0, 2);
+    const nsfw = this.readRangeNumber(mood, ['nsfw_intensity', 'nsfwIntensity'], 0, 2);
+    if (baseline === undefined || sensitivity === undefined || nsfw === undefined) {
+      return undefined;
+    }
+
+    return {
+      baseline_expressiveness: baseline,
+      emotional_sensitivity: sensitivity,
+      nsfw_intensity: nsfw
+    };
   }
 
   private normalizeTTSEmotion(emotion: unknown): TTSEmotionMetadata | undefined {
@@ -840,6 +874,15 @@ export class ChatService {
     }
 
     return undefined;
+  }
+
+  private readRangeNumber(value: Record<string, unknown>, keys: string[], min: number, max: number): number | undefined {
+    const number = this.readNumber(value, keys);
+    if (number === undefined) {
+      return undefined;
+    }
+
+    return Math.min(max, Math.max(min, number));
   }
 
   private readUnitNumber(value: Record<string, unknown>, keys: string[]): number | undefined {

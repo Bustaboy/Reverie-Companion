@@ -142,8 +142,11 @@ class TTSContextRouter:
         is_narration: bool,
         reason: TTSRoutingReason,
     ) -> TTSRoutingDecision:
+        resolved_context = context.model_copy(
+            update={"mood_settings": voice_profile.mood_settings}
+        )
         return TTSRoutingDecision(
-            context=context,
+            context=resolved_context,
             voice_profile=voice_profile,
             backend_voice_id=self._voice_manager.backend_voice_id_for_profile(
                 voice_profile

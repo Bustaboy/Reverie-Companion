@@ -440,7 +440,14 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
             response = await service.chat(request, request_id="req-tts-context")
 
-            self.assertEqual(response.tts_context, tts_context)
+            self.assertEqual(
+                response.tts_context.character_id, tts_context.character_id
+            )
+            self.assertEqual(response.tts_context.mode, tts_context.mode)
+            self.assertEqual(
+                response.tts_context.emotion_hint, tts_context.emotion_hint
+            )
+            self.assertIsNotNone(response.tts_context.mood_settings)
             self.assertIsNotNone(response.tts_text)
             self.assertIsNotNone(response.voice_id)
             self.assertIsNotNone(response.emotion)
@@ -469,7 +476,12 @@ class ChatServiceReflectionTests(unittest.TestCase):
             ]
 
             done_payload = json.loads(frames[-1].split("data: ", 1)[1])
-            self.assertEqual(done_payload["tts_context"], tts_context.model_dump())
+            self.assertEqual(
+                done_payload["tts_context"]["character_id"], tts_context.character_id
+            )
+            self.assertEqual(done_payload["tts_context"]["mode"], tts_context.mode)
+            self.assertTrue(done_payload["tts_context"]["is_narration"])
+            self.assertIn("mood_settings", done_payload["tts_context"])
             self.assertIn("tts_text", done_payload)
             self.assertIn("voice_id", done_payload)
             self.assertIn("emotion", done_payload)

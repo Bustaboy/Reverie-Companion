@@ -225,7 +225,7 @@ class VoiceManager:
         with self._lock:
             current = self.require_voice_profile(voice_id)
             values = update.model_dump(exclude_unset=True)
-            updated = current.model_copy(update=values)
+            updated = VoiceProfile.model_validate({**current.model_dump(), **values})
             self._voices[current.voice_id] = updated
             self._save_locked()
             return updated

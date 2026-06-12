@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
 import type { TTSEmotionMetadata, TTSMode } from '$lib/types/chat';
+import type { VoiceMoodSettings } from '$lib/api/voiceService';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TIMEOUT_MS = 90_000;
@@ -12,6 +13,8 @@ export interface TTSContextPayload {
   mode?: TTSMode;
   emotion_hint?: string;
   intensity?: number;
+  mood_settings?: VoiceMoodSettings;
+  scene_tags?: string[];
 }
 
 export interface TTSGenerateRequest {

@@ -1,4 +1,5 @@
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
+import type { VoiceMoodSettings } from '$lib/api/voiceService';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -10,6 +11,8 @@ export interface TTSContextMetadata {
   mode?: TTSMode;
   emotionHint?: string;
   intensity?: number;
+  moodSettings?: VoiceMoodSettings;
+  sceneTags?: string[];
 }
 
 export interface TTSEmotionMetadata {
