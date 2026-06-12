@@ -244,3 +244,70 @@ def test_generate_speech_routes_rpg_quoted_character_line(tmp_path) -> None:
         assert service._piper.last_kwargs["voice_id"] == "tara_backend"
 
     asyncio.run(run_test())
+
+
+def test_generate_speech_prefers_pre_tagged_tts_text_for_orpheus(tmp_path) -> None:
+    async def run_test() -> None:
+        from app.models.tts import TTSContext, TTSEmotionMetadata
+
+        service = make_service(tmp_path)
+        orpheus_result = TTSGenerationResult(
+            audio_bytes=b"orpheus tagged wav",
+            backend="orpheus",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=24_000,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", result=orpheus_result
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", error=AssertionError("fallback not expected")
+        )
+
+        await service.generate_speech(
+            text="Visible clean line.",
+            voice_id="tara",
+            context=TTSContext(
+                tts_text="<whisper> Visible clean line.",
+                emotion_metadata=TTSEmotionMetadata(
+                    primary_emotion="tender", tags=["<whisper>"]
+                ),
+            ),
+            request_id="req_pre_tagged",
+        )
+
+        assert service._orpheus.last_kwargs["text"] == "<whisper> Visible clean line."
+
+    asyncio.run(run_test())
+
+
+def test_generate_speech_strips_tags_for_piper_fallback(tmp_path) -> None:
+    async def run_test() -> None:
+        from app.models.tts import TTSContext
+
+        service = make_service(tmp_path)
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"piper clean wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", result=piper_result
+        )
+
+        await service.generate_speech(
+            text="Visible clean line.",
+            voice_id="tara",
+            context=TTSContext(tts_text="<moan> Visible clean line."),
+            request_id="req_piper_clean",
+        )
+
+        assert service._piper.last_kwargs["text"] == "Visible clean line."
+
+    asyncio.run(run_test())

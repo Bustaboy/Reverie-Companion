@@ -24,6 +24,7 @@ from typing import Protocol
 
 from app.core.config import Settings
 from app.models.tts import TTSContext
+from app.services.emotion_engine import emotion_engine, strip_orpheus_tags
 from app.services.tts_context_router import TTSContextRouter
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
@@ -432,10 +433,29 @@ class TTSService:
         """Generate speech from text using context-aware voice routing."""
 
         normalized_text = text.strip()
+        effective_context = self._merge_generation_context(
+            context=context, character_id=character_id
+        )
+        emotion_result = None
+        tagged_text = effective_context.tts_text
+        if tagged_text is None:
+            emotion_result = emotion_engine.fallback_tts_text(
+                normalized_text, context=effective_context
+            )
+            tagged_text = emotion_result.tts_text
+            effective_context = effective_context.model_copy(
+                update={
+                    "tts_text": tagged_text,
+                    "emotion_metadata": emotion_result.metadata,
+                    "intensity": emotion_result.metadata.intensity,
+                    "emotion_hint": emotion_result.metadata.primary_emotion,
+                }
+            )
+        clean_text = strip_orpheus_tags(normalized_text)
         try:
             routing = self._context_router.route(
-                text=normalized_text,
-                context=context,
+                text=clean_text,
+                context=effective_context,
                 voice_id=voice_id,
                 character_id=character_id,
             )
@@ -448,7 +468,7 @@ class TTSService:
             ) from exc
         resolved_voice_id = routing.backend_voice_id
         response_voice_id = routing.voice_profile.voice_id
-        if len(normalized_text) > self._settings.tts_max_text_chars:
+        if len(tagged_text) > self._settings.tts_max_text_chars:
             raise TTSServiceError(
                 "TTS text exceeds the configured maximum length.",
                 code="tts_text_too_long",
@@ -461,7 +481,7 @@ class TTSService:
             try:
                 result = await asyncio.wait_for(
                     backend.generate(
-                        text=normalized_text,
+                        text=self._text_for_backend(backend.name, tagged_text),
                         voice_id=resolved_voice_id,
                         audio_format=audio_format,
                         request_id=request_id,
@@ -486,6 +506,16 @@ class TTSService:
                         "tts_context_mode": routing.context.mode,
                         "tts_is_narration": routing.is_narration,
                         "tts_route_reason": routing.reason,
+                        "tts_emotion": (
+                            routing.context.emotion_metadata.primary_emotion
+                            if routing.context.emotion_metadata is not None
+                            else None
+                        ),
+                        "tts_emotion_tags": (
+                            routing.context.emotion_metadata.tags
+                            if routing.context.emotion_metadata is not None
+                            else []
+                        ),
                         "fallback_used": result.fallback_used,
                         "audio_bytes": len(result.audio_bytes),
                     },
@@ -550,6 +580,21 @@ class TTSService:
         with io.BytesIO(result.audio_bytes) as audio:
             while chunk := audio.read(chunk_size):
                 yield chunk
+
+    def _merge_generation_context(
+        self, *, context: TTSContext | None, character_id: str | None
+    ) -> TTSContext:
+        resolved = context or TTSContext(character_id=character_id)
+        if character_id is not None and resolved.character_id is None:
+            return resolved.model_copy(update={"character_id": character_id})
+        return resolved
+
+    def _text_for_backend(self, backend_name: str, tagged_text: str) -> str:
+        """Use expressive Orpheus tags only where the backend understands them."""
+
+        if backend_name == "orpheus":
+            return tagged_text
+        return strip_orpheus_tags(tagged_text)
 
     def _backend_order(self) -> list[tuple[TTSBackend, bool]]:
         primary = self._settings.tts_primary_backend

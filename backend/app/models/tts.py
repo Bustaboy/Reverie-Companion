@@ -5,19 +5,40 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_TTS_TEXT_LENGTH = 2_000
+MAX_TTS_TAGGED_TEXT_LENGTH = 2_400
 MAX_TTS_VOICE_ID_LENGTH = 80
 AudioFormat = Literal["wav", "pcm", "mp3"]
 TTSBackendName = Literal["orpheus", "piper"]
 TTSMode = Literal["one_to_one", "rpg"]
 
 
+class TTSEmotionMetadata(BaseModel):
+    """Deterministic emotion/prosody metadata passed from chat to TTS."""
+
+    primary_emotion: str = Field(
+        default="neutral",
+        max_length=40,
+        description="Dominant lightweight emotion selected for voice prosody.",
+    )
+    intensity: float = Field(default=1.0, ge=0.0, le=2.0)
+    intensity_modifier: str = Field(default="warm", max_length=40)
+    tags: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Orpheus-compatible tags injected into the TTS-only text.",
+    )
+    high_emotion: bool = False
+    intimate_scene: bool = False
+    nsfw_scene: bool = False
+    cue_count: int = Field(default=0, ge=0)
+
+
 class TTSContext(BaseModel):
     """Conversation context used to route text to an appropriate voice profile.
 
-    The model is intentionally compact for Task 2C: it identifies whether a
-    line should be treated as narrator text or character speech, the current
-    conversation mode, and lightweight future emotion/prosody hints without
-    applying emotional tag injection yet.
+    The model identifies whether a line should be treated as narrator text or
+    character speech, carries lightweight emotion/prosody hints, and can hold
+    the TTS-only text plus deterministic emotion metadata created by Task 2D.
     """
 
     character_id: str | None = Field(
@@ -38,16 +59,29 @@ class TTSContext(BaseModel):
         default=None,
         min_length=1,
         max_length=80,
-        description="Future emotion/prosody hint; not injected into prompts yet.",
+        description="Emotion/prosody hint used by deterministic TTS tagging.",
     )
     intensity: float = Field(
         default=1.0,
         ge=0.0,
         le=2.0,
-        description="Future emotion intensity multiplier; reserved for Task 2D.",
+        description="Emotion intensity multiplier used by deterministic TTS tagging.",
+    )
+    tts_text: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_TTS_TAGGED_TEXT_LENGTH,
+        description=(
+            "TTS-only text with Orpheus emotion tags injected. Frontend chat text "
+            "must use clean visible content instead."
+        ),
+    )
+    emotion_metadata: TTSEmotionMetadata | None = Field(
+        default=None,
+        description="Deterministic emotion/prosody metadata for this TTS line.",
     )
 
-    @field_validator("character_id", "emotion_hint")
+    @field_validator("character_id", "emotion_hint", "tts_text")
     @classmethod
     def optional_context_text_must_not_be_blank(cls, value: str | None) -> str | None:
         """Normalize optional context fields without accepting blank strings."""

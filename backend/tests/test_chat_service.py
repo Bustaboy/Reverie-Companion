@@ -440,7 +440,13 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
             response = await service.chat(request, request_id="req-tts-context")
 
-            self.assertEqual(response.tts_context, tts_context)
+            self.assertIsNotNone(response.tts_context)
+            self.assertEqual(response.tts_context.character_id, tts_context.character_id)
+            self.assertEqual(response.tts_context.mode, tts_context.mode)
+            self.assertIsNotNone(response.tts_text)
+            self.assertEqual(response.tts_context.tts_text, response.tts_text)
+            self.assertIsNotNone(response.resolved_voice_id)
+            self.assertIsNotNone(response.emotion_metadata)
 
         asyncio.run(run_test())
 
@@ -465,7 +471,81 @@ class ChatServiceReflectionTests(unittest.TestCase):
             ]
 
             done_payload = json.loads(frames[-1].split("data: ", 1)[1])
-            self.assertEqual(done_payload["tts_context"], tts_context.model_dump())
+            self.assertEqual(done_payload["tts_context"]["character_id"], tts_context.character_id)
+            self.assertEqual(done_payload["tts_context"]["is_narration"], tts_context.is_narration)
+            self.assertIn("tts_text", done_payload)
+            self.assertEqual(done_payload["tts_context"]["tts_text"], done_payload["tts_text"])
+            self.assertIn("resolved_voice_id", done_payload)
+            self.assertIn("emotion_metadata", done_payload)
+
+        asyncio.run(run_test())
+
+    def test_chat_strips_visible_emotion_tags_and_keeps_tts_tags(self) -> None:
+        async def run_test() -> None:
+            class TaggedOllama(FakeOllamaClient):
+                async def chat(
+                    self, request: ChatRequest, *, request_id: str | None = None
+                ) -> ChatResponse:
+                    self.requests.append(request)
+                    return ChatResponse(
+                        model="fake-model",
+                        message=ChatMessage(
+                            role="assistant",
+                            content="<whisper> I want you close. <moan> Please kiss me.",
+                        ),
+                    )
+
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=TaggedOllama(),  # type: ignore[arg-type]
+            )
+            request = ChatRequest(
+                stream=False,
+                tts_context=TTSContext(character_id="tara", intensity=1.4),
+                messages=[ChatMessage(role="user", content="Hold me close and kiss me.")],
+            )
+
+            response = await service.chat(request, request_id="req-tags")
+
+            self.assertNotIn("<whisper>", response.message.content)
+            self.assertNotIn("<moan>", response.message.content)
+            self.assertIn("kiss me", response.message.content)
+            self.assertIsNotNone(response.tts_text)
+            self.assertIn("<", response.tts_text)
+            self.assertTrue(response.emotion_metadata.intimate_scene)
+
+        asyncio.run(run_test())
+
+    def test_stream_message_chunks_strip_emotion_tags(self) -> None:
+        async def run_test() -> None:
+            class TaggedStreamOllama(FakeOllamaClient):
+                async def stream_chat(
+                    self, request: ChatRequest, *, request_id: str | None = None
+                ):
+                    self.requests.append(request)
+                    yield 'event: message\ndata: {"content": "<whis", "request_id": "req"}\n\n'
+                    yield 'event: message\ndata: {"content": "per> Come closer", "request_id": "req"}\n\n'
+                    yield 'event: done\ndata: {"done": true, "request_id": "req"}\n\n'
+
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=TaggedStreamOllama(),  # type: ignore[arg-type]
+            )
+            request = ChatRequest(
+                stream=True,
+                messages=[ChatMessage(role="user", content="Come closer.")],
+            )
+
+            frames = [
+                frame
+                async for frame in await service.stream_chat(request, request_id="req")
+            ]
+
+            self.assertNotIn("<whisper>", "".join(frames[:2]))
+            self.assertIn("Come closer", frames[1])
+            done_payload = json.loads(frames[-1].split("data: ", 1)[1])
+            self.assertEqual(done_payload["content"], "Come closer")
+            self.assertIn("tts_text", done_payload)
 
         asyncio.run(run_test())
 

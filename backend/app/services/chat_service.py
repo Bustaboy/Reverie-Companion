@@ -21,6 +21,10 @@ from app.models.chat import (
     ChatResponse,
     GrowthNotification,
 )
+from app.models.tts import TTSContext
+from app.services.emotion_engine import OrpheusTagStreamFilter, emotion_engine
+from app.services.tts_context_router import TTSContextRouter
+from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +90,8 @@ class ChatService:
                 get_personal_lora_trainer() if settings.personal_lora_enabled else None
             ),
         )
+        self._voice_manager = VoiceManager(settings)
+        self._tts_context_router = TTSContextRouter(self._voice_manager)
 
     async def chat(
         self, request: ChatRequest, *, request_id: str | None = None
@@ -101,7 +107,13 @@ class ChatService:
         response = self._attach_growth_notification(
             response, growth_context.growth_notification
         )
-        return self._attach_tts_context(response, request)
+        return self._attach_voice_payload(
+            response,
+            request,
+            assistant_response=response.message.content,
+            growth_context=growth_context,
+            request_id=request_id,
+        )
 
     def _attach_growth_notification(
         self,
@@ -114,14 +126,35 @@ class ChatService:
             return response
         return response.model_copy(update={"growth_notification": growth_notification})
 
-    def _attach_tts_context(
-        self, response: ChatResponse, request: ChatRequest
+    def _attach_voice_payload(
+        self,
+        response: ChatResponse,
+        request: ChatRequest,
+        *,
+        assistant_response: str,
+        growth_context: GrowthContext,
+        request_id: str | None,
     ) -> ChatResponse:
-        """Echo chat/VN TTS routing context for future frontend voice playback."""
+        """Attach clean visible text, TTS-only text, voice, and emotion metadata."""
 
-        if request.tts_context is None:
-            return response
-        return response.model_copy(update={"tts_context": request.tts_context})
+        voice_payload = self._build_voice_payload(
+            request=request,
+            assistant_response=assistant_response,
+            growth_context=growth_context,
+            request_id=request_id,
+        )
+        clean_message = response.message.model_copy(
+            update={"content": voice_payload["clean_text"]}
+        )
+        return response.model_copy(
+            update={
+                "message": clean_message,
+                "tts_context": voice_payload["tts_context"],
+                "tts_text": voice_payload["tts_text"],
+                "resolved_voice_id": voice_payload["resolved_voice_id"],
+                "emotion_metadata": voice_payload["emotion_metadata"],
+            }
+        )
 
     async def stream_chat(
         self,
@@ -502,26 +535,45 @@ class ChatService:
         """Pass through Ollama SSE frames, adding visual reactivity only to done."""
 
         assistant_chunks: list[str] = []
+        visible_filter = OrpheusTagStreamFilter()
         async for frame in self._ollama_client.stream_chat(
             request, request_id=request_id
         ):
             if "event: message" in frame:
-                assistant_chunks.append(self._extract_sse_content(frame))
-                yield frame
+                raw_content = self._extract_sse_content(frame)
+                assistant_chunks.append(raw_content)
+                yield self._replace_sse_content(
+                    frame, visible_filter.filter(raw_content)
+                )
                 continue
 
+            raw_assistant_response = "".join(assistant_chunks) + visible_filter.flush()
             routed_frame = self._growth_orchestrator.inject_reactivity_into_done_sse(
                 frame,
                 request=request,
-                assistant_response="".join(assistant_chunks),
+                assistant_response=raw_assistant_response,
                 growth_context=growth_context,
             )
-            yield self._inject_tts_context_into_done_sse(routed_frame, request)
+            yield self._inject_voice_payload_into_done_sse(
+                routed_frame,
+                request,
+                assistant_response=raw_assistant_response,
+                growth_context=growth_context,
+                request_id=request_id,
+            )
 
-    def _inject_tts_context_into_done_sse(self, frame: str, request: ChatRequest) -> str:
-        """Attach caller-provided TTS context to final stream metadata."""
+    def _inject_voice_payload_into_done_sse(
+        self,
+        frame: str,
+        request: ChatRequest,
+        *,
+        assistant_response: str,
+        growth_context: GrowthContext,
+        request_id: str | None,
+    ) -> str:
+        """Attach TTS-ready text, resolved voice, and emotion metadata to done."""
 
-        if request.tts_context is None or "event: done" not in frame:
+        if "event: done" not in frame:
             return frame
 
         data_lines: list[str] = []
@@ -539,7 +591,111 @@ class ChatService:
 
         if not isinstance(payload, dict):
             payload = {"done": True}
-        payload["tts_context"] = request.tts_context.model_dump()
+        voice_payload = self._build_voice_payload(
+            request=request,
+            assistant_response=assistant_response,
+            growth_context=growth_context,
+            request_id=request_id,
+        )
+        payload.update(
+            {
+                "content": voice_payload["clean_text"],
+                "tts_context": voice_payload["tts_context"].model_dump(),
+                "tts_text": voice_payload["tts_text"],
+                "resolved_voice_id": voice_payload["resolved_voice_id"],
+                "emotion_metadata": voice_payload["emotion_metadata"].model_dump(),
+            }
+        )
+        return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
+
+    def _build_voice_payload(
+        self,
+        *,
+        request: ChatRequest,
+        assistant_response: str,
+        growth_context: GrowthContext,
+        request_id: str | None,
+    ) -> dict[str, object]:
+        """Resolve context/voice once and keep visible and TTS text separated."""
+
+        base_context = request.tts_context or TTSContext()
+        emotion_result = emotion_engine.analyze(
+            text=assistant_response,
+            context=base_context,
+            recent_messages=request.messages,
+            memory_context=growth_context.memory_context,
+            reflection_entries=growth_context.reflection_entries,
+            growth_notification=growth_context.growth_notification,
+        )
+        enriched_context = base_context.model_copy(
+            update={
+                "tts_text": emotion_result.tts_text,
+                "emotion_metadata": emotion_result.metadata,
+                "intensity": emotion_result.metadata.intensity,
+                "emotion_hint": emotion_result.metadata.primary_emotion,
+            }
+        )
+        resolved_voice_id = self._resolve_voice_id(
+            text=emotion_result.clean_text,
+            context=enriched_context,
+            request_id=request_id,
+        )
+        return {
+            "clean_text": emotion_result.clean_text,
+            "tts_context": enriched_context,
+            "tts_text": emotion_result.tts_text,
+            "resolved_voice_id": resolved_voice_id,
+            "emotion_metadata": emotion_result.metadata,
+        }
+
+    def _resolve_voice_id(
+        self, *, text: str, context: TTSContext, request_id: str | None
+    ) -> str:
+        """Resolve the durable voice profile for chat/TTS metadata.
+
+        Chat metadata should remain a lightweight read path. If no persisted
+        narrator profile exists yet, report the configured default narrator ID
+        instead of creating a voice-store file during chat streaming. TTSService
+        still creates the default profile at synthesis time.
+        """
+
+        default_profile = self._voice_manager.get_default_narrator_voice()
+        default_voice_id = (
+            default_profile.voice_id
+            if default_profile is not None
+            else self._settings.voice_default_narrator_voice_id
+        )
+        if context.character_id is None:
+            return default_voice_id
+        if self._voice_manager.get_assigned_voice_id(context.character_id) is None:
+            return default_voice_id
+        try:
+            routing = self._tts_context_router.route(text=text, context=context)
+            return routing.voice_profile.voice_id
+        except VoiceManagerError as exc:
+            logger.warning(
+                "Falling back to narrator voice for chat TTS metadata",
+                extra={"request_id": request_id, "code": exc.code},
+            )
+            return default_voice_id
+
+    def _replace_sse_content(self, frame: str, clean_content: str) -> str:
+        """Replace a message frame content value after stripping voice tags."""
+
+        data_lines: list[str] = []
+        other_lines: list[str] = []
+        for line in frame.splitlines():
+            if line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").strip())
+            else:
+                other_lines.append(line)
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            return frame
+        if not isinstance(payload, dict):
+            return frame
+        payload["content"] = clean_content
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
 
     def _extract_sse_content(self, frame: str) -> str:

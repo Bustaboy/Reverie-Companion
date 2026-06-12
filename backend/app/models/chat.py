@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.tts import TTSContext
+from app.models.tts import TTSContext, TTSEmotionMetadata
 
 MessageRole = Literal["system", "user", "assistant"]
 MAX_MESSAGE_LENGTH = 8_000
@@ -104,3 +104,6 @@ class ChatResponse(BaseModel):
     done: bool = True
     growth_notification: GrowthNotification | None = None
     tts_context: TTSContext | None = None
+    tts_text: str | None = None
+    resolved_voice_id: str | None = None
+    emotion_metadata: TTSEmotionMetadata | None = None
