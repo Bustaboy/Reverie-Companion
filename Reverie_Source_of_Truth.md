@@ -264,7 +264,21 @@ Milestone 3 Task 4B turns the Journal destination into Reverie's intimate diary 
 
 Task 4B makes self-learning feel emotionally alive instead of administrative: users can read what the character believes she learned, search and pin important moments, manually ask for a reflection, and understand how those pages feed growth visibility without surrendering control.
 
-### 3.13 Futa-Vision Integration Vision (Future)
+### 3.13 Editable Memory Browser (Milestone 3 Task 4C)
+
+Milestone 3 Task 4C adds the dedicated Memory destination as the control surface for long-term recall, directly complementing the Growth Dashboard and Diary Journal:
+
+- **Navigation and purpose**: `Memory` is now a first-class sidebar destination. Growth remains the emotional overview, Journal remains the reflective evidence reader, Training remains the explicit consent/action area, and Memory is the inspect/edit/delete surface for recall artifacts that can influence continuity.
+- **Backend control contract**: the backend exposes paginated `/memory/memories` browser APIs over the existing local LanceDB-backed `MemoryManager`, with predictable keyword/metadata/date filtering, detail lookup, inline update, individual hard delete, and bulk delete/prune operations. Deleted memories are removed from the retrieval table rather than hidden only in UI.
+- **Editable memory model**: users can edit memory text, tags, importance, and review metadata. Updating text re-embeds the memory through the existing local embedding path so retrieval stays consistent with the revised content, while provenance fields such as source, journal linkage, rollback id, timestamps, confidence, themes, and character metadata remain visible.
+- **Search and scale behavior**: browser search supports keyword, character, theme, source, and date filters without firing semantic embedding calls for each UI query. Results are paginated with small page sizes so large local libraries remain responsive and 8GB-friendly.
+- **Deletion and pruning UX**: the UI includes clear destructive styling, modal warnings for individual deletion, selected-memory bulk deletion, and date-based pruning for old memories. These controls are intentionally separate from Journal pins and Training approval so deletion, visibility, and training consent do not get conflated.
+- **Warm premium presentation**: the Memory Browser uses a card-based warm dark layout, top filters/search, selected-memory preview, detailed modal editor, provenance panel, tag chips, and visible importance/confidence/relevance signals. Raw metadata is tucked into an advanced section for auditability without overwhelming normal users.
+- **Growth visibility tie-in**: the Memory page closes the transparency loop introduced by Tasks 4A and 4B. A user can see an emotional trend on Growth, trace it back to Journal evidence, then open Memory to inspect, correct, tag, reprioritize, or delete the exact long-term memories that may shape future recall.
+
+Task 4C makes Reverie's self-learning controllable instead of mysterious: durable memories are searchable, provenance-rich, editable, and removable while staying local-first and lightweight.
+
+### 3.14 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
@@ -496,5 +510,18 @@ Task 4A adds the Growth Dashboard as the central, polished relationship overview
 - **Design decision**: relationship meters are evidence-backed UI summaries derived from reflection themes/insights, not permanent canonical personality mutations. This preserves drift safety while making character evolution feel visible and personal.
 - **8GB decision**: the dashboard does not trigger model calls, embedding work, image generation, TTS, or training. It performs bounded existing API reads and local array aggregation only, matching the RTX 4070 8GB mobile responsiveness target.
 
+
+## Milestone 3 Task 4C Update — Memory Browser & Editable Controls
+
+Task 4C adds the Memory Browser as Reverie's dedicated long-term recall control center:
+
+- **Sidebar destination**: `Memory` is enabled as a first-class navigation item beside Growth, Journal, Training, Chat, Visual Novel, Images, and Settings.
+- **Editable browser UI**: the new Memory page provides keyword/character/theme/source/date filters, paginated card results, a selected-memory preview, and a detailed modal for editing text, tags, and importance.
+- **Provenance and scores**: memory details expose learned-from/source metadata, created/updated timestamps, character/type, linked journal and rollback ids, raw advanced metadata, tags, themes, confidence, importance, and retrieval relevance.
+- **Delete/prune controls**: users can delete one memory after an explicit warning, bulk delete selected cards, or prune memories older than a chosen date.
+- **Backend integration**: FastAPI memory routes now wrap the existing local `MemoryManager`/LanceDB system for list/detail/update/delete/bulk-delete operations. UI keyword filtering is low-cost and paginated; text edits re-embed through the existing local memory pipeline.
+- **Growth transparency**: Growth shows relationship trends, Journal shows reflection evidence, and Memory now lets users correct or remove the durable recall artifacts behind future continuity.
+
+Task 4C deliberately avoids LoRA training UI and encyclopedia work. It focuses on local memory inspection/control and keeps memory browsing lightweight for the 8GB target.
 
 *End of Source of Truth Document v1.0*

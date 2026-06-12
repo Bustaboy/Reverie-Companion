@@ -26,3 +26,6 @@ export { TTSService, TTSServiceError, ttsService, type TTSGenerateRequest, type 
 export { VoiceService, VoiceServiceError, voiceService, type VoiceProfile, type CreateVoiceProfileInput } from './voiceService';
 
 export { ImageService, ImageServiceError, imageService, type ImageGenerateRequest, type ImageGenerateResponse, type ImageJobEvent, type ImageJobRead, type ImageJobStatus, type ImageQualityPreset } from './imageService';
+
+export { MemoryService, MemoryServiceError, memoryService, type MemoryServiceOptions } from './memoryService';
+export type { MemoryRecord, MemoryRecordMetadata, MemoryListResponse, MemoryQuery } from '$lib/types/memory';
