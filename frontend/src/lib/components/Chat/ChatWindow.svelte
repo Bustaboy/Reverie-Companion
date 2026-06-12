@@ -3,6 +3,7 @@
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
 
   const handleSend = (content: string) => {
     void chatStore.sendMessage(content);
@@ -25,7 +26,7 @@
   };
 </script>
 
-<section class="chat-window" aria-label="Reverie chat">
+<section class:is-voice-active={ttsStore.isSpeaking} class="chat-window" aria-label="Reverie chat">
   <header class="chat-header">
     <div>
       <p class="eyebrow">Private local session</p>
@@ -33,9 +34,17 @@
       <p class="subtitle">A warm, offline companion interface built for long conversations.</p>
     </div>
 
-    <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
-      <span></span>
-      {statusLabel}
+    <div class="chat-status-stack">
+      <div class:streaming={$chatStore.generationState !== 'idle'} class="status-pill" aria-label="Companion status">
+        <span></span>
+        {statusLabel}
+      </div>
+      {#if ttsStore.isSpeaking}
+        <div class="status-pill voice-active-pill" aria-label="Voice activity">
+          <span></span>
+          Voice active
+        </div>
+      {/if}
     </div>
   </header>
 

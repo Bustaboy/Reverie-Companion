@@ -123,6 +123,25 @@
 
   const moodFor = (profile: VoiceProfile): VoiceMoodSettings => profile.mood_settings ?? defaultMoodSettings();
 
+  const moodLevel = (value: number): string => {
+    if (value < 0.75) return 'Soft';
+    if (value > 1.25) return 'Intense';
+    return 'Balanced';
+  };
+
+  const moodSummary = (profile: VoiceProfile): string => {
+    const mood = moodFor(profile);
+    return `${moodLevel(mood.baseline_expressiveness)} presence · ${moodLevel(mood.emotional_sensitivity)} emotion · ${moodLevel(mood.nsfw_intensity)} intimacy`;
+  };
+
+  const recordingHint = $derived(
+    recordingDurationSeconds
+      ? `${recordingDurationSeconds.toFixed(1)}s captured locally`
+      : cloneFile
+        ? `${cloneFile.name} selected locally`
+        : 'No reference saved yet'
+  );
+
   const loadVoiceProfiles = async () => {
     voicesLoading = true;
     voiceMoodError = null;
@@ -492,6 +511,8 @@
                   {/if}
                 </div>
 
+                <p class="voice-mood-summary">{moodSummary(profile)}</p>
+
                 <label class="range-setting mood-range">
                   <span>Baseline Expressiveness <strong>{moodFor(profile).baseline_expressiveness.toFixed(2)}×</strong></span>
                   <input
@@ -566,6 +587,14 @@
               <button type="button" class="record-button" onclick={startRecording}>Record reference</button>
             {/if}
             <span>Keep it natural, quiet, and short.</span>
+          </div>
+
+          <div class="voice-reference-meter" aria-live="polite">
+            <span aria-hidden="true"></span>
+            <div>
+              <strong>{recordingHint}</strong>
+              <small>Best results come from one expressive 6-15 second clip; no training starts here.</small>
+            </div>
           </div>
 
           {#if cloneRecordingUrl}

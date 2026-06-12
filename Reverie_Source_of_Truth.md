@@ -210,9 +210,9 @@ Milestone 3 Task 2E connects the existing Orpheus/Piper backend foundation to th
 
 Short design summary: Task 2E keeps chat generation, visual state, and speech playback decoupled. The backend enriches final response metadata; the frontend stores that metadata on the assistant message; `ttsStore` decides whether to synthesize and play exactly one interruptible line; and chat/VN mode both consume the same lightweight playback surface.
 
-### 3.9 Per-Character Mood & Final TTS Polish (Milestone 3 Task 2G)
+### 3.9 Per-Character Mood & Final TTS Polish (Milestone 3 Tasks 2G-2H)
 
-Milestone 3 Task 2G completes the current Task 2 TTS arc with per-character fine-tuning and polish:
+Milestone 3 Tasks 2G-2H complete the Task 2 TTS arc with per-character fine-tuning, final cleanup, and polish:
 
 - **Per-character mood controls** are durable `VoiceProfile.mood_settings` fields, editable from the warm dark voice settings UI. Baseline expressiveness shapes default prosody, emotional sensitivity controls how quickly high-emotion cues boost intensity, and NSFW intensity controls how strongly intimate/adult scene cues affect speech. Values are compact 0.0-2.0 scalars so they remain inspectable and 8GB-friendly.
 - **Resolved mood propagation** flows through VoiceManager and TTSContextRouter into `TTSContext`, then into EmotionEngine and frontend `ttsStore` playback requests. Chat `done` metadata and non-streaming responses keep clean visible text separate from `tts_text` while carrying the same mood-enriched context for chat, streaming, VN mode, and cloned voices.
@@ -220,9 +220,23 @@ Milestone 3 Task 2G completes the current Task 2 TTS arc with per-character fine
 - **Final polish** improves TTS settings discoverability, keeps zero-shot cloned voices in the same profile/mood workflow, and adds clearer AudioPlayer fallback/error copy plus a dismiss action. TTS failures do not break chat, VN rendering, clean-text display, voice cloning metadata, or the streaming buffer-health path.
 - **8GB behavior** remains unchanged in principle: no additional classifier model, no extra LLM calls, no resident voice model until synthesis, bounded frontend queues, lazy Orpheus loading, Piper CPU fallback, and tiny JSON profile metadata for tuning.
 
-Task 2A-2G summary: Reverie now has a local-first TTS architecture with Orpheus quality speech, Piper fallback, durable voice profiles and zero-shot clone references, context-aware speaker/narrator routing, deterministic emotion/prosody tagging, clean text vs. `tts_text` separation, streaming playback with buffer health, shared chat/VN AudioPlayer integration, per-character mood controls, and user-trust-focused fallback UX.
+Task 2A-2G pre-final summary: Reverie now has a local-first TTS architecture with Orpheus quality speech, Piper fallback, durable voice profiles and zero-shot clone references, context-aware speaker/narrator routing, deterministic emotion/prosody tagging, clean text vs. `tts_text` separation, streaming playback with buffer health, shared chat/VN AudioPlayer integration, per-character mood controls, and user-trust-focused fallback UX.
 
-### 3.10 Futa-Vision Integration Vision (Future)
+
+### 3.10 Final TTS Architecture Status (Task 2 Complete)
+
+Task 2 is complete as of Milestone 3 Task 2H. The final TTS system is intentionally local-first, interruptible, and small enough for the 8GB target:
+
+- **Backend architecture**: `TTSService` is the single synthesis workflow, with shared request preparation for direct and streaming speech. `TTSContextRouter` resolves narrator/character routing through `VoiceManager`, then Orpheus or Piper receives only the backend-specific voice key plus optional local reference audio. Orpheus remains lazy and VRAM-checked; Piper remains the CPU-friendly fallback.
+- **Text contracts**: visible chat text stays clean, while `tts_text` may carry Orpheus-ready emotion tags. Very long frontend voice requests are shortened at natural sentence boundaries before synthesis, and backend over-limit errors now return calm recovery copy rather than breaking chat.
+- **Frontend playback**: `ttsStore` owns one active local generation, a tiny bounded queue, stream cancellation, progress, buffer health, and blob cleanup. Auto-play interrupts naturally when the user sends a new message; manual replay remains available per assistant message; chat and VN mode share the same `AudioPlayer`.
+- **UX polish**: AudioPlayer now distinguishes warming, prebuffering, speaking, paused, queued, fallback/error, and long-reply-first-segment states. Chat and VN mode both show subtle voice-active feedback without heavy animation or extra GPU work.
+- **Voice profiles and cloning**: voice profiles, mood settings, character assignments, and zero-shot reference clips stay local and inspectable. Cloning setup records or uploads a short reference without training, preloading, or cloud calls; mood sliders remain simple 0.0-2.0 scalars.
+- **8GB robustness**: TTS adds no classifier model or extra chat-path LLM call. Orpheus loads only during synthesis, checks free VRAM before GPU use, unloads after OOM-like failures, and falls back to Piper where configured. The frontend queue is bounded, generated object URLs are revoked, and streaming buffers use sub-second prebuffering rather than accumulating long audio histories.
+
+Task 2A-2H final summary: Reverie now has local emotional TTS with Orpheus quality speech, Piper fallback, durable voice profiles, zero-shot clone references, context-aware speaker/narrator routing, deterministic emotion/prosody tags, clean visible text vs. speech text separation, streaming playback with buffer smoothing, shared Chat/VN playback surfaces, per-character mood tuning, clear local-resource fallback UX, and documented 8GB-friendly cleanup behavior.
+
+### 3.11 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

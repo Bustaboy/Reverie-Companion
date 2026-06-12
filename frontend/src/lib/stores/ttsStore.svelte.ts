@@ -16,6 +16,7 @@ export interface TTSQueueItem {
   emotion?: TTSEmotionMetadata;
   source: 'auto' | 'message' | 'vn';
   interrupt?: boolean;
+  shortened?: boolean;
 }
 
 interface ActiveAudio {
@@ -25,6 +26,7 @@ interface ActiveAudio {
 }
 
 const MAX_QUEUE_LENGTH = 3;
+const MAX_SPEECH_LINE_CHARS = 1_850;
 const PROGRESS_TIMER_MS = 250;
 
 const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
@@ -40,6 +42,17 @@ const toFriendlyVoiceName = (voiceId?: string, voiceName?: string): string => {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
+const sentenceTrim = (text: string, maxChars = MAX_SPEECH_LINE_CHARS): { text: string; shortened: boolean } => {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return { text: normalized, shortened: false };
+
+  const slice = normalized.slice(0, maxChars);
+  const sentenceEnd = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('! '), slice.lastIndexOf('? '), slice.lastIndexOf('… '));
+  const softBreak = sentenceEnd > Math.floor(maxChars * 0.45) ? sentenceEnd + 1 : Math.max(slice.lastIndexOf('; '), slice.lastIndexOf(', '));
+  const cutoff = softBreak > Math.floor(maxChars * 0.45) ? softBreak : maxChars;
+  return { text: `${slice.slice(0, cutoff).trimEnd()}…`, shortened: true };
+};
+
 const normalizeAudioError = (error: unknown): string => {
   if (error instanceof TTSServiceError && error.code === 'tts_cancelled') {
     return 'Speech playback was cancelled.';
@@ -50,7 +63,7 @@ const normalizeAudioError = (error: unknown): string => {
       return 'No local voice backend is available right now. Text chat is safe; check Orpheus/Piper paths in settings.';
     }
     if (error.code === 'tts_text_too_long') {
-      return 'That reply is too long for one voice line. Try playing a shorter message.';
+      return 'That reply is too long for one voice line. Reverie can still chat; try the message play button on a shorter response.';
     }
     if (error.retryable) {
       return `${error.message} You can try again in a moment.`;
@@ -271,6 +284,16 @@ class TTSStore {
     return toFriendlyVoiceName(this.current?.voiceId, this.current?.voiceName);
   }
 
+  get currentLineWasShortened() {
+    return Boolean(this.current?.shortened);
+  }
+
+  get activeSourceLabel() {
+    if (this.current?.source === 'vn') return 'Visual Novel';
+    if (this.current?.source === 'message') return 'Manual replay';
+    return 'Chat auto-play';
+  }
+
   get queueCount() {
     return this.queue.length;
   }
@@ -336,8 +359,8 @@ class TTSStore {
   }
 
   enqueue(item: TTSQueueItem) {
-    const text = item.text.trim();
-    if (!this.enabled || !text) {
+    const prepared = sentenceTrim(item.text);
+    if (!this.enabled || !prepared.text) {
       return;
     }
 
@@ -346,8 +369,10 @@ class TTSStore {
     }
 
     this.error = null;
-    this.queue = [...this.queue, { ...item, text }].slice(-MAX_QUEUE_LENGTH);
-    this.announcement = `Queued speech with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`;
+    this.queue = [...this.queue, { ...item, text: prepared.text, shortened: item.shortened || prepared.shortened }].slice(-MAX_QUEUE_LENGTH);
+    this.announcement = prepared.shortened
+      ? `Queued the first part of a long reply with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`
+      : `Queued speech with ${toFriendlyVoiceName(item.voiceId, item.voiceName)}.`;
 
     if (this.playbackState === 'idle' || this.playbackState === 'error') {
       void this.playNext();
@@ -423,7 +448,9 @@ class TTSStore {
     this.duration = 0;
     this.error = null;
     this.playbackState = 'loading';
-    this.announcement = `Preparing ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`;
+    this.announcement = nextItem.shortened
+      ? `Preparing the first part of a long reply with ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`
+      : `Preparing ${toFriendlyVoiceName(nextItem.voiceId, nextItem.voiceName)}.`;
 
     this.generationController?.abort();
     const controller = new AbortController();
@@ -630,7 +657,11 @@ class TTSStore {
     this.activeSink = null;
     this.cleanupActiveAudio();
     this.playbackState = this.queue.length > 0 ? 'queued' : 'idle';
-    this.announcement = this.queue.length > 0 ? 'Continuing queued speech.' : 'Speech finished.';
+    this.announcement = this.queue.length > 0
+      ? 'Continuing queued speech.'
+      : this.currentLineWasShortened
+        ? 'Speech finished for the first part of that long reply.'
+        : 'Speech finished.';
     void this.playNext();
   }
 
