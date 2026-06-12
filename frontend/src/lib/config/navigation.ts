@@ -1,4 +1,4 @@
-export type NavigationItemId = 'chat' | 'growth' | 'journal' | 'training' | 'characters' | 'memory' | 'visual-novel' | 'images' | 'settings';
+export type NavigationItemId = 'chat' | 'growth' | 'journal' | 'training' | 'encyclopedia' | 'characters' | 'memory' | 'visual-novel' | 'images' | 'settings';
 
 export interface NavigationItem {
   id: NavigationItemId;
@@ -14,6 +14,7 @@ export const navigationItems: NavigationItem[] = [
   { id: 'growth', label: 'Growth', hint: 'Relationship pulse', enabled: true },
   { id: 'journal', label: 'Journal', hint: 'Private reflections', enabled: true },
   { id: 'training', label: 'Training', hint: 'Personal LoRA review', enabled: true },
+  { id: 'encyclopedia', label: 'Encyclopedia', hint: 'Living character bible', enabled: true },
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
   { id: 'memory', label: 'Memory', hint: 'Editable recall', enabled: true },
   { id: 'visual-novel', label: 'Visual Novel', hint: 'Immersive scene', enabled: true },
