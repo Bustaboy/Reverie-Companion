@@ -22,3 +22,5 @@ export type { LoRATrainingExample, LoRATrainingJob, PersonalLoRACounts, Personal
 
 
 export { TTSService, TTSServiceError, ttsService, type TTSGenerateRequest, type TTSGenerateResponse, type TTSServiceOptions } from './ttsService';
+
+export { VoiceService, VoiceServiceError, voiceService, type VoiceProfile, type CreateVoiceProfileInput } from './voiceService';

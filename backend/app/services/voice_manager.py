@@ -8,12 +8,13 @@ without implementing cloning logic in this milestone.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import tempfile
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, BinaryIO
 
 from app.core.config import Settings
 from app.models.voice import VoiceProfile, VoiceProfileUpdate
@@ -150,6 +151,71 @@ class VoiceManager:
             self._voices[profile.voice_id] = profile
             self._save_locked()
             return profile
+
+    def create_zero_shot_voice_profile(
+        self,
+        *,
+        name: str,
+        audio_file: BinaryIO,
+        filename: str,
+        content_type: str | None = None,
+        character_id: str | None = None,
+        duration_seconds: float | None = None,
+    ) -> VoiceProfile:
+        """Store reference audio and create an Orpheus-ready zero-shot profile.
+
+        The method only writes the short user-provided reference clip and JSON
+        metadata. It does not preload or train a model, keeping cloning setup
+        safe for 8GB systems until synthesis actually needs Orpheus.
+        """
+
+        safe_name = self._slugify(name)
+        file_extension = self._safe_audio_extension(filename, content_type)
+        digest = hashlib.sha1(
+            f"{safe_name}:{character_id or ''}".encode("utf-8")
+        ).hexdigest()[:8]
+        voice_id = f"clone_{safe_name}_{digest}"[:80].rstrip("_")
+        reference_dir = Path(self._settings.voice_reference_audio_dir).expanduser()
+        reference_dir.mkdir(parents=True, exist_ok=True)
+        reference_path = reference_dir / f"{voice_id}{file_extension}"
+
+        max_bytes = self._settings.voice_reference_audio_max_mb * 1024 * 1024
+        written = 0
+        with tempfile.NamedTemporaryFile(
+            "wb", dir=reference_dir, prefix=f".{voice_id}.", suffix=".tmp", delete=False
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            while chunk := audio_file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    temp_path.unlink(missing_ok=True)
+                    raise VoiceManagerError(
+                        "Reference audio is too large for a lightweight voice profile.",
+                        code="voice_reference_audio_too_large",
+                        details={"max_mb": self._settings.voice_reference_audio_max_mb},
+                    )
+                temp_file.write(chunk)
+        temp_path.replace(reference_path)
+
+        profile = VoiceProfile(
+            voice_id=voice_id,
+            name=name,
+            type="character",
+            reference_audio_path=str(reference_path),
+            metadata={
+                "backend_voice_id": voice_id,
+                "created_by": "zero_shot_clone_ui",
+                "cloning_ready": True,
+                "clone_backend": "orpheus_zero_shot",
+                "reference_content_type": content_type,
+                "reference_duration_seconds": duration_seconds,
+                "reference_audio_bytes": written,
+            },
+        )
+        self.create_voice_profile(profile, overwrite=True)
+        if character_id:
+            self.assign_voice_to_character(character_id, profile.voice_id)
+        return profile
 
     def update_voice_profile(
         self, voice_id: str, update: VoiceProfileUpdate
@@ -311,6 +377,30 @@ class VoiceManager:
             temp_file.write("\n")
             temp_path = Path(temp_file.name)
         temp_path.replace(self._store_path)
+
+    @staticmethod
+    def _safe_audio_extension(filename: str, content_type: str | None) -> str:
+        suffix = Path(filename).suffix.lower()
+        allowed = {".wav", ".mp3", ".m4a", ".webm", ".ogg", ".flac"}
+        if suffix in allowed:
+            return suffix
+        if content_type == "audio/wav":
+            return ".wav"
+        if content_type == "audio/mpeg":
+            return ".mp3"
+        if content_type == "audio/webm":
+            return ".webm"
+        if content_type == "audio/ogg":
+            return ".ogg"
+        return ".wav"
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        slug = "".join(
+            char.lower() if char.isalnum() else "_" for char in value.strip()
+        )
+        slug = "_".join(part for part in slug.split("_") if part)
+        return slug[:48] or "voice"
 
     @staticmethod
     def _normalize_character_id(character_id: str) -> str:

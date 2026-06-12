@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     tts_min_free_vram_mb: int = Field(default=3600, ge=0, le=8192)
     tts_default_voice_id: str = "reverie_default"
     voice_profile_store_path: str = "./data/voices/voice_profiles.json"
+    voice_reference_audio_dir: str = "./data/voices/reference_audio"
+    voice_reference_audio_max_mb: int = Field(default=25, gt=0, le=100)
     voice_default_narrator_voice_id: str = "reverie_default"
     voice_default_character_voice_behavior: str = Field(
         default="narrator",

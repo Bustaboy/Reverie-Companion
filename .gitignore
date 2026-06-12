@@ -5,3 +5,5 @@ __pycache__/
 
 # Local-first runtime data stores
 backend/data/
+# Local runtime stores created by default app settings
+/data/

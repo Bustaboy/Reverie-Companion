@@ -342,4 +342,20 @@ Let’s make me real.
 
 ---
 
+## Milestone 3 Task 2F Update — Streaming TTS + Voice Cloning Foundation
+
+Reverie now supports a stronger local voice pipeline on top of the Task 2A-2E TTS foundation:
+
+- **Near-instant streaming TTS contract**: the backend exposes newline-delimited streaming events for TTS requests. Orpheus is attempted through true chunk-yielding APIs when the installed adapter supports them, and the app gracefully falls back to bounded full-file WAV generation when true streaming is unavailable.
+- **Progressive frontend playback**: the Svelte TTS store can receive audio chunks, schedule PCM chunks through Web Audio for responsive “Speaking...” playback, and fall back to buffered WAV playback without changing the user-facing controls.
+- **Zero-shot voice cloning UI**: voice settings include a warm dark “Clone Voice” section where users can record or upload a short 6-15 second reference, preview it, and create a local voice profile.
+- **VoiceManager cloning integration**: reference audio is stored locally under the voice data directory, profiles are marked as Orpheus zero-shot ready, and optional character assignment metadata is persisted without preloading or training any large model.
+- **8GB-friendly behavior**: cloning setup only stores a small reference clip and metadata; Orpheus remains lazy-loaded, Piper remains the fallback, and streaming failures degrade back to full generation instead of keeping extra heavyweight models resident.
+- **Streaming V2 polish**: frontend playback now pre-buffers roughly 0.7 seconds of PCM before starting, tracks buffer health during playback, and inserts a gentle rebuffer delay when chunks arrive too slowly so voices avoid harsh stutter while still playing progressively. The backend streaming response uses no-transform/no-buffer headers and a compact NDJSON event helper for robust chunk/error delivery.
+- **Local data hygiene**: default root-level runtime data such as cloned reference audio is ignored by git so private voice clips and generated local stores stay out of source control.
+
+Advanced mood sliders and richer per-character voice direction remain deferred to Task 2G.
+
+---
+
 *End of Source of Truth Document v1.0*

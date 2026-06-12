@@ -1,5 +1,6 @@
 <script lang="ts">
   import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset } from '$lib/stores/settingsStore';
+  import { voiceService, type VoiceProfile } from '$lib/api/voiceService';
 
   const reflectionFrequencyOptions: Array<{
     value: ReflectionFrequency;
@@ -93,6 +94,21 @@
     }
   ];
 
+  let cloneName = $state('');
+  let cloneFile = $state<File | null>(null);
+  let cloneRecording = $state<Blob | null>(null);
+  let cloneRecordingUrl = $state<string | null>(null);
+  let isRecording = $state(false);
+  let isCreatingVoice = $state(false);
+  let cloneStatus = $state<string | null>(null);
+  let cloneError = $state<string | null>(null);
+  let clonedProfile = $state<VoiceProfile | null>(null);
+  let mediaRecorder: MediaRecorder | null = null;
+  let recordingStartedAt = 0;
+  let recordingDurationSeconds = $state<number | null>(null);
+
+  const cloneAudio = $derived(cloneRecording ?? cloneFile);
+
   const savedLabel = $derived(
     $settingsStore.savedAt
       ? `Saved locally ${$settingsStore.savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
@@ -125,6 +141,77 @@
 
   const handleTTSSpeedChange = (event: Event) => {
     settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
+  };
+
+  const handleCloneFileChange = (event: Event) => {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+    cloneFile = file;
+    cloneRecording = null;
+    cloneError = null;
+    cloneStatus = file ? `Selected ${file.name}.` : null;
+    if (cloneRecordingUrl) URL.revokeObjectURL(cloneRecordingUrl);
+    cloneRecordingUrl = file ? URL.createObjectURL(file) : null;
+  };
+
+  const startRecording = async () => {
+    cloneError = null;
+    cloneStatus = 'Listening for a 6-15 second reference…';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks: BlobPart[] = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+        cloneRecording = blob;
+        cloneFile = null;
+        recordingDurationSeconds = (Date.now() - recordingStartedAt) / 1000;
+        if (cloneRecordingUrl) URL.revokeObjectURL(cloneRecordingUrl);
+        cloneRecordingUrl = URL.createObjectURL(blob);
+        cloneStatus = `Recorded ${Math.round(recordingDurationSeconds)} seconds. Ready to create a profile.`;
+        mediaRecorder = null;
+      };
+      recordingStartedAt = Date.now();
+      mediaRecorder.start();
+      isRecording = true;
+    } catch (error) {
+      cloneError = error instanceof Error ? error.message : 'Microphone recording is unavailable.';
+      cloneStatus = null;
+    }
+  };
+
+  const stopRecording = () => {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    isRecording = false;
+    mediaRecorder.stop();
+  };
+
+  const createVoiceProfile = async () => {
+    if (!cloneAudio || !cloneName.trim()) {
+      cloneError = 'Add a profile name and a 6-15 second audio reference first.';
+      return;
+    }
+
+    isCreatingVoice = true;
+    cloneError = null;
+    cloneStatus = 'Creating local Orpheus zero-shot voice profile…';
+    try {
+      clonedProfile = await voiceService.createVoiceProfile({
+        name: cloneName.trim(),
+        referenceAudio: cloneAudio,
+        filename: cloneFile?.name ?? 'recorded-reference.webm',
+        durationSeconds: recordingDurationSeconds ?? undefined
+      });
+      cloneStatus = `Created ${clonedProfile.name}. It will use Orpheus zero-shot cloning when speech is generated.`;
+    } catch (error) {
+      cloneError = error instanceof Error ? error.message : 'Could not create that voice profile.';
+      cloneStatus = null;
+    } finally {
+      isCreatingVoice = false;
+    }
   };
 </script>
 
@@ -326,6 +413,51 @@
           </button>
         {/each}
       </div>
+
+      <section class="clone-voice-section" aria-labelledby="clone-voice-title">
+        <div class="setting-copy compact">
+          <span class="setting-kicker">Clone Voice</span>
+          <h3 id="clone-voice-title">Zero-shot voice profile</h3>
+          <p>Record or upload a clear 6-15 second reference. Reverie stores the clip locally and only asks Orpheus to use it when speech is generated.</p>
+        </div>
+
+        <div class="clone-voice-controls">
+          <label class="text-setting">
+            <span>Profile name</span>
+            <input type="text" bind:value={cloneName} placeholder="Tara warm close-up" maxlength="120" />
+          </label>
+
+          <label class="file-setting">
+            <span>Upload reference audio</span>
+            <input type="file" accept="audio/*" onchange={handleCloneFileChange} />
+          </label>
+
+          <div class="recording-row">
+            {#if isRecording}
+              <button type="button" class="record-button active" onclick={stopRecording}>Stop recording</button>
+            {:else}
+              <button type="button" class="record-button" onclick={startRecording}>Record reference</button>
+            {/if}
+            <span>Keep it natural, quiet, and short.</span>
+          </div>
+
+          {#if cloneRecordingUrl}
+            <audio controls src={cloneRecordingUrl} aria-label="Voice reference preview"></audio>
+          {/if}
+
+          <button type="button" class="create-voice-button" disabled={!cloneAudio || !cloneName.trim() || isCreatingVoice} onclick={createVoiceProfile}>
+            {isCreatingVoice ? 'Creating voice profile…' : 'Create Voice Profile from Recording'}
+          </button>
+
+          <div class="clone-status" aria-live="polite">
+            {#if cloneError}
+              <span class="error">{cloneError}</span>
+            {:else if cloneStatus}
+              <span>{cloneStatus}</span>
+            {/if}
+          </div>
+        </div>
+      </section>
     </article>
 
     <aside class="settings-trust-note" aria-label="Memory and reflection trust note">

@@ -4,3 +4,5 @@ ollama==0.4.5
 pydantic-settings==2.7.1
 mem0ai==2.0.4
 lancedb==0.33.0
+
+python-multipart==0.0.20
