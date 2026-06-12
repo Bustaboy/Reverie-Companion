@@ -156,7 +156,7 @@ Milestone 3 Task 2A establishes Reverie's local-first TTS backend foundation:
 - **Configuration** now exposes TTS model IDs/paths, Piper binary/voice paths, backend choice, timeouts, device selection, quantization level, free-VRAM guardrails, default voice ID, sample rate, text length limit, streaming chunk size, voice-profile store path, default narrator voice ID, and default character voice fallback behavior under the existing `REVERIE_` environment prefix.
 - **API surface** adds `POST /api/tts/generate`, returning base64 WAV audio for simple non-streaming clients or bounded audio-byte streaming for early voice playback. The route stays thin, logs request metadata without raw private text, and returns structured errors for UI handling.
 
-This foundation now avoids only Task 2C–2D scope: no emotion tags, no memory/reflection-driven prosody, and no context-sensitive voice routing. Future work can layer those features on top of the same service and router contracts while preserving the 8GB-first lazy-loading and fallback behavior.
+This foundation now avoids Task 2D scope: no emotion tags or memory/reflection-driven prosody are injected yet. Task 2C layers context-sensitive voice routing on top of the same service and router contracts while preserving the 8GB-first lazy-loading and fallback behavior.
 
 ### 3.5 Voice Profile System (Milestone 3 Task 2B)
 
@@ -170,7 +170,20 @@ Milestone 3 Task 2B adds a durable, local-first voice profile layer on top of th
 
 Short design summary: voice profiles are a durable identity layer, VoiceManager is the local persistence and assignment boundary, and TTSService remains the synthesis workflow that resolves a profile into the backend-specific voice key just before generation. This keeps current TTS simple while leaving clean extension points for future cloning and emotion/prosody routing.
 
-### 3.6 Futa-Vision Integration Vision (Future)
+### 3.6 Context-Aware TTS Routing (Milestone 3 Task 2C)
+
+Milestone 3 Task 2C adds a lightweight context routing layer for one-to-one chats and RPG/multi-character playback:
+
+- **TTSContext schema** is the compact handoff contract for chat, VN, and future frontend state. It carries optional `character_id`, explicit `is_narration`, `mode` (`one_to_one` or `rpg`), optional `emotion_hint`, and bounded `intensity`. Emotion fields are accepted only as forward-compatible metadata in Task 2C; prosody/tag injection remains Task 2D.
+- **TTSContextRouter** sits between API/chat state and backend synthesis. It uses a transparent heuristic: explicit narration wins, quoted text means character speech, explicit `character_id` means speech, known character voice profile names/IDs can identify simple speaker cues, RPG unquoted text defaults to narration, and one-to-one text defaults to speech.
+- **Voice resolution** now happens through the router: explicit `voice_id` still wins, narration routes to the default narrator profile, character speech resolves through VoiceManager character assignments, known character profile cues can select a profile directly, and missing character voices fall back to the narrator when configured. Backends still receive only the concrete backend voice key, while API clients receive the durable profile ID.
+- **API integration** extends `POST /api/tts/generate` with a full `context` object while preserving legacy top-level `character_id`. Route logs include mode/narration metadata but continue to avoid raw private text.
+- **Chat integration hook** adds optional `tts_context` to chat requests/responses so future frontend or VN flows can carry current speaker/narrator state alongside model replies without forcing chat to synthesize audio immediately.
+- **8GB behavior** remains unchanged: the router is pure Python metadata logic, performs no model loading, and keeps Orpheus/Piper lazy loading and fallback exactly where Task 2A placed them.
+
+Short design summary: TTSContext is the portable state contract, TTSContextRouter decides narration versus speech and selects the durable voice profile, VoiceManager remains the persistence/assignment source, and TTSService remains the only synthesis workflow. This gives Reverie natural routing for one-to-one and multi-character scenes while leaving richer emotion/prosody control to Task 2D.
+
+### 3.7 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

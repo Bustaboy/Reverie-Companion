@@ -98,7 +98,19 @@ class ChatService:
         response = await self._ollama_client.chat(
             prepared_request, request_id=request_id
         )
-        return self._attach_growth_notification(response, growth_context.growth_notification)
+        response = self._attach_tts_context(response, request)
+        return self._attach_growth_notification(
+            response, growth_context.growth_notification
+        )
+
+    def _attach_tts_context(
+        self, response: ChatResponse, request: ChatRequest
+    ) -> ChatResponse:
+        """Echo optional TTS routing context for future response playback hooks."""
+
+        if request.tts_context is None:
+            return response
+        return response.model_copy(update={"tts_context": request.tts_context})
 
     def _attach_growth_notification(
         self,
@@ -136,8 +148,8 @@ class ChatService:
     ) -> ChatRequest:
         """Build the model-facing request while keeping route handlers thin."""
 
-        prepared_request, _growth_context = (
-            await self._prepare_request_with_growth(request, request_id=request_id)
+        prepared_request, _growth_context = await self._prepare_request_with_growth(
+            request, request_id=request_id
         )
         return prepared_request
 
@@ -856,16 +868,18 @@ class ChatService:
         """Mirror orchestrator process state for legacy tests and callers."""
 
         type(self)._reflection_lock = GrowthOrchestrator._reflection_lock
-        type(self)._last_reflection_started_at = (
-            GrowthOrchestrator._last_reflection_started_at
-        )
-        type(self)._inflight_reflection_tasks = (
-            GrowthOrchestrator._inflight_reflection_tasks
-        )
-        type(self)._last_growth_notification_at = (
-            GrowthOrchestrator._last_growth_notification_at
-        )
-        type(self)._emitted_growth_notification_ids = (
+        type(
+            self
+        )._last_reflection_started_at = GrowthOrchestrator._last_reflection_started_at
+        type(
+            self
+        )._inflight_reflection_tasks = GrowthOrchestrator._inflight_reflection_tasks
+        type(
+            self
+        )._last_growth_notification_at = GrowthOrchestrator._last_growth_notification_at
+        type(
+            self
+        )._emitted_growth_notification_ids = (
             GrowthOrchestrator._emitted_growth_notification_ids
         )
 

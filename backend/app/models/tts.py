@@ -2,12 +2,64 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_TTS_TEXT_LENGTH = 2_000
 MAX_TTS_VOICE_ID_LENGTH = 80
+MAX_TTS_CHARACTER_ID_LENGTH = 120
+MAX_TTS_EMOTION_HINT_LENGTH = 80
 AudioFormat = Literal["wav", "pcm", "mp3"]
 TTSBackendName = Literal["orpheus", "piper"]
+TTSMode = Literal["one_to_one", "rpg"]
+
+
+class TTSContext(BaseModel):
+    """Conversation-aware routing context for TTS voice selection.
+
+    The context is intentionally compact so chat, VN, and RPG clients can pass
+    it through without coupling the TTS layer to their full state objects.
+    Emotion and intensity are accepted for forward compatibility; Task 2C only
+    routes voices and does not inject prosody or emotion tags.
+    """
+
+    character_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_TTS_CHARACTER_ID_LENGTH,
+        description="Optional speaking character ID from the current chat/VN state.",
+    )
+    is_narration: bool = Field(
+        default=False,
+        description="Explicit narration flag. Narration routes to narrator voices.",
+    )
+    mode: TTSMode = Field(
+        default="one_to_one",
+        description="Conversation mode used by the routing heuristic.",
+    )
+    emotion_hint: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_TTS_EMOTION_HINT_LENGTH,
+        description="Optional future prosody hint; stored but not applied in Task 2C.",
+    )
+    intensity: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="Future emotion/prosody intensity multiplier.",
+    )
+
+    @field_validator("character_id", "emotion_hint")
+    @classmethod
+    def optional_context_text_must_not_be_blank(cls, value: str | None) -> str | None:
+        """Reject blank optional context fields while normalizing whitespace."""
+
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("context value cannot be empty.")
+        return stripped
 
 
 class TTSGenerateRequest(BaseModel):
@@ -28,8 +80,15 @@ class TTSGenerateRequest(BaseModel):
     character_id: str | None = Field(
         default=None,
         min_length=1,
-        max_length=120,
-        description="Optional character ID used to resolve an assigned voice profile.",
+        max_length=MAX_TTS_CHARACTER_ID_LENGTH,
+        description=(
+            "Legacy optional character ID used to resolve an assigned voice profile. "
+            "Prefer context.character_id for new clients."
+        ),
+    )
+    context: TTSContext | None = Field(
+        default=None,
+        description="Conversation-aware routing context from chat or VN state.",
     )
     stream: bool = Field(
         default=False,
@@ -38,6 +97,22 @@ class TTSGenerateRequest(BaseModel):
     audio_format: AudioFormat = Field(
         default="wav", description="Requested output container when supported."
     )
+
+    @model_validator(mode="after")
+    def normalize_legacy_context(self) -> "TTSGenerateRequest":
+        """Promote legacy character_id into context for router consistency."""
+
+        if self.context is None and self.character_id is not None:
+            self.context = TTSContext(character_id=self.character_id)
+        elif (
+            self.context is not None
+            and self.context.character_id is None
+            and self.character_id is not None
+        ):
+            self.context = self.context.model_copy(
+                update={"character_id": self.character_id}
+            )
+        return self
 
     @field_validator("text")
     @classmethod

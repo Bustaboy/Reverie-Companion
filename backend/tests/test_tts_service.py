@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from app.core.config import Settings
+from app.models.tts import TTSContext
 from app.models.voice import VoiceProfile
 from app.services.voice_manager import VoiceManager
 from app.services.tts_service import (
@@ -172,6 +173,65 @@ def test_generate_speech_resolves_character_assignment(tmp_path) -> None:
 
         result = await service.generate_speech(
             text="Hello", character_id="tara_character", request_id="req_5"
+        )
+
+        assert result.voice_id == "tara"
+        assert service._piper.last_kwargs["voice_id"] == "tara_backend"
+
+    asyncio.run(run_test())
+
+
+def test_generate_speech_routes_rpg_narration_to_narrator(tmp_path) -> None:
+    async def run_test() -> None:
+        service = make_service(tmp_path)
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"narrator wav",
+            backend="piper",
+            voice_id="reverie_default",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", result=piper_result
+        )
+
+        result = await service.generate_speech(
+            text="The tavern door groans open.",
+            context=TTSContext(mode="rpg", is_narration=True),
+            request_id="req_narration",
+        )
+
+        assert result.voice_id == "reverie_default"
+        assert service._piper.last_kwargs["voice_id"] == "reverie_default"
+
+    asyncio.run(run_test())
+
+
+def test_generate_speech_routes_context_character_to_assignment(tmp_path) -> None:
+    async def run_test() -> None:
+        service = make_service(tmp_path)
+        service._voice_manager.assign_voice_to_character("tara_character", "tara")
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"tara wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", result=piper_result
+        )
+
+        result = await service.generate_speech(
+            text='"I saved you a seat."',
+            context=TTSContext(character_id="tara_character", mode="rpg"),
+            request_id="req_context_character",
         )
 
         assert result.voice_id == "tara"

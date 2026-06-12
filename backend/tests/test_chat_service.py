@@ -388,22 +388,63 @@ class ChatServiceReflectionTests(unittest.TestCase):
                 growth_notification_min_interval_seconds=0,
             ),
             ollama_client=FakeOllamaClient(),  # type: ignore[arg-type]
-            memory_manager=FakeMemoryManager(context="memory tag: reassurance, safe trust"),  # type: ignore[arg-type]
+            memory_manager=FakeMemoryManager(
+                context="memory tag: reassurance, safe trust"
+            ),  # type: ignore[arg-type]
             reflection_manager=FakeReflectionManager(entries=[entry]),  # type: ignore[arg-type]
         )
         request = ChatRequest(
             stream=True,
-            messages=[ChatMessage(role="user", content="I feel anxious; please remember reassurance helps.")],
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="I feel anxious; please remember reassurance helps.",
+                )
+            ],
         )
 
-        frames = [frame async for frame in await service.stream_chat(request, request_id="req-stream")]
+        frames = [
+            frame
+            async for frame in await service.stream_chat(
+                request, request_id="req-stream"
+            )
+        ]
 
         self.assertEqual(sum("event: message" in frame for frame in frames), 2)
         self.assertTrue(all("visual_state" not in frame for frame in frames[:2]))
         done_payload = json.loads(frames[-1].split("data: ", 1)[1])
-        self.assertEqual(done_payload["visual_state"]["growth_cue"], "relationship_trust")
-        self.assertIn(done_payload["visual_state"]["expression"], {"happy", "concerned", "thinking", "neutral"})
-        self.assertEqual(done_payload["growth_notification"]["id"], "growth_journal_visual")
+        self.assertEqual(
+            done_payload["visual_state"]["growth_cue"], "relationship_trust"
+        )
+        self.assertIn(
+            done_payload["visual_state"]["expression"],
+            {"happy", "concerned", "thinking", "neutral"},
+        )
+        self.assertEqual(
+            done_payload["growth_notification"]["id"], "growth_journal_visual"
+        )
+
+
+class ChatServiceTTSContextTests(unittest.TestCase):
+    def test_chat_echoes_tts_context_for_future_playback(self) -> None:
+        async def run_test() -> None:
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=FakeOllamaClient(),
+            )
+            request = ChatRequest(
+                messages=[ChatMessage(role="user", content="Say hello as Tara.")],
+                stream=False,
+                tts_context={"character_id": "tara", "mode": "one_to_one"},
+            )
+
+            response = await service.chat(request, request_id="req-tts-context")
+
+            assert response.tts_context is not None
+            assert response.tts_context.character_id == "tara"
+            assert response.tts_context.mode == "one_to_one"
+
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":

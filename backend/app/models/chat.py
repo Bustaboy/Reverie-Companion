@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.models.tts import TTSContext
+
 MessageRole = Literal["system", "user", "assistant"]
 MAX_MESSAGE_LENGTH = 8_000
 MAX_MODEL_NAME_LENGTH = 128
@@ -51,6 +53,13 @@ class ChatRequest(BaseModel):
     stream: bool = Field(
         default=True, description="Whether to stream tokens using Server-Sent Events."
     )
+    tts_context: TTSContext | None = Field(
+        default=None,
+        description=(
+            "Optional TTS routing context carried from chat/VN state so future "
+            "clients can synthesize the assistant response with the right voice."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -97,3 +106,4 @@ class ChatResponse(BaseModel):
     message: ChatMessage
     done: bool = True
     growth_notification: GrowthNotification | None = None
+    tts_context: TTSContext | None = None
