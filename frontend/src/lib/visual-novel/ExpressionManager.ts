@@ -1,10 +1,13 @@
 import type {
+  CharacterVisualLayerDefinition,
   CharacterVisualManifest,
   NormalizedVisualState,
+  ResolvedVisualLayer,
   ResolvedVisualNovelScene,
   VisualAssetRef,
   VisualBackground,
   VisualExpression,
+  VisualLayerExpressionKey,
   VisualPose,
   VisualStateMetadata
 } from '$lib/types/visualNovel';
@@ -51,11 +54,11 @@ const BACKGROUND_FALLBACK_TONE = '#1b1723';
 
 /**
  * Small resolver for chat-provided visual_state metadata.
- * It normalizes names, resolves one image per pose/expression slot, and falls
- * back safely without layered rendering or additional inference work.
+ * It normalizes names, resolves layered character assets when available, keeps
+ * legacy single-sprite fallback support, and never does additional inference work.
  */
 export class ExpressionManager {
-  normalizeState(manifest: CharacterVisualManifest, metadata?: VisualStateMetadata | null): NormalizedVisualState {
+  normalizeState(manifest: CharacterVisualManifest, metadata?: VisualStateMetadata | NormalizedVisualState | null): NormalizedVisualState {
     return {
       characterId: metadata?.characterId?.trim() || manifest.id,
       expression: pickKnown(metadata?.expression, manifest.defaults.expression, manifest.expressions, EXPRESSION_ALIASES),
@@ -95,15 +98,17 @@ export class ExpressionManager {
         dominantColor: BACKGROUND_FALLBACK_TONE
       }
     );
+    const characterLayers = resolveCharacterLayers(manifest, state, failedAssetUrls, sprite.asset);
 
     return {
       manifest,
       state,
       sprite: sprite.asset,
+      characterLayers: characterLayers.layers,
       background: background.asset,
       expressionLabel: manifest.expressions[state.expression]?.label ?? manifest.expressions[manifest.defaults.expression].label,
       poseLabel: manifest.poses[state.pose]?.label ?? manifest.poses[manifest.defaults.pose].label,
-      usedFallback: sprite.usedFallback || background.usedFallback
+      usedFallback: sprite.usedFallback || background.usedFallback || characterLayers.usedFallback
     };
   }
 }
@@ -133,6 +138,107 @@ const resolveFirstUsableAsset = (
     asset,
     usedFallback: !firstCandidate || asset !== firstCandidate
   };
+};
+
+const resolveCharacterLayers = (
+  manifest: CharacterVisualManifest,
+  state: NormalizedVisualState,
+  failedAssetUrls: ReadonlySet<string>,
+  fallbackSprite: VisualAssetRef
+): { layers: ResolvedVisualLayer[]; usedFallback: boolean } => {
+  if (!manifest.layers?.length) {
+    return {
+      layers: [
+        {
+          id: 'legacy-sprite',
+          slot: 'base',
+          label: 'Full sprite',
+          order: 0,
+          asset: fallbackSprite,
+          usedFallback: fallbackSprite.kind === 'placeholder'
+        }
+      ],
+      usedFallback: fallbackSprite.kind === 'placeholder'
+    };
+  }
+
+  const resolvedLayers = manifest.layers
+    .map((layer, index) => resolveLayer(layer, index, manifest, state, failedAssetUrls, fallbackSprite))
+    .filter((layer): layer is ResolvedVisualLayer => Boolean(layer))
+    .sort((left, right) => left.order - right.order);
+
+  if (resolvedLayers.length > 0) {
+    return {
+      layers: resolvedLayers,
+      usedFallback: resolvedLayers.some((layer) => layer.usedFallback)
+    };
+  }
+
+  return {
+    layers: [
+      {
+        id: 'legacy-sprite',
+        slot: 'base',
+        label: 'Full sprite',
+        order: 0,
+        asset: fallbackSprite,
+        usedFallback: true
+      }
+    ],
+    usedFallback: true
+  };
+};
+
+const resolveLayer = (
+  layer: CharacterVisualLayerDefinition,
+  index: number,
+  manifest: CharacterVisualManifest,
+  state: NormalizedVisualState,
+  failedAssetUrls: ReadonlySet<string>,
+  fallbackSprite: VisualAssetRef
+): ResolvedVisualLayer | null => {
+  const candidates = resolveLayerCandidates(layer, state, manifest.defaults.pose, manifest.defaults.expression);
+  const fallback = layer.required ? fallbackSprite : undefined;
+  const resolved = resolveFirstUsableLayerAsset(candidates, manifest, failedAssetUrls, fallback);
+
+  if (!resolved) return null;
+
+  return {
+    id: layer.id,
+    slot: layer.slot,
+    label: layer.label,
+    order: layer.order ?? index,
+    asset: resolved.asset,
+    usedFallback: resolved.usedFallback
+  };
+};
+
+const resolveLayerCandidates = (
+  layer: CharacterVisualLayerDefinition,
+  state: NormalizedVisualState,
+  defaultPose: VisualPose,
+  defaultExpression: VisualExpression
+): Array<VisualAssetRef | undefined> => {
+  const expressionKeys: VisualLayerExpressionKey[] = [state.expression, 'default', defaultExpression];
+  return [state.pose, defaultPose].flatMap((pose) => expressionKeys.map((expression) => layer.assets[pose]?.[expression]));
+};
+
+const resolveFirstUsableLayerAsset = (
+  candidates: Array<VisualAssetRef | undefined>,
+  manifest: CharacterVisualManifest,
+  failedAssetUrls: ReadonlySet<string>,
+  fallback?: VisualAssetRef
+): { asset: VisualAssetRef; usedFallback: boolean } | null => {
+  const resolvedCandidates = candidates.map((asset) => normalizeAsset(asset, manifest));
+  const firstCandidate = resolvedCandidates.find(Boolean);
+  const asset = resolvedCandidates.find((candidate) => candidate && isUsableAsset(candidate, failedAssetUrls));
+
+  if (asset) {
+    return { asset, usedFallback: asset !== firstCandidate };
+  }
+
+  if (!fallback) return null;
+  return { asset: fallback, usedFallback: true };
 };
 
 const isUsableAsset = (asset: VisualAssetRef, failedAssetUrls: ReadonlySet<string>): boolean => !asset.src || !failedAssetUrls.has(asset.src);
