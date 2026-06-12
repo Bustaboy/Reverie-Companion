@@ -87,6 +87,18 @@ export class GrowthService {
     );
   }
 
+  approveAdapter(adapterId: string): Promise<LoRATrainingJob> {
+    return this.request<PersonalLoRAJobResponse>(`/growth/personal-lora/adapters/${encodeURIComponent(adapterId)}/approve`, {
+      method: 'POST'
+    }).then((response) => response.job);
+  }
+
+  rejectAdapter(adapterId: string): Promise<LoRATrainingJob> {
+    return this.request<PersonalLoRAJobResponse>(`/growth/personal-lora/adapters/${encodeURIComponent(adapterId)}/reject`, {
+      method: 'POST'
+    }).then((response) => response.job);
+  }
+
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();

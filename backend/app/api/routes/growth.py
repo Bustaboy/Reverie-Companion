@@ -27,6 +27,12 @@ class PersonalLoRASettingsUpdate(BaseModel):
     max_sequence_length: int | None = Field(default=None, ge=256, le=1024)
     pause_during_chat: bool | None = None
     require_review_before_training: bool | None = None
+    auto_training_enabled: bool | None = None
+    training_frequency_hours: int | None = Field(default=None, ge=1, le=720)
+    min_training_examples: int | None = Field(default=None, ge=1, le=512)
+    min_new_examples_since_training: int | None = Field(default=None, ge=1, le=512)
+    max_auto_jobs_per_day: int | None = Field(default=None, ge=1, le=4)
+    require_approval_before_applying: bool | None = None
     active_adapter_id: str | None = None
     rollback_adapter_id: str | None = None
 
@@ -60,6 +66,7 @@ async def personal_lora_status(
                     1 for item in examples if item.get("status") == "rejected"
                 ),
             },
+            "training_status": trainer.training_status_summary(),
         }
     except PersonalLoRAError as exc:
         raise HTTPException(
@@ -141,6 +148,36 @@ async def start_personal_lora_training(
     except PersonalLoRAError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+
+
+@router.post("/personal-lora/adapters/{adapter_id}/approve")
+async def approve_personal_lora_adapter(
+    adapter_id: str,
+    trainer: Annotated[PersonalLoRATrainer, Depends(get_lora_trainer)],
+) -> dict[str, Any]:
+    """Approve applying a completed adapter that was pending user review."""
+
+    try:
+        return {"job": trainer.approve_adapter_application(adapter_id)}
+    except PersonalLoRAError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+
+@router.post("/personal-lora/adapters/{adapter_id}/reject")
+async def reject_personal_lora_adapter(
+    adapter_id: str,
+    trainer: Annotated[PersonalLoRATrainer, Depends(get_lora_trainer)],
+) -> dict[str, Any]:
+    """Reject applying a completed adapter and leave it disabled."""
+
+    try:
+        return {"job": trainer.reject_adapter_application(adapter_id)}
+    except PersonalLoRAError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
 
 

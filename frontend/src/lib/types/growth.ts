@@ -1,5 +1,6 @@
 export type LoRAExampleStatus = 'pending_review' | 'approved' | 'rejected' | 'deleted';
 export type LoRATrainingStatus = 'idle' | 'queued' | 'running' | 'cancelled' | 'completed' | 'failed';
+export type LoRAApplicationStatus = 'not_applicable' | 'pending_approval' | 'applied' | 'rejected';
 
 export interface PersonalLoRASettings {
   collection_opt_in?: boolean;
@@ -13,6 +14,12 @@ export interface PersonalLoRASettings {
   target_vram_gb?: number;
   pause_during_chat?: boolean;
   require_review_before_training?: boolean;
+  auto_training_enabled?: boolean;
+  training_frequency_hours?: number;
+  min_training_examples?: number;
+  min_new_examples_since_training?: number;
+  max_auto_jobs_per_day?: number;
+  require_approval_before_applying?: boolean;
   active_adapter_id?: string | null;
   rollback_adapter_id?: string | null;
   updated_at?: string;
@@ -51,6 +58,35 @@ export interface LoRATrainingJob {
   progress?: number;
   message?: string;
   error?: string | null;
+  trigger_reason?: string | null;
+  trigger_data?: LoRATrainingTriggerData;
+  learning_focus?: string[];
+  application_status?: LoRAApplicationStatus;
+  requires_application_approval?: boolean;
+}
+
+export interface LoRATrainingTriggerData {
+  trigger_reason?: string;
+  approved_example_count?: number;
+  new_examples_since_last_training?: number;
+  source_journal_count?: number;
+  source_memory_count?: number;
+  source_example_ids?: string[];
+  top_themes?: Array<{ theme: string; count: number }>;
+  top_purposes?: Array<{ purpose: string; count: number }>;
+}
+
+export interface LoRATrainingStatusSummary {
+  status: LoRATrainingStatus;
+  current_job_id?: string | null;
+  last_trained_at?: string | null;
+  next_scheduled_training?: string | null;
+  trigger_data?: LoRATrainingTriggerData;
+  learning_focus?: string[];
+  approval_required_before_applying?: boolean;
+  application_status?: LoRAApplicationStatus;
+  auto_training_enabled?: boolean;
+  auto_training_reason?: string;
 }
 
 export interface PersonalLoRACounts {
@@ -64,6 +100,7 @@ export interface PersonalLoRAStatusResponse {
   current_job: LoRATrainingJob | null;
   examples: LoRATrainingExample[];
   counts: PersonalLoRACounts;
+  training_status?: LoRATrainingStatusSummary;
 }
 
 export interface PersonalLoRASettingsResponse {
@@ -85,4 +122,10 @@ export type PersonalLoRASettingsUpdate = Pick<
   | 'batch_size'
   | 'pause_during_chat'
   | 'require_review_before_training'
+  | 'auto_training_enabled'
+  | 'training_frequency_hours'
+  | 'min_training_examples'
+  | 'min_new_examples_since_training'
+  | 'max_auto_jobs_per_day'
+  | 'require_approval_before_applying'
 >;

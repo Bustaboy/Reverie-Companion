@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { growthStore, personalLoRAReviewView } from '$lib/stores/growthStore';
   import { journalStore } from '$lib/stores/journalStore';
-  import type { LoRATrainingJob, LoRATrainingStatus } from '$lib/types/growth';
+  import type { LoRATrainingJob, LoRATrainingStatus, LoRATrainingTriggerData } from '$lib/types/growth';
   import type { JournalEntry, ReflectionInsight } from '$lib/types/journal';
 
   type FeelingKey = 'affection' | 'trust' | 'interest' | 'bond';
@@ -77,6 +77,14 @@
   };
 
   const latestEntry = $derived(activeEntries[0] ?? null);
+  const trainingStatus = $derived($growthStore.trainingStatus);
+  const pendingAdapterJob = $derived(
+    $growthStore.currentJob?.status === 'completed' &&
+      $growthStore.currentJob?.application_status === 'pending_approval' &&
+      $growthStore.currentJob?.adapter_id
+      ? $growthStore.currentJob
+      : null
+  );
 
   const themeCount = $derived.by(() => {
     const counts = new Map<string, number>();
@@ -216,6 +224,7 @@
   const progressWidth = (job: LoRATrainingJob | null) => `${Math.max(6, Math.round(bounded(job?.progress) * 100))}%`;
 
   const lastTrained = (job: LoRATrainingJob | null) => {
+    if (trainingStatus?.last_trained_at) return formatDate(trainingStatus.last_trained_at);
     if (!job || job.status !== 'completed') return 'Not trained yet';
     return formatDate(job.completed_at);
   };
@@ -223,9 +232,41 @@
   const nextScheduled = $derived.by(() => {
     if ($personalLoRAReviewView.trainingActive) return 'Running now';
     if (!$personalLoRAReviewView.trainingOptedIn) return 'Paused until opt-in';
+    if (!trainingStatus?.auto_training_enabled) return 'Manual start only';
+    if (trainingStatus.next_scheduled_training) return formatDate(trainingStatus.next_scheduled_training);
     if ($personalLoRAReviewView.approvedExamples.length === 0) return 'After examples are approved';
-    return 'Idle / overnight ready';
+    return 'Ready when thresholds are met';
   });
+
+  const triggerCopy = (trigger: LoRATrainingTriggerData | undefined) => {
+    if (!trigger) return 'Waiting for approved reflections, memories, and repeated interaction patterns.';
+    const pieces = [
+      `${trigger.approved_example_count ?? 0} approved examples`,
+      `${trigger.source_journal_count ?? 0} journal links`,
+      `${trigger.source_memory_count ?? 0} memory links`
+    ];
+    const topTheme = trigger.top_themes?.[0]?.theme;
+    if (topTheme) pieces.push(`${labelFor(topTheme)} signals`);
+    return pieces.join(' • ');
+  };
+
+  const setAutoTraining = (event: Event) => {
+    void growthStore.updateSettings({ auto_training_enabled: (event.currentTarget as HTMLInputElement).checked });
+  };
+
+  const setApplyApproval = (event: Event) => {
+    void growthStore.updateSettings({ require_approval_before_applying: (event.currentTarget as HTMLInputElement).checked });
+  };
+
+  const approveAdapter = (job: LoRATrainingJob | null) => {
+    if (!job?.adapter_id) return;
+    void growthStore.approveAdapter(job.adapter_id);
+  };
+
+  const rejectAdapter = (job: LoRATrainingJob | null) => {
+    if (!job?.adapter_id) return;
+    void growthStore.rejectAdapter(job.adapter_id);
+  };
 
   const loraCopy = $derived.by(() => {
     if ($personalLoRAReviewView.trainingActive) return $growthStore.currentJob?.message ?? 'A local adapter job is moving carefully in the background.';
@@ -382,10 +423,53 @@
                 <dd>{nextScheduled}</dd>
               </div>
               <div>
+                <dt>Triggered by</dt>
+                <dd>{triggerCopy(trainingStatus?.trigger_data)}</dd>
+              </div>
+              <div>
                 <dt>Needs review</dt>
                 <dd>{$growthStore.counts.pending_review}</dd>
               </div>
+              <div>
+                <dt>Apply status</dt>
+                <dd>{labelFor(trainingStatus?.application_status ?? 'not_applicable')}</dd>
+              </div>
             </dl>
+
+            <div class="growth-lora-learning" aria-label="What Reverie is learning">
+              <strong>What she is learning</strong>
+              {#if trainingStatus?.learning_focus?.length}
+                <ul>
+                  {#each trainingStatus.learning_focus as focus}
+                    <li>{focus}</li>
+                  {/each}
+                </ul>
+              {:else}
+                <p>Reverie is waiting for stronger approved evidence before forming adapter-level practice notes.</p>
+              {/if}
+            </div>
+
+            <div class="growth-lora-controls" aria-label="Automated LoRA controls">
+              <label>
+                <input type="checkbox" checked={$growthStore.settings?.auto_training_enabled ?? false} onchange={setAutoTraining} />
+                <span>Automated background training</span>
+              </label>
+              <label>
+                <input type="checkbox" checked={$growthStore.settings?.require_approval_before_applying ?? false} onchange={setApplyApproval} />
+                <span>Require approval before applying new LoRA updates</span>
+              </label>
+            </div>
+
+            {#if pendingAdapterJob}
+              <div class="growth-lora-pending" role="status">
+                <strong>New LoRA update needs your review</strong>
+                <p>{pendingAdapterJob.message ?? 'A new adapter manifest is ready but has not been applied.'}</p>
+                <div>
+                  <button type="button" onclick={() => approveAdapter(pendingAdapterJob)} disabled={$growthStore.actionState !== 'idle'}>Approve</button>
+                  <button type="button" onclick={() => rejectAdapter(pendingAdapterJob)} disabled={$growthStore.actionState !== 'idle'}>Reject</button>
+                </div>
+              </div>
+            {/if}
           </article>
 
           <article class="personality-shift-card" aria-labelledby="personality-shift-title">

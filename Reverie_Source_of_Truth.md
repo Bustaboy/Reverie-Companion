@@ -524,4 +524,18 @@ Task 4C adds the Memory Browser as Reverie's dedicated long-term recall control 
 
 Task 4C deliberately avoids LoRA training UI and encyclopedia work. It focuses on local memory inspection/control and keeps memory browsing lightweight for the 8GB target.
 
+
+## Milestone 3 Task 4D Update — Automated LoRA Training & Approvals
+
+Task 4D extends the self-learning loop from reviewable Personal LoRA foundations into configurable automated background training:
+
+- **Automated trigger logic**: the growth orchestrator now asks the Personal LoRA trainer to evaluate training after journal/reflection collection. Training can start only when the user has opted into collection/training, automation is enabled, enough approved examples exist, enough new examples have arrived since the last completed job, the configured frequency window allows it, and the daily auto-job safety cap has not been reached.
+- **8GB-friendly training plan**: jobs remain single-worker, low-priority, chat-safe foundation jobs that serialize an Unsloth QLoRA-style 4-bit manifest with conservative rank, batch size 1, short sequence length, one epoch guidance, and explicit future-trainer metadata instead of introducing a resident GPU trainer into the active chat path.
+- **Dashboard status**: Growth now has a clear LoRA Training Status panel showing current status, progress, last trained time, next scheduled training, the reflection/memory/example signals that triggered or would trigger training, and plain-language learning focus such as reassurance tone, emotional memory recall, comfort/boundary pacing, playful voice, and relationship continuity.
+- **Optional approval controls**: manual review is configurable at two levels: collected training examples can remain pending when “require review before training” is enabled, and completed LoRA updates can remain pending until the user approves or rejects them when “Require approval before applying new LoRA updates” is enabled. Both paths are local, reversible, and visible in the Growth Dashboard.
+- **Non-intrusive defaults**: collection, training, and automated training remain off until the user opts in. Approval-before-apply is available but not forced by default, so advanced users can allow smooth local growth while cautious users can keep every important LoRA change pending.
+
+Task 4D keeps the Task 4A–4C surfaces intact: Journal remains the evidence trail, Memory remains the editable recall browser, Growth becomes the readable control/status center, and training remains a lightweight local background workflow rather than a hidden personality rewrite.
+
+
 *End of Source of Truth Document v1.0*

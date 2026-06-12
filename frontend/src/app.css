@@ -3616,6 +3616,67 @@ h1 {
   margin: 0;
 }
 
+.growth-lora-learning,
+.growth-lora-controls,
+.growth-lora-pending {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  padding: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.growth-lora-learning strong,
+.growth-lora-pending strong {
+  color: var(--text);
+}
+
+.growth-lora-learning ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.05rem;
+}
+
+.growth-lora-learning p,
+.growth-lora-pending p {
+  margin: 0;
+}
+
+.growth-lora-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #ffdeda;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.growth-lora-controls input {
+  accent-color: var(--accent-strong);
+}
+
+.growth-lora-pending {
+  border-color: rgba(255, 201, 133, 0.28);
+  background: rgba(255, 201, 133, 0.07);
+}
+
+.growth-lora-pending > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.growth-lora-pending button {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .growth-lora-facts div {
   display: grid;
   gap: 0.25rem;

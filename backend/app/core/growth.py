@@ -277,6 +277,27 @@ class GrowthOrchestrator:
                     "trigger_reason": trigger_reason,
                 },
             )
+        try:
+            job = self._lora_trainer.evaluate_auto_training(
+                trigger_reason=f"reflection_{trigger_reason}"
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - auto training must not affect chat.
+            logger.warning(
+                "Automated personal LoRA training check skipped",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return
+        if job is not None:
+            logger.info(
+                "Automated personal LoRA training started from growth data",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.get("job_id"),
+                    "trigger_reason": job.get("trigger_reason"),
+                },
+            )
 
     def select_growth_notification(
         self,
@@ -534,7 +555,9 @@ class GrowthOrchestrator:
             payload = {"done": True}
 
         if growth_context.growth_notification is not None:
-            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+            payload["growth_notification"] = (
+                growth_context.growth_notification.model_dump()
+            )
 
         if request is not None:
             visual_state = emotion_inference_engine.infer_visual_state(

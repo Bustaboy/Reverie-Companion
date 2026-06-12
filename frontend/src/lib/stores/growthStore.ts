@@ -3,6 +3,7 @@ import { growthService, GrowthServiceError } from '$lib/api/growthService';
 import type {
   LoRATrainingExample,
   LoRATrainingJob,
+  LoRATrainingStatusSummary,
   PersonalLoRACounts,
   PersonalLoRASettings,
   PersonalLoRASettingsUpdate,
@@ -17,6 +18,7 @@ export interface GrowthState {
   currentJob: LoRATrainingJob | null;
   examples: LoRATrainingExample[];
   counts: PersonalLoRACounts;
+  trainingStatus: LoRATrainingStatusSummary | null;
   loadState: GrowthLoadState;
   actionState: GrowthActionState;
   error: string | null;
@@ -45,6 +47,7 @@ const INITIAL_STATE: GrowthState = {
   currentJob: null,
   examples: [],
   counts: INITIAL_COUNTS,
+  trainingStatus: null,
   loadState: 'idle',
   actionState: 'idle',
   error: null,
@@ -65,6 +68,7 @@ const mergeStatus = (state: GrowthState, response: PersonalLoRAStatusResponse): 
   currentJob: response.current_job,
   examples: response.examples,
   counts: response.counts,
+  trainingStatus: response.training_status ?? null,
   loadState: 'loaded',
   error: null,
   lastLoadedAt: new Date()
@@ -138,6 +142,12 @@ function createGrowthStore() {
     },
     startTraining() {
       return runAction('training', () => growthService.startTraining());
+    },
+    approveAdapter(adapterId: string) {
+      return runAction('reviewing', () => growthService.approveAdapter(adapterId));
+    },
+    rejectAdapter(adapterId: string) {
+      return runAction('reviewing', () => growthService.rejectAdapter(adapterId));
     },
     clearError() {
       store.update((state) => ({ ...state, error: null, loadState: state.examples.length ? 'loaded' : 'idle' }));

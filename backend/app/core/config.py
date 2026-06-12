@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     personal_lora_min_evidence_count: int = Field(default=2, gt=0, le=20)
     personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
     personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
+    personal_lora_training_frequency_hours: int = Field(default=168, ge=1, le=720)
+    personal_lora_min_training_examples: int = Field(default=8, ge=1, le=512)
+    personal_lora_min_new_examples_since_training: int = Field(default=3, ge=1, le=512)
+    personal_lora_max_auto_jobs_per_day: int = Field(default=1, ge=1, le=4)
 
     # TTS defaults are local-first and 8GB-aware. Orpheus TTS 3B is the
     # primary high-quality emotional backend and is loaded lazily with 4-bit

@@ -48,7 +48,11 @@ class PersonalLoRATrainerTests(unittest.TestCase):
             self.assertIsNone(trainer.collect_from_journal_entry(high_quality_entry()))
 
             trainer.update_settings(
-                {"collection_opt_in": True, "training_opt_in": True}
+                {
+                    "collection_opt_in": True,
+                    "training_opt_in": True,
+                    "require_review_before_training": True,
+                }
             )
             example = trainer.collect_from_journal_entry(high_quality_entry())
 
@@ -91,6 +95,77 @@ class PersonalLoRATrainerTests(unittest.TestCase):
             self.assertLessEqual(settings["max_steps"], 120)
             self.assertLessEqual(settings["learning_rate"], 0.0002)
             self.assertLessEqual(settings["max_sequence_length"], 1024)
+
+    def test_automated_training_uses_approved_growth_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trainer = PersonalLoRATrainer(
+                PersonalLoRATrainerConfig(
+                    root_path=Path(temp_dir),
+                    min_training_examples=1,
+                    min_new_examples_since_training=1,
+                    dry_run_step_delay_seconds=0,
+                )
+            )
+            trainer.update_settings(
+                {
+                    "collection_opt_in": True,
+                    "training_opt_in": True,
+                    "auto_training_enabled": True,
+                    "min_training_examples": 1,
+                    "min_new_examples_since_training": 1,
+                }
+            )
+            example = trainer.collect_from_journal_entry(high_quality_entry())
+
+            self.assertIsNotNone(example)
+            assert example is not None
+            self.assertEqual(example["status"], "approved")
+            decision = trainer.auto_training_decision(trigger_reason="test_growth")
+            self.assertTrue(decision["should_train"])
+
+            job = trainer.evaluate_auto_training(trigger_reason="test_growth")
+            self.assertIsNotNone(job)
+            assert job is not None
+            self.assertEqual(job["trigger_reason"], "test_growth")
+            self.assertIn("learning_focus", job)
+            stopped_or_finished = trainer.stop_training()
+            self.assertIsNotNone(stopped_or_finished)
+
+    def test_adapter_application_can_wait_for_manual_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trainer = PersonalLoRATrainer(
+                PersonalLoRATrainerConfig(
+                    root_path=Path(temp_dir),
+                    min_training_examples=1,
+                    min_new_examples_since_training=1,
+                    dry_run_step_delay_seconds=0,
+                )
+            )
+            trainer.update_settings(
+                {
+                    "collection_opt_in": True,
+                    "training_opt_in": True,
+                    "require_approval_before_applying": True,
+                    "min_training_examples": 1,
+                    "min_new_examples_since_training": 1,
+                    "max_steps": 10,
+                }
+            )
+            trainer.collect_from_journal_entry(high_quality_entry())
+            trainer.start_training()
+            worker = trainer._worker
+            if worker is not None:
+                worker.join(timeout=2)
+            completed = trainer.get_current_job()
+
+            self.assertIsNotNone(completed)
+            assert completed is not None
+            self.assertEqual(completed["application_status"], "pending_approval")
+            adapter_id = completed["adapter_id"]
+            assert adapter_id is not None
+            approved = trainer.approve_adapter_application(adapter_id)
+            self.assertEqual(approved["application_status"], "applied")
+            self.assertEqual(trainer.get_settings()["active_adapter_id"], adapter_id)
 
 
 if __name__ == "__main__":
