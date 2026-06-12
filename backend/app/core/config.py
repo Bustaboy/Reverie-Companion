@@ -145,6 +145,22 @@ class Settings(BaseSettings):
     tts_max_text_chars: int = Field(default=2000, gt=0, le=8000)
     tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)
 
+    # Image generation is a queued, low-priority media workload. Defaults target
+    # RTX 4070 8GB laptops: ComfyUI must run in lowvram mode with Flux GGUF,
+    # batch size 1, conservative resolutions, and TTS always preempts images.
+    image_generation_enabled: bool = True
+    image_generation_comfyui_url: str = "http://127.0.0.1:8188"
+    image_generation_output_dir: str = "./data/images/generated"
+    image_generation_default_preset: str = Field(
+        default="preview_8gb", pattern="^(preview_8gb|balanced_8gb|high_8gb)$"
+    )
+    image_generation_min_free_vram_mb: int = Field(default=2800, ge=0, le=8192)
+    image_generation_resume_poll_seconds: float = Field(default=2.0, gt=0, le=30)
+    image_generation_comfy_timeout_seconds: float = Field(default=600.0, gt=1)
+    image_generation_max_queue_size: int = Field(default=8, gt=0, le=100)
+    image_generation_cpu_fallback: bool = True
+    image_generation_allow_unknown_vram: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

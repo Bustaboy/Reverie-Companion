@@ -27,6 +27,7 @@ from app.core.config import Settings
 from app.models.tts import TTSContext
 from app.services.emotion_engine import emotion_engine
 from app.services.tts_context_router import TTSContextRouter
+from app.services.resource_coordinator import resource_coordinator
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
@@ -611,63 +612,70 @@ class TTSService:
         response_voice_id = routing.voice_profile.voice_id
 
         errors: list[dict[str, object]] = []
-        for backend, fallback_used in self._backend_order():
-            try:
-                result = await asyncio.wait_for(
-                    backend.generate(
-                        text=normalized_text,
-                        voice_id=resolved_voice_id,
-                        audio_format=audio_format,
-                        request_id=request_id,
-                        reference_audio_path=routing.voice_profile.reference_audio_path,
-                    ),
-                    timeout=self._timeout_for_backend(backend.name),
-                )
-                result = TTSGenerationResult(
-                    audio_bytes=result.audio_bytes,
-                    backend=result.backend,
-                    voice_id=response_voice_id,
-                    audio_format=result.audio_format,
-                    sample_rate=result.sample_rate,
-                    duration_seconds=result.duration_seconds,
-                    fallback_used=fallback_used,
-                )
-                logger.info(
-                    "Generated TTS audio",
-                    extra={
-                        "request_id": request_id,
-                        "backend": result.backend,
-                        "voice_id": result.voice_id,
-                        "tts_context_mode": routing.context.mode,
-                        "tts_is_narration": routing.is_narration,
-                        "tts_route_reason": routing.reason,
-                        "fallback_used": result.fallback_used,
-                        "audio_bytes": len(result.audio_bytes),
-                    },
-                )
-                return result
-            except TimeoutError as exc:
-                errors.append({"backend": backend.name, "code": "tts_backend_timeout"})
-                logger.warning(
-                    "TTS backend timed out",
-                    extra={"request_id": request_id, "backend": backend.name},
-                )
-                if backend.name == "orpheus":
-                    self._orpheus.unload()
-                continue
-            except TTSServiceError as exc:
-                errors.append(
-                    {"backend": backend.name, "code": exc.code, "details": exc.details}
-                )
-                logger.warning(
-                    "TTS backend unavailable or failed",
-                    extra={
-                        "request_id": request_id,
-                        "backend": backend.name,
-                        "code": exc.code,
-                    },
-                )
-                continue
+        async with resource_coordinator.tts_priority_section(request_id=request_id):
+            for backend, fallback_used in self._backend_order():
+                try:
+                    result = await asyncio.wait_for(
+                        backend.generate(
+                            text=normalized_text,
+                            voice_id=resolved_voice_id,
+                            audio_format=audio_format,
+                            request_id=request_id,
+                            reference_audio_path=routing.voice_profile.reference_audio_path,
+                        ),
+                        timeout=self._timeout_for_backend(backend.name),
+                    )
+                    result = TTSGenerationResult(
+                        audio_bytes=result.audio_bytes,
+                        backend=result.backend,
+                        voice_id=response_voice_id,
+                        audio_format=result.audio_format,
+                        sample_rate=result.sample_rate,
+                        duration_seconds=result.duration_seconds,
+                        fallback_used=fallback_used,
+                    )
+                    logger.info(
+                        "Generated TTS audio",
+                        extra={
+                            "request_id": request_id,
+                            "backend": result.backend,
+                            "voice_id": result.voice_id,
+                            "tts_context_mode": routing.context.mode,
+                            "tts_is_narration": routing.is_narration,
+                            "tts_route_reason": routing.reason,
+                            "fallback_used": result.fallback_used,
+                            "audio_bytes": len(result.audio_bytes),
+                        },
+                    )
+                    return result
+                except TimeoutError as exc:
+                    errors.append(
+                        {"backend": backend.name, "code": "tts_backend_timeout"}
+                    )
+                    logger.warning(
+                        "TTS backend timed out",
+                        extra={"request_id": request_id, "backend": backend.name},
+                    )
+                    if backend.name == "orpheus":
+                        self._orpheus.unload()
+                    continue
+                except TTSServiceError as exc:
+                    errors.append(
+                        {
+                            "backend": backend.name,
+                            "code": exc.code,
+                            "details": exc.details,
+                        }
+                    )
+                    logger.warning(
+                        "TTS backend unavailable or failed",
+                        extra={
+                            "request_id": request_id,
+                            "backend": backend.name,
+                            "code": exc.code,
+                        },
+                    )
+                    continue
 
         raise TTSBackendUnavailable(
             "No local TTS backend is currently available.",
@@ -733,15 +741,18 @@ class TTSService:
             self._orpheus, "stream_generate"
         ):
             try:
-                async for chunk in self._orpheus.stream_generate(
-                    text=normalized_text,
-                    voice_id=routing.backend_voice_id,
-                    response_voice_id=routing.voice_profile.voice_id,
-                    audio_format=audio_format,
-                    request_id=request_id,
-                    reference_audio_path=routing.voice_profile.reference_audio_path,
+                async with resource_coordinator.tts_priority_section(
+                    request_id=request_id
                 ):
-                    yield chunk
+                    async for chunk in self._orpheus.stream_generate(
+                        text=normalized_text,
+                        voice_id=routing.backend_voice_id,
+                        response_voice_id=routing.voice_profile.voice_id,
+                        audio_format=audio_format,
+                        request_id=request_id,
+                        reference_audio_path=routing.voice_profile.reference_audio_path,
+                    ):
+                        yield chunk
                 return
             except TTSServiceError as exc:
                 errors.append(
