@@ -36,6 +36,12 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
+    # Extension foundations stay declarative and disabled-by-default for third-party
+    # manifests. Core contracts always load, while optional local manifests are small
+    # JSON files so startup remains cheap on 8GB systems.
+    extensions_enabled: bool = True
+    extension_manifest_dirs: list[str] = Field(default_factory=lambda: ["./extensions"])
+
     # Long-term memory defaults are local-first and conservative for 8GB systems.
     # The hot path uses one Ollama embedding call plus embedded LanceDB search;
     # mem0 extraction is best-effort and can be disabled without losing direct

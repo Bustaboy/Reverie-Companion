@@ -573,4 +573,17 @@ The image-generation queue now carries resource pressure and warning metadata th
 
 Settings now includes an explicit 8GB resource mode with clear presets (`8GB Safe`, `Balanced`, `Quality`), background task limits, and a toggle for proactive resource warnings. The default remains conservative for RTX 4070-class 8GB laptops: preview image quality, gentle/balanced context, TTS responsiveness, one non-interactive background task, and automatic explanations when Reverie downgrades or pauses work to avoid OOM. **Task 5B is complete.**
 
+
+### Milestone 3 Task 5C — Extensibility Foundations
+
+Task 5C establishes Reverie's senior extensibility architecture without adding heavy plugin runtimes or resident model overhead. The backend now exposes a declarative `extension.v1` contract for custom panels, commands, settings sections, TTS voices, image workflows, growth modifiers, character import helpers, VN state, and memory access capabilities. Manifests are loaded from small local JSON files, invalid manifests are skipped with structured errors, and the built-in `reverie.core` contract is always available so future features can build against a stable API instead of ad hoc integrations.
+
+The extension event/command bus is typed, scoped, and bounded. Commands must be declared by an enabled extension with the required capabilities before they are accepted, and all event payloads are size-limited before they enter recent history. This keeps a bad extension from crashing or coupling tightly to chat, VN, TTS, image generation, growth, memory, or settings internals while preserving a clear path for richer plugin runtimes later.
+
+Character import has been upgraded from basic card-field handling toward a full preview normalization layer for SillyTavern and character-card payloads. Import previews now extract lorebooks/world-info into stable lore entries with triggers, priorities, facts, and limits; collect avatar/sprite/background/reference assets; preserve voice profile hints; surface mood and growth preferences; capture image-generation style references; preserve unknown compatible metadata for future round-trip support; and return warnings for missing review-critical data before any durable character state is written.
+
+The Svelte frontend now has matching typed extension contracts, a lightweight local event bus with listener error isolation, an extension registry, an extension API client, and an extensible Settings page. Extensions can register declarative setting sections and fields that render inside Settings while persisting under versioned local storage separately from core settings. The default UI loads backend contracts when Settings opens, reports failures calmly, and keeps all extension diagnostics local.
+
+Documentation for future extension developers now lives under `docs/extensions/README.md`, including the `extension.v1` manifest format, capability guidance, an example settings/command manifest, error-isolation rules, and the character-import preview contract. Runtime overhead remains minimal: the foundation uses Pydantic/TypeScript schemas, bounded in-memory event history, local JSON manifest reads, and no additional frontend or backend dependencies. **Task 5C is complete.**
+
 *End of Source of Truth Document v1.0*

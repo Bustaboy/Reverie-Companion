@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset, type PerformancePreset } from '$lib/stores/settingsStore';
   import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
+  import { extensionService } from '$lib/api/extensionService';
+  import { extensionRegistry, extensionSettingsSections } from '$lib/extensions/registry';
+  import { extensionEventBus } from '$lib/extensions/extensionBus';
+  import type { ExtensionSettingField } from '$lib/extensions/contracts';
 
   const reflectionFrequencyOptions: Array<{
     value: ReflectionFrequency;
@@ -148,6 +152,9 @@
   let voiceMoodStatus = $state<string | null>(null);
   let voiceMoodError = $state<string | null>(null);
   let savingMoodVoiceId = $state<string | null>(null);
+  let extensionsLoading = $state(false);
+  let extensionStatus = $state<string | null>(null);
+  let extensionError = $state<string | null>(null);
 
   const cloneAudio = $derived(cloneRecording ?? cloneFile);
 
@@ -171,8 +178,53 @@
     }
   };
 
+  const loadExtensions = async () => {
+    extensionsLoading = true;
+    extensionError = null;
+    try {
+      const registry = await extensionService.listExtensions();
+      extensionRegistry.setBackendExtensions(registry.extensions);
+      extensionStatus = `${registry.extensions.length} extension contract${registry.extensions.length === 1 ? '' : 's'} loaded.`;
+      extensionEventBus.publish('settings.extensions_loaded', 'settings', 'reverie.settings', {
+        extension_count: registry.extensions.length
+      });
+    } catch (error) {
+      extensionError = error instanceof Error ? error.message : 'Could not load backend extension contracts.';
+      extensionRegistry.reportError(extensionError);
+    } finally {
+      extensionsLoading = false;
+    }
+  };
+
+  const extensionSettingValue = (extensionId: string, field: ExtensionSettingField) => {
+    const value = $settingsStore.extensionSettings[extensionId]?.[field.key];
+    return value ?? field.default;
+  };
+
+  const setExtensionSetting = (extensionId: string, field: ExtensionSettingField, value: boolean | number | string | null) => {
+    settingsStore.setExtensionSetting(extensionId, field.key, value);
+    extensionEventBus.publish('settings.extension_setting_changed', 'settings', extensionId, {
+      key: field.key,
+      value
+    });
+  };
+
+  const handleExtensionInput = (extensionId: string, field: ExtensionSettingField, event: Event) => {
+    const target = event.currentTarget as HTMLInputElement | HTMLSelectElement;
+    if (field.kind === 'boolean') {
+      setExtensionSetting(extensionId, field, (target as HTMLInputElement).checked);
+      return;
+    }
+    if (field.kind === 'number') {
+      setExtensionSetting(extensionId, field, Number(target.value));
+      return;
+    }
+    setExtensionSetting(extensionId, field, target.value);
+  };
+
   onMount(() => {
     void loadVoiceProfiles();
+    void loadExtensions();
     return () => {
       if (cloneRecordingUrl) URL.revokeObjectURL(cloneRecordingUrl);
     };
@@ -710,6 +762,90 @@
       <p class="performance-explainer">
         TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.
       </p>
+    </article>
+
+    <article class="settings-card settings-wide extension-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Extensibility</span>
+        <h2>Extension settings</h2>
+        <p>Extensions can add small, typed settings here without coupling to the core settings markup. Bad manifests stay isolated and are reported instead of crashing the app.</p>
+      </div>
+
+      <div class="extension-status" aria-live="polite">
+        {#if extensionsLoading}
+          <span>Loading extension contracts…</span>
+        {:else if extensionError}
+          <span class="error">{extensionError}</span>
+        {:else if extensionStatus}
+          <span>{extensionStatus}</span>
+        {/if}
+      </div>
+
+      {#if $extensionSettingsSections.length === 0}
+        <p class="performance-explainer">No extension setting sections are registered yet.</p>
+      {:else}
+        <div class="extension-section-list">
+          {#each $extensionSettingsSections as section (`${section.extensionId}:${section.section_id}`)}
+            <section class="extension-section" aria-label={section.title}>
+              <div>
+                <span class="setting-kicker">{section.extensionName}</span>
+                <h3>{section.title}</h3>
+                {#if section.description}
+                  <p>{section.description}</p>
+                {/if}
+              </div>
+
+              <div class="extension-field-list">
+                {#each section.fields as field (`${section.extensionId}:${section.section_id}:${field.key}`)}
+                  {#if field.kind === 'boolean'}
+                    <label class="checkbox-setting">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(extensionSettingValue(section.extensionId, field))}
+                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
+                      />
+                      <span>{field.label}{field.description ? ` — ${field.description}` : ''}</span>
+                    </label>
+                  {:else if field.kind === 'number'}
+                    <label class="text-setting">
+                      <span>{field.label}</span>
+                      {#if field.description}<small>{field.description}</small>{/if}
+                      <input
+                        type="number"
+                        min={field.min_value ?? undefined}
+                        max={field.max_value ?? undefined}
+                        value={Number(extensionSettingValue(section.extensionId, field) ?? 0)}
+                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
+                      />
+                    </label>
+                  {:else if field.kind === 'select'}
+                    <label class="text-setting">
+                      <span>{field.label}</span>
+                      {#if field.description}<small>{field.description}</small>{/if}
+                      <select value={String(extensionSettingValue(section.extensionId, field) ?? '')} onchange={(event) => handleExtensionInput(section.extensionId, field, event)}>
+                        {#each field.options as option}
+                          <option value={option}>{option}</option>
+                        {/each}
+                      </select>
+                    </label>
+                  {:else}
+                    <label class="text-setting">
+                      <span>{field.label}</span>
+                      {#if field.description}<small>{field.description}</small>{/if}
+                      <input
+                        type="text"
+                        value={String(extensionSettingValue(section.extensionId, field) ?? '')}
+                        maxlength="500"
+                        onchange={(event) => handleExtensionInput(section.extensionId, field, event)}
+                      />
+                    </label>
+                  {/if}
+                {/each}
+              </div>
+            </section>
+          {/each}
+        </div>
+      {/if}
     </article>
 
     <aside class="settings-trust-note" aria-label="Memory and reflection trust note">
