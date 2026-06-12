@@ -2,6 +2,38 @@ import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 export type ChatRole = 'user' | 'assistant';
 
+export type TTSMode = 'one_to_one' | 'rpg';
+
+export interface TTSContextMetadata {
+  characterId?: string;
+  isNarration?: boolean;
+  mode?: TTSMode;
+  emotionHint?: string;
+  intensity?: number;
+}
+
+export interface TTSEmotionMetadata {
+  scene: string;
+  intensity: number;
+  tags: string[];
+  isHighEmotion?: boolean;
+  isIntimate?: boolean;
+  cues?: string[];
+  visibleTextStripped?: boolean;
+  extra?: Record<string, unknown>;
+}
+
+export interface MessageTTSMetadata {
+  /** Backend-provided speech-safe text, which may include TTS emotion tags and must not replace visible clean text. */
+  ttsText?: string;
+  /** Resolved voice profile id from VoiceManager/TTSContextRouter, when available. */
+  resolvedVoiceId?: string;
+  /** Optional display name from future voice profile APIs; frontend falls back to a friendly id label. */
+  voiceName?: string;
+  ttsContext?: TTSContextMetadata;
+  emotion?: TTSEmotionMetadata;
+}
+
 export type ChatMessageStatus = 'complete' | 'streaming' | 'error';
 
 export type MemoryContextStatus = 'used' | 'empty' | 'disabled' | 'unavailable' | 'unknown';
@@ -44,4 +76,5 @@ export interface ChatMessage {
   error?: string;
   memoryContext?: MemoryContext;
   visualState?: VisualStateMetadata;
+  tts?: MessageTTSMetadata;
 }

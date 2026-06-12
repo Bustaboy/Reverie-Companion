@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity } from '$lib/stores/settingsStore';
+  import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset } from '$lib/stores/settingsStore';
 
   const reflectionFrequencyOptions: Array<{
     value: ReflectionFrequency;
@@ -71,6 +71,28 @@
     }
   ];
 
+  const ttsLatencyOptions: Array<{
+    value: TTSLatencyPreset;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: 'quality',
+      label: 'Quality',
+      description: 'Prefer Orpheus-style expressiveness when the machine has room.'
+    },
+    {
+      value: 'balanced',
+      label: 'Balanced',
+      description: 'Recommended for 8GB: expressive enough without aggressive preloading.'
+    },
+    {
+      value: 'speed',
+      label: 'Speed',
+      description: 'Favor quick fallback voices and interruption-friendly playback.'
+    }
+  ];
+
   const savedLabel = $derived(
     $settingsStore.savedAt
       ? `Saved locally ${$settingsStore.savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
@@ -87,6 +109,22 @@
 
   const handleGrowthNotificationsChange = (event: Event) => {
     settingsStore.setGrowthNotificationsEnabled((event.currentTarget as HTMLInputElement).checked);
+  };
+
+  const handleTTSEnabledChange = (event: Event) => {
+    settingsStore.setTTSEnabled((event.currentTarget as HTMLInputElement).checked);
+  };
+
+  const handleTTSAutoPlayChange = (event: Event) => {
+    settingsStore.setTTSAutoPlay((event.currentTarget as HTMLInputElement).checked);
+  };
+
+  const handleTTSVolumeChange = (event: Event) => {
+    settingsStore.setTTSVolume(Number((event.currentTarget as HTMLInputElement).value));
+  };
+
+  const handleTTSSpeedChange = (event: Event) => {
+    settingsStore.setTTSSpeed(Number((event.currentTarget as HTMLInputElement).value));
   };
 </script>
 
@@ -219,6 +257,72 @@
             <span>{option.detail}</span>
             <strong>{option.label}</strong>
             <small>{option.description}</small>
+          </button>
+        {/each}
+      </div>
+    </article>
+
+    <article class="settings-card settings-wide voice-settings-card">
+      <div class="setting-copy compact">
+        <span class="setting-kicker">Voice</span>
+        <h2>Text-to-speech playback</h2>
+        <p>Keep speech local, interruptible, and light on memory. Reverie only generates one short audio line at a time.</p>
+      </div>
+
+      <div class="voice-settings-grid">
+        <label class="inline-toggle">
+          <input type="checkbox" checked={$settingsStore.ttsEnabled} onchange={handleTTSEnabledChange} />
+          <span>{ $settingsStore.ttsEnabled ? 'Voice enabled' : 'Voice disabled' }</span>
+        </label>
+
+        <label class="inline-toggle">
+          <input
+            type="checkbox"
+            checked={$settingsStore.ttsAutoPlay}
+            disabled={!$settingsStore.ttsEnabled}
+            onchange={handleTTSAutoPlayChange}
+          />
+          <span>{ $settingsStore.ttsAutoPlay ? 'Auto-play new replies' : 'Manual playback only' }</span>
+        </label>
+
+        <label class="range-setting">
+          <span>Volume <strong>{Math.round($settingsStore.ttsVolume * 100)}%</strong></span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={$settingsStore.ttsVolume}
+            disabled={!$settingsStore.ttsEnabled}
+            oninput={handleTTSVolumeChange}
+          />
+        </label>
+
+        <label class="range-setting">
+          <span>Speed <strong>{$settingsStore.ttsSpeed.toFixed(2)}×</strong></span>
+          <input
+            type="range"
+            min="0.75"
+            max="1.35"
+            step="0.05"
+            value={$settingsStore.ttsSpeed}
+            disabled={!$settingsStore.ttsEnabled}
+            oninput={handleTTSSpeedChange}
+          />
+        </label>
+      </div>
+
+      <div class="option-grid voice-quality-grid" role="radiogroup" aria-label="TTS quality and speed preference">
+        {#each ttsLatencyOptions as option}
+          <button
+            type="button"
+            class:active={$settingsStore.ttsLatencyPreset === option.value}
+            disabled={!$settingsStore.ttsEnabled}
+            aria-pressed={$settingsStore.ttsLatencyPreset === option.value}
+            onclick={() => settingsStore.setTTSLatencyPreset(option.value)}
+          >
+            <strong>{option.label}</strong>
+            <span>{option.description}</span>
           </button>
         {/each}
       </div>
