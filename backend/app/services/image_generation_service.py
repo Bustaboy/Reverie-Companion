@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -117,6 +118,15 @@ TERMINAL_STATUSES = {
     ImageJobStatus.failed,
     ImageJobStatus.cancelled,
 }
+
+
+@dataclass(frozen=True)
+class ImageOutputReference:
+    """Safe, job-attached image output resolution for the API layer."""
+
+    output_path: str
+    local_path: Path | None
+    comfyui_view_url: str | None
 
 
 @dataclass
@@ -363,6 +373,35 @@ class ImageGenerationService:
     def get_job(self, job_id: str) -> ImageJobRead:
         return self._require_job(job_id).to_read()
 
+    def get_output_reference(
+        self, job_id: str, output_index: int
+    ) -> ImageOutputReference:
+        """Resolve a generated image output by index without allowing arbitrary file access.
+
+        The public route intentionally accepts an output index, not a filesystem
+        path. The index must point at an output path already attached to the job
+        by ComfyUI completion metadata. Local files are served only when the
+        resolved path stays inside the configured image output directory;
+        otherwise the route can redirect to ComfyUI's /view endpoint for that
+        same attached output.
+        """
+
+        job = self._require_job(job_id)
+        if output_index < 0 or output_index >= len(job.output_paths):
+            raise ImageGenerationError(
+                "Image output was not found for that job.",
+                code="image_output_not_found",
+                retryable=False,
+                details={"job_id": job_id, "output_index": output_index},
+            )
+
+        output_path = job.output_paths[output_index]
+        return ImageOutputReference(
+            output_path=output_path,
+            local_path=self._resolve_local_output_path(output_path),
+            comfyui_view_url=self._build_comfyui_view_url(output_path),
+        )
+
     async def cancel(self, job_id: str) -> ImageJobRead:
         job = self._require_job(job_id)
         job.cancel_requested = True
@@ -392,6 +431,60 @@ class ImageGenerationService:
                     break
         finally:
             job.watchers.discard(queue)
+
+    def _resolve_local_output_path(self, output_path: str) -> Path | None:
+        output_root = Path(self._settings.image_generation_output_dir).resolve()
+        relative_output = self._relative_output_path(output_path)
+        if not relative_output:
+            return None
+
+        candidate = Path(relative_output)
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            resolved = (output_root / candidate).resolve()
+        try:
+            resolved.relative_to(output_root)
+        except ValueError:
+            return None
+        return resolved if resolved.is_file() else None
+
+    def _relative_output_path(self, output_path: str) -> str | None:
+        parsed = urllib.parse.urlsplit(output_path.strip())
+        if parsed.scheme and parsed.scheme != "file":
+            return None
+        query = urllib.parse.parse_qs(parsed.query)
+        filename = (query.get("filename") or [""])[0].strip()
+        subfolder = (query.get("subfolder") or [""])[0].strip().strip("/\\")
+        if filename:
+            return str(Path(subfolder) / filename) if subfolder else filename
+        path = urllib.parse.unquote(parsed.path).strip()
+        return path or None
+
+    def _build_comfyui_view_url(self, output_path: str) -> str | None:
+        parsed = urllib.parse.urlsplit(output_path.strip())
+        if parsed.scheme in {"http", "https"}:
+            return output_path
+        if parsed.scheme == "file":
+            return None
+
+        query = urllib.parse.parse_qs(parsed.query)
+        relative_output = self._relative_output_path(output_path)
+        if not relative_output:
+            return None
+        relative_path = Path(relative_output)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            return None
+        params = {
+            "filename": (query.get("filename") or [relative_path.name])[0],
+            "type": (query.get("type") or ["output"])[0],
+        }
+        subfolder = (query.get("subfolder") or [""])[0].strip().strip("/\\")
+        if not subfolder and relative_path.parent != Path("."):
+            subfolder = relative_path.parent.as_posix()
+        if subfolder:
+            params["subfolder"] = subfolder
+        return f"{self._settings.image_generation_comfyui_url.rstrip('/')}/view?{urllib.parse.urlencode(params)}"
 
     def _ensure_worker(self) -> None:
         if self._worker_task is None or self._worker_task.done():

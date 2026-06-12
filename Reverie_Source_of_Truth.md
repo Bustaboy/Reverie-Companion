@@ -427,4 +427,13 @@ Task 3C connects the existing Task 3A/3B image backend to the Svelte/Tauri front
 
 Task 3C intentionally does **not** add image history, gallery management, or advanced generation controls; those remain reserved for Task 3D and later media workflows.
 
+### Task 3C Polish Round
+
+The Task 3C frontend integration was tightened after review:
+
+- **Reusable image job presentation**: chat and VN now share a dedicated image job card component for progress, cancellation, paused-for-voice, low-VRAM waiting, degraded preset, error, retry, and expandable preview states. This keeps later gallery/history work from duplicating status logic.
+- **Protected image output serving**: the backend now exposes job-indexed image output URLs. The frontend asks Reverie's API for `/api/images/{job_id}/outputs/{output_index}` instead of constructing arbitrary local or ComfyUI file URLs. The route serves local files only when the requested output index is attached to that job and resolves under the configured image output directory; otherwise it falls back to ComfyUI `/view` for that same attached output when safe.
+- **Polished resource feedback**: user-facing copy now distinguishes TTS pause/resume, low-VRAM waiting, unknown VRAM preview fallback, OOM/degraded preset fallback, and normal queued/running states while preserving the backend rule that TTS always has priority over image generation.
+
+
 *End of Source of Truth Document v1.0*

@@ -1,7 +1,4 @@
-import { dev } from '$app/environment';
-
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
-const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
 export type ImageQualityPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
@@ -69,7 +66,6 @@ export interface ImageEventCallbacks {
 
 export interface ImageServiceOptions {
   baseUrl?: string;
-  comfyUiBaseUrl?: string;
   timeoutMs?: number;
   fetcher?: typeof fetch;
 }
@@ -98,13 +94,11 @@ export class ImageServiceError extends Error {
 
 export class ImageService {
   private readonly baseUrl: string;
-  private readonly comfyUiBaseUrl: string;
   private readonly timeoutMs: number;
   private readonly fetcher: typeof fetch;
 
   constructor(options: ImageServiceOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? getConfiguredBaseUrl());
-    this.comfyUiBaseUrl = normalizeBaseUrl(options.comfyUiBaseUrl ?? getConfiguredComfyUiBaseUrl());
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetcher = options.fetcher ?? fetch;
   }
@@ -185,17 +179,8 @@ export class ImageService {
     }
   }
 
-  resolveOutputUrl(outputPath: string): string {
-    const trimmed = outputPath.trim();
-    if (!trimmed) return '';
-    if (/^(https?:|data:|blob:|file:)/i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('/') || /^[a-z]:[\\/]/i.test(trimmed)) return `file://${trimmed}`;
-
-    const [filename, query = ''] = trimmed.split('?');
-    const params = new URLSearchParams(query);
-    if (!params.has('filename')) params.set('filename', filename);
-    if (!params.has('type')) params.set('type', 'output');
-    return `${this.comfyUiBaseUrl}/view?${params.toString()}`;
+  resolveOutputUrl(jobId: string, outputIndex: number): string {
+    return `${this.baseUrl}/api/images/${encodeURIComponent(jobId)}/outputs/${outputIndex}`;
   }
 
   private async handleSseFrame(frame: string, callbacks: ImageEventCallbacks): Promise<void> {
@@ -255,12 +240,6 @@ export class ImageService {
 function getConfiguredBaseUrl(): string {
   const envBaseUrl = import.meta.env.VITE_REVERIE_API_BASE_URL;
   return typeof envBaseUrl === 'string' && envBaseUrl.trim().length > 0 ? envBaseUrl : DEFAULT_API_BASE_URL;
-}
-
-function getConfiguredComfyUiBaseUrl(): string {
-  const envBaseUrl = import.meta.env.VITE_REVERIE_COMFYUI_BASE_URL;
-  if (typeof envBaseUrl === 'string' && envBaseUrl.trim().length > 0) return envBaseUrl;
-  return dev ? DEFAULT_COMFYUI_BASE_URL : DEFAULT_COMFYUI_BASE_URL;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {

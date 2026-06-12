@@ -1,6 +1,7 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
-  import { imageGenerationStore, type ImageGenerationJob } from '$lib/stores/imageGenerationStore.svelte';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
+  import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
@@ -48,14 +49,6 @@
     const firstMemory = message.memoryContext.items?.[0]?.label;
     return firstMemory ? `Remembering ${firstMemory}` : 'Remembering what matters';
   });
-
-  const progressStyle = (job: ImageGenerationJob) => `--image-progress: ${(job.progress * 100).toFixed(1)}%`;
-  const imageStatusLabel = (job: ImageGenerationJob) => {
-    if (job.status === 'completed') return job.fallback_used ? 'Image ready · 8GB fallback used' : 'Image ready';
-    if (job.status === 'failed') return job.error?.message ?? 'Image generation failed';
-    if (job.status === 'cancelled') return 'Image generation cancelled';
-    return job.message;
-  };
 </script>
 
 <article
@@ -127,36 +120,7 @@
       {#if imageJobs.length > 0}
         <div class="message-image-stack" aria-live="polite">
           {#each imageJobs as job (job.job_id)}
-            <article class:terminal={job.status === 'completed'} class:failed={job.status === 'failed'} class="message-image-card">
-              <div class="image-card-topline">
-                <div>
-                  <strong>{job.sourceLabel}</strong>
-                  <span>{imageStatusLabel(job)}</span>
-                </div>
-                {#if job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled'}
-                  <button type="button" class="image-cancel-button" onclick={() => cancelImage(job.job_id)}>Cancel</button>
-                {/if}
-              </div>
-
-              {#if job.status === 'completed' && job.imageUrls.length > 0}
-                <details class="image-preview" open>
-                  <summary>View generated image</summary>
-                  <img src={job.imageUrls[0]} alt={`Generated image for ${job.sourceLabel}`} loading="lazy" decoding="async" />
-                </details>
-              {:else if job.status === 'failed'}
-                <p class="image-error-copy">{job.error?.message ?? 'Image generation failed. Your conversation was not interrupted.'}</p>
-              {:else if job.status !== 'cancelled'}
-                <div class="image-progress-track" aria-label={`Image generation progress ${Math.round(job.progress * 100)} percent`} style={progressStyle(job)}>
-                  <span></span>
-                </div>
-              {/if}
-
-              {#if job.status === 'paused' || job.resource_mode === 'paused_for_tts'}
-                <small class="image-resource-note">Voice has priority; this image will resume automatically.</small>
-              {:else if job.fallback_used && job.status !== 'completed'}
-                <small class="image-resource-note">Using a lighter 8GB-safe image preset.</small>
-              {/if}
-            </article>
+            <ImageJobCard {job} onCancel={() => cancelImage(job.job_id)} />
           {/each}
         </div>
       {/if}

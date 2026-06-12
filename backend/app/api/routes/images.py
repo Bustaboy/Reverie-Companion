@@ -9,7 +9,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from app.core.config import Settings, get_settings
 from app.models.image import ImageGenerateRequest, ImageGenerateResponse, ImageJobRead
@@ -79,6 +79,43 @@ async def get_image_job(
         return service.get_job(job_id)
     except ImageGenerationError as exc:
         raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+
+
+@router.get("/{job_id}/outputs/{output_index}")
+async def get_image_output(
+    job_id: str,
+    output_index: int,
+    service: Annotated[ImageGenerationService, Depends(get_images_service)],
+):
+    """Serve only files that are already attached to a completed image job.
+
+    Local files are returned directly when they resolve under Reverie's configured
+    output directory. If ComfyUI owns the file, redirect to its /view endpoint for
+    the same job-attached output reference rather than accepting arbitrary paths
+    from the frontend.
+    """
+
+    try:
+        reference = service.get_output_reference(job_id, output_index)
+    except ImageGenerationError as exc:
+        raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+
+    if reference.local_path is not None:
+        return FileResponse(reference.local_path)
+    if reference.comfyui_view_url is not None:
+        return RedirectResponse(
+            reference.comfyui_view_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+
+    raise _image_http_exception(
+        ImageGenerationError(
+            "Image output is no longer available locally.",
+            code="image_output_unavailable",
+            retryable=True,
+            details={"job_id": job_id, "output_index": output_index},
+        ),
+        status_code=status.HTTP_404_NOT_FOUND,
+    )
 
 
 @router.post("/{job_id}/cancel", response_model=ImageJobRead)

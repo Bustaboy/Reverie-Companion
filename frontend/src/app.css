@@ -2822,7 +2822,7 @@ h1 {
   margin-top: 0.85rem;
 }
 
-.message-image-card {
+.image-job-card {
   display: grid;
   gap: 0.6rem;
   padding: 0.72rem;
@@ -2833,42 +2833,41 @@ h1 {
     rgba(255, 255, 255, 0.035);
 }
 
-.message-image-card.terminal {
+.image-job-card.terminal {
   border-color: rgba(255, 216, 212, 0.2);
 }
 
-.message-image-card.failed {
+.image-job-card.failed {
   border-color: rgba(255, 179, 167, 0.28);
   background: rgba(255, 179, 167, 0.06);
 }
 
-.image-card-topline {
+.image-job-topline {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-.image-card-topline div {
+.image-job-topline div {
   display: grid;
   gap: 0.12rem;
   min-width: 0;
 }
 
-.image-card-topline strong {
+.image-job-topline strong {
   color: #ffe0dc;
   font-size: 0.82rem;
 }
 
-.image-card-topline span,
-.image-resource-note,
-.image-error-copy {
+.image-job-topline span,
+.image-job-note,
+.image-job-error {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.4;
 }
 
-.image-cancel-button,
-.vn-image-status button {
+.image-job-action {
   align-self: start;
   flex: 0 0 auto;
   padding: 0.32rem 0.55rem;
@@ -2881,8 +2880,7 @@ h1 {
   font-weight: 800;
 }
 
-.image-progress-track,
-.vn-image-progress {
+.image-job-progress {
   position: relative;
   overflow: hidden;
   height: 0.45rem;
@@ -2890,8 +2888,7 @@ h1 {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.image-progress-track span,
-.vn-image-progress i {
+.image-job-progress span {
   display: block;
   width: var(--image-progress, 0%);
   height: 100%;
@@ -2901,19 +2898,66 @@ h1 {
   transition: width 220ms ease;
 }
 
-.image-preview {
+.image-job-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.image-job-progress-row small {
+  color: #eac4c8;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.image-job-card.image-job-paused-for-tts {
+  border-color: rgba(255, 216, 212, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 216, 212, 0.09), rgba(132, 91, 150, 0.05)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.image-job-card.image-job-low-vram,
+.image-job-card.image-job-degraded {
+  border-color: rgba(255, 199, 137, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 199, 137, 0.08), rgba(122, 74, 132, 0.045)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.image-job-card.compact {
+  margin-top: 0.75rem;
+  padding: 0.62rem 0.68rem;
+}
+
+.image-job-card.compact .image-job-topline {
+  align-items: center;
+}
+
+.image-job-card.compact .image-job-note,
+.image-job-card.compact .image-job-error {
+  margin: 0;
+}
+
+.image-job-error {
+  color: #ffb3a7;
+  margin: 0;
+}
+
+.image-job-preview {
   display: grid;
   gap: 0.55rem;
 }
 
-.image-preview summary {
+.image-job-preview summary {
   color: #ffd8d4;
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 800;
 }
 
-.image-preview img {
+.image-job-preview img {
   width: min(100%, 28rem);
   max-height: 24rem;
   object-fit: cover;
@@ -2976,54 +3020,22 @@ h1 {
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.44));
 }
 
-.vn-image-status {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(8rem, 14rem) auto;
-  align-items: center;
-  gap: 0.65rem;
-  margin-top: 0.75rem;
-  padding: 0.58rem 0.68rem;
-  border: 1px solid rgba(240, 154, 159, 0.16);
-  border-radius: 0.9rem;
-  background: rgba(240, 154, 159, 0.07);
-}
-
-.vn-image-status.complete {
-  grid-template-columns: 1fr;
-  border-color: rgba(255, 216, 212, 0.18);
-}
-
-.vn-image-status.error {
-  border-color: rgba(255, 179, 167, 0.28);
-  background: rgba(255, 179, 167, 0.065);
-}
-
-.vn-image-status span {
-  color: #f2d9df;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
 .image-settings-card {
   border-color: rgba(240, 154, 159, 0.14);
 }
 
 @media (max-width: 760px) {
   .chat-header-actions,
-  .image-card-topline,
+  .image-job-topline,
   .image-status-banner {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .vn-image-status {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .image-progress-track span,
-  .vn-image-progress i {
+  .image-job-progress span {
     transition: none;
   }
 }

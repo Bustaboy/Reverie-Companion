@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { ImageJobCard } from '$lib/components/ImageGeneration';
   import { AudioPlayer } from '$lib/components/TTS';
   import { chatStore } from '$lib/stores/chatStore';
   import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
@@ -230,15 +231,13 @@
         <small>Using safe fallback visuals until every authored layer is available.</small>
       {/if}
       {#if visualNovelImageJob}
-        <div class:complete={visualNovelImageJob.status === 'completed'} class:error={visualNovelImageJob.status === 'failed'} class="vn-image-status">
-          <span>{visualNovelImageJob.status === 'completed' ? 'Scene image ready' : visualNovelImageJob.message}</span>
-          {#if visualNovelImageBusy}
-            <div class="vn-image-progress" style={`--image-progress: ${(visualNovelImageJob.progress * 100).toFixed(1)}%`}><i></i></div>
-            <button type="button" onclick={cancelVisualizeScene}>Cancel</button>
-          {:else if visualNovelImageJob.status === 'failed'}
-            <button type="button" onclick={visualizeScene}>Try again</button>
-          {/if}
-        </div>
+        <ImageJobCard
+          job={visualNovelImageJob}
+          compact
+          showPreview={false}
+          onCancel={cancelVisualizeScene}
+          onRetry={visualizeScene}
+        />
       {/if}
       <AudioPlayer compact label="Visual novel voice playback" />
     </div>

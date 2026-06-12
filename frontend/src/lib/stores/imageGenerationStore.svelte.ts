@@ -53,7 +53,7 @@ const jobFromRead = (job: ImageJobRead, input: QueueImageInput): ImageGeneration
   sourceMessageId: input.sourceMessageId,
   sourceLabel: input.sourceLabel,
   displayPrompt: input.prompt,
-  imageUrls: job.output_paths.map((path) => imageService.resolveOutputUrl(path)).filter(Boolean),
+  imageUrls: job.output_paths.map((_, index) => imageService.resolveOutputUrl(job.job_id, index)).filter(Boolean),
   submittedAt: new Date()
 });
 
@@ -70,7 +70,7 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   vram_free_mb: event.vram_free_mb,
   vram_required_mb: event.vram_required_mb,
   updated_at: event.timestamp,
-  imageUrls: event.output_paths.map((path) => imageService.resolveOutputUrl(path)).filter(Boolean)
+  imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
 });
 
 const contextFromMessage = (message: ChatMessage): Record<string, unknown> => ({
@@ -203,7 +203,7 @@ class ImageGenerationStore {
       this.patchJob(jobId, (job) => ({
         ...job,
         ...cancelled,
-        imageUrls: cancelled.output_paths.map((path) => imageService.resolveOutputUrl(path)).filter(Boolean)
+        imageUrls: cancelled.output_paths.map((_, index) => imageService.resolveOutputUrl(cancelled.job_id, index)).filter(Boolean)
       }));
       this.announcement = 'Image generation cancelled.';
     } catch (error) {
