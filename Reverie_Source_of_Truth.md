@@ -235,7 +235,21 @@ Milestone 3 Task 2H closes the Task 2 TTS system as a complete lightweight voice
 
 **Task 2A–2H is complete.** Reverie’s final MVP TTS architecture is local-first, emotionally tagged, clean-text-safe, profile-aware, clone-ready, interruptible, fallback-safe, and polished across Chat, Settings, and Visual Novel mode while staying friendly to RTX 4070 8GB mobile hardware.
 
-### 3.11 Futa-Vision Integration Vision (Future)
+### 3.11 Growth Dashboard Architecture (Milestone 3 Task 4A)
+
+Milestone 3 Task 4A adds the central Growth Dashboard as Reverie's warm relationship overview, without creating new heavy backend work on page load:
+
+- **Navigation**: the Svelte shell now includes a first-class `Growth` destination between Chat and Journal, separate from the detailed Journal reader and Personal LoRA Training review panel. Growth is the emotional summary view; Journal remains the evidence/detail view; Training remains the consent/action view.
+- **Data sources**: the dashboard reads only existing local self-learning systems through `journalStore` and `growthStore`: recent reflection journal entries, insight kinds/themes/confidence, structured growth hypotheses/interpretations, Personal LoRA review counts, explicit opt-in settings, and current local training job metadata. It does not scan memories, start reflection, start training, or run model inference.
+- **Relationship model**: affection, trust, interest, and emotional bond cards are lightweight derived UI signals calculated from reflection themes and insight evidence. These meters are framed as relationship pulse indicators, not canonical hidden state, so weak or missing evidence stays conservative and future backend growth-state schemas can replace the derivation cleanly.
+- **Living timeline**: recent journal entries become a human-readable evolution timeline focused on tone, attraction/interest, emotional bonds, trust, reassurance, playfulness, boundaries, and continuity. Copy intentionally uses intimate product language while preserving provenance through confidence and theme labels.
+- **LoRA status summary**: the dashboard surfaces current progress, last trained time, next scheduled/readiness state, pending-review count, and running/failed/idle status from the existing Personal LoRA foundation only. Starting jobs, reviewing examples, and adapter management remain in the Training panel for later tasks.
+- **8GB behavior**: page load performs bounded API reads already used by Journal/Training, then computes small arrays/maps in Svelte. There are no model loads, embeddings, background queues, image/TTS calls, broad filesystem scans, or long lists rendered on entry.
+- **UI language**: the visual design extends the warm premium dark system with rose accents, subtle relationship glow, compact cards, calm breathing spacing, accessible empty/error states, reduced-motion-compatible CSS, and a clear distinction between emotional overview and advanced controls.
+
+Task 4A establishes the emotional command center for self-learning: users can see how the character's feelings, tone, and behavior are evolving from local evidence, while detailed editing/review/rollback workflows remain reserved for Journal, Memory, Training, and later Growth-control tasks.
+
+### 3.12 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
@@ -457,6 +471,15 @@ The final polish pass keeps the PR #80 gallery/navigation/lightbox integration i
 - **History persistence hardening**: image history now writes a schema-versioned JSON payload with both grouped `conversations` and a compatibility `items` list, reloads legacy flat histories, skips malformed entries instead of failing the gallery, and writes JSON atomically through a temporary file replace.
 - **Character asset manifest polish**: saving generated images now normalizes the manifest, deduplicates by `job_id` + output index, records relative and absolute asset paths, source conversation/message metadata, prompt/negative prompt, presets, fallback state, and stable `asset_id`s.
 - **Clearer fallback UI**: gallery and image cards distinguish missing local output files from generation failures, disable save actions when the file is unavailable, and offer retry/regenerate guidance while preserving lazy loading and TTS/VRAM priority behavior.
+
+## Milestone 3 Task 4A Update — Growth Dashboard
+
+Task 4A adds the Growth Dashboard as the central, polished relationship overview for Reverie's self-learning loop:
+
+- **Frontend architecture**: `GrowthDashboard.svelte` composes existing `journalStore` and `growthStore` data, using Svelte 5 runes to derive relationship pulse, feeling highlight cards, recent evolution timeline, personality shifts, and Personal LoRA status without creating new backend computation.
+- **Navigation and scope**: the sidebar now exposes Growth as its own destination. The dashboard intentionally avoids journal editing, memory browsing, and LoRA training controls; those remain separate surfaces to keep this page emotionally readable and lightweight.
+- **Design decision**: relationship meters are evidence-backed UI summaries derived from reflection themes/insights, not permanent canonical personality mutations. This preserves drift safety while making character evolution feel visible and personal.
+- **8GB decision**: the dashboard does not trigger model calls, embedding work, image generation, TTS, or training. It performs bounded existing API reads and local array aggregation only, matching the RTX 4070 8GB mobile responsiveness target.
 
 
 *End of Source of Truth Document v1.0*
