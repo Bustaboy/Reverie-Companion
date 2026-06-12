@@ -157,6 +157,9 @@ class Settings(BaseSettings):
         default="preview_8gb", pattern="^(preview_8gb|balanced_8gb|high_8gb)$"
     )
     image_generation_min_free_vram_mb: int = Field(default=2800, ge=0, le=8192)
+    resource_warning_free_vram_mb: int = Field(default=2200, ge=0, le=8192)
+    resource_critical_free_vram_mb: int = Field(default=1200, ge=0, le=8192)
+    resource_target_headroom_mb: int = Field(default=768, ge=0, le=4096)
     image_generation_resume_poll_seconds: float = Field(default=2.0, gt=0, le=30)
     image_generation_comfy_timeout_seconds: float = Field(default=600.0, gt=1)
     image_generation_max_queue_size: int = Field(default=8, gt=0, le=100)

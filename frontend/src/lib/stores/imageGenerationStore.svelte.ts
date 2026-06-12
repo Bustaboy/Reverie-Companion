@@ -89,6 +89,8 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   vram_required_mb: event.vram_required_mb,
   updated_at: event.timestamp,
   saved_to_assets: event.saved_to_assets,
+  pressure: event.pressure,
+  warning: event.warning,
   imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
 });
 
@@ -260,7 +262,7 @@ class ImageGenerationStore {
     this.currentConversationId = conversationId;
     try {
       const response = await imageService.listHistory(conversationId);
-      this.gallery = response.items.map(galleryItemFromHistory);
+      this.gallery = response.items.slice(0, 80).map(galleryItemFromHistory);
       this.announcement = this.gallery.length ? `Loaded ${this.gallery.length} saved images.` : 'No saved images for this conversation yet.';
     } catch (error) {
       this.error = normalizeError(error);
@@ -273,7 +275,7 @@ class ImageGenerationStore {
   async deleteImage(jobId: string) {
     try {
       const response = await imageService.deleteHistoryItem(jobId);
-      this.gallery = response.items.map(galleryItemFromHistory);
+      this.gallery = response.items.slice(0, 80).map(galleryItemFromHistory);
       this.jobs = this.jobs.filter((job) => job.job_id !== jobId);
       this.announcement = 'Image removed from this conversation gallery.';
     } catch (error) {
@@ -369,7 +371,9 @@ class ImageGenerationStore {
           onEvent: (event) => {
             this.patchJob(event.job_id, (job) => jobFromEvent(job, event));
             this.announcement = event.message;
+            if (event.warning) this.announcement = event.warning;
             if (event.status === 'completed') void this.loadGallery(event.conversation_id ?? this.currentConversationId);
+            if (isTerminalStatus(event.status)) this.controllers.get(event.job_id)?.abort();
             if (event.error?.message) this.error = event.error.message;
           }
         },

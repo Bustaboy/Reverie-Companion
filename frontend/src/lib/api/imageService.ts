@@ -39,6 +39,8 @@ export interface ImageJobRead {
   resource_mode?: string;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  pressure?: 'unknown' | 'normal' | 'elevated' | 'critical';
+  warning?: string | null;
   conversation_id?: string;
   source?: string | null;
   source_message_id?: string | null;
@@ -95,6 +97,8 @@ export interface ImageJobEvent {
   fallback_used?: boolean;
   vram_free_mb?: number | null;
   vram_required_mb?: number | null;
+  pressure?: 'unknown' | 'normal' | 'elevated' | 'critical';
+  warning?: string | null;
   conversation_id?: string;
   source?: string | null;
   source_message_id?: string | null;

@@ -18,6 +18,7 @@ from app.api.routes.growth import router as growth_router
 from app.api.routes.images import router as images_router
 from app.api.routes.journal import router as journal_router
 from app.api.routes.memory import router as memory_router
+from app.api.routes.resources import router as resources_router
 from app.api.routes.tts import router as tts_router
 from app.api.routes.voices import router as voices_router
 from app.core.config import Settings, get_settings
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(memory_router)
     app.include_router(growth_router)
     app.include_router(images_router)
+    app.include_router(resources_router)
     app.include_router(tts_router)
     app.include_router(voices_router)
     logger.info(

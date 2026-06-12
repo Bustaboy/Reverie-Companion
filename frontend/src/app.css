@@ -4596,3 +4596,59 @@ textarea:disabled {
     transform: none;
   }
 }
+
+.resource-warning,
+.panel-error {
+  margin: 0 0 1rem;
+  border: 1px solid rgba(255, 191, 128, 0.28);
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(255, 173, 96, 0.14), rgba(68, 43, 91, 0.26));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+  color: var(--text-primary);
+}
+
+.resource-warning {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+}
+
+.resource-warning strong {
+  color: #ffd8a8;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.resource-warning small {
+  color: var(--text-muted);
+}
+
+.panel-error {
+  padding: 1.25rem;
+}
+
+.panel-error button {
+  margin-top: 0.75rem;
+}
+
+.checkbox-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 1rem;
+}
+
+.checkbox-setting input {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  accent-color: #ff9fb7;
+}
+
+.performance-explainer {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+  line-height: 1.6;
+}

@@ -565,4 +565,12 @@ Accessibility decisions are now part of the core UI contract: the app shell incl
 8GB and performance decisions remain conservative: Task 5A is CSS/Svelte UI polish only. It adds no resident models, no new dependencies, no background workers, no extra backend calls, and no unbounded rendering paths. Animations are transform/opacity based, short-lived, and reduced-motion aware so chat, voice, image jobs, and growth surfaces remain responsive on the RTX 4070 8GB mobile target. **Task 5A is complete.**
 
 
+### Milestone 3 Task 5B — Performance, Reliability & 8GB Optimization
+
+Task 5B completes a senior performance and reliability pass across Reverie's current Milestone 3 application surfaces. The optimization layer formalizes a shared local resource coordinator with proactive VRAM pressure states (`normal`, `elevated`, `critical`, `unknown`), a `/api/resources/status` diagnostic endpoint, and user-facing 8GB guardrail messaging. TTS remains the highest-priority interactive media path: image generation pauses while TTS is active, can be preempted mid-job if TTS starts, and now asks idle auxiliary models such as Orpheus to unload before exclusive ComfyUI work starts.
+
+The image-generation queue now carries resource pressure and warning metadata through API reads and SSE events, downgrades toward the preview 8GB preset under critical VRAM pressure, interrupts ComfyUI when resource pressure becomes unsafe, caps gallery hydration on the frontend, and keeps ComfyUI/Flux GGUF work serialized as a single exclusive media job. The Svelte shell now shows calm proactive VRAM warnings, wraps major panels in a recovery boundary so one UI failure does not take down the whole app, and preserves safe fallbacks for missing telemetry, missing ComfyUI, and low-resource states.
+
+Settings now includes an explicit 8GB resource mode with clear presets (`8GB Safe`, `Balanced`, `Quality`), background task limits, and a toggle for proactive resource warnings. The default remains conservative for RTX 4070-class 8GB laptops: preview image quality, gentle/balanced context, TTS responsiveness, one non-interactive background task, and automatic explanations when Reverie downgrades or pauses work to avoid OOM. **Task 5B is complete.**
+
 *End of Source of Truth Document v1.0*

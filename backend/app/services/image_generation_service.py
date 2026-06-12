@@ -50,6 +50,8 @@ from app.models.image import (
 from app.services.image_prompt_engine import ImagePromptEngine
 from app.services.resource_coordinator import (
     LocalResourceCoordinator,
+    ResourcePressure,
+    ResourceStatus,
     resource_coordinator,
 )
 
@@ -160,6 +162,8 @@ class ImageJob:
     resource_mode: str = "queued"
     vram_free_mb: int | None = None
     vram_required_mb: int | None = None
+    pressure: str = "unknown"
+    warning: str | None = None
     sequence: int = 0
     cancel_requested: bool = False
     comfy_prompt_id: str | None = None
@@ -186,6 +190,8 @@ class ImageJob:
             resource_mode=self.resource_mode,
             vram_free_mb=self.vram_free_mb,
             vram_required_mb=self.vram_required_mb,
+            pressure=self.pressure,
+            warning=self.warning,
             conversation_id=self.conversation_id,
             source=self.source,
             source_message_id=self.source_message_id,
@@ -662,6 +668,16 @@ class ImageGenerationService:
             )
             return
         async with self._coordinator.image_job_section(job_id=job.job_id):
+            unloaded = self._unload_idle_auxiliary_models("image_generation_start")
+            if unloaded:
+                self._update(
+                    job,
+                    status=ImageJobStatus.waiting_for_resources,
+                    phase="unloaded_auxiliary_models",
+                    resource_mode="freeing_headroom",
+                    progress=0.04,
+                    message="Released idle voice models before image generation to protect 8GB VRAM headroom.",
+                )
             await self._wait_for_safe_resources(job)
             if job.cancel_requested:
                 self._update(
@@ -693,11 +709,14 @@ class ImageGenerationService:
                     resource_mode="checking",
                     message="TTS finished; checking VRAM before resuming image generation.",
                 )
-            snapshot = self._coordinator.snapshot_vram()
+            status = self._resource_status()
+            snapshot = status.snapshot
             preset = self._select_safe_preset(job, snapshot.free_mb)
             required = PRESET_CONFIGS[preset].min_free_vram_mb
             job.vram_free_mb = snapshot.free_mb
             job.vram_required_mb = required
+            job.pressure = status.pressure.value
+            job.warning = status.warning
             if (
                 snapshot.free_mb is None
                 and self._settings.image_generation_allow_unknown_vram
@@ -714,7 +733,11 @@ class ImageGenerationService:
                     message="VRAM telemetry is unavailable; using the preview 8GB preset for safety.",
                 )
                 return
-            if snapshot.free_mb is not None and snapshot.free_mb >= required:
+            if (
+                snapshot.free_mb is not None
+                and snapshot.free_mb >= required
+                and status.pressure != ResourcePressure.critical
+            ):
                 if preset != job.active_preset:
                     job.active_preset = preset
                     job.fallback_used = True
@@ -733,7 +756,7 @@ class ImageGenerationService:
                 phase="low_vram",
                 resource_mode="waiting_for_vram",
                 progress=0.03,
-                message="Waiting for enough free VRAM before starting image generation.",
+                message=status.warning or "Waiting for enough free VRAM before starting image generation.",
             )
             await asyncio.sleep(self._settings.image_generation_resume_poll_seconds)
 
@@ -764,6 +787,18 @@ class ImageGenerationService:
                     message="Image job cancelled.",
                 )
                 return
+            status = self._resource_status(reserved_mb=PRESET_CONFIGS[job.active_preset].min_free_vram_mb)
+            if status.pressure == ResourcePressure.critical and job.active_preset != ImageQualityPreset.preview_8gb:
+                job.active_preset = ImageQualityPreset.preview_8gb
+                job.fallback_used = True
+                self._update(
+                    job,
+                    status=ImageJobStatus.paused,
+                    phase="critical_vram_downgrade",
+                    resource_mode="degraded",
+                    progress=0.10,
+                    message=status.warning or "VRAM is tight; downgrading image generation to preview quality.",
+                )
             preset = PRESET_CONFIGS[job.active_preset]
             self._update(
                 job,
@@ -792,6 +827,21 @@ class ImageGenerationService:
                         message="Image job cancelled.",
                     )
                     return
+                if monitor_result == "critical_vram":
+                    generation_task.cancel()
+                    await self._adapter.interrupt()
+                    job.active_preset = ImageQualityPreset.preview_8gb
+                    job.fallback_used = True
+                    self._update(
+                        job,
+                        status=ImageJobStatus.paused,
+                        phase="critical_vram_preempted",
+                        resource_mode="degraded",
+                        progress=job.progress,
+                        message="GPU memory became critically low, so Reverie paused image generation and switched to preview quality.",
+                    )
+                    await self._wait_for_safe_resources(job)
+                    continue
                 if monitor_result == "preempted":
                     generation_task.cancel()
                     await self._adapter.interrupt()
@@ -864,8 +914,41 @@ class ImageGenerationService:
                 return "cancelled"
             if self._coordinator.tts_active:
                 return "preempted"
+            status = self._resource_status()
+            job.vram_free_mb = status.snapshot.free_mb
+            job.pressure = status.pressure.value
+            job.warning = status.warning
+            if status.pressure == ResourcePressure.critical:
+                return "critical_vram"
             await asyncio.sleep(0.25)
         return "done"
+
+    def _resource_status(self, *, reserved_mb: int = 0) -> ResourceStatus:
+        if hasattr(self._coordinator, "resource_status"):
+            return self._coordinator.resource_status(reserved_mb=reserved_mb)
+        snapshot = self._coordinator.snapshot_vram()
+        pressure = ResourcePressure.unknown
+        warning = None
+        headroom_mb = None
+        if snapshot.free_mb is not None:
+            headroom_mb = snapshot.free_mb - reserved_mb
+            pressure = ResourcePressure.normal if headroom_mb > 1200 else ResourcePressure.critical
+            if pressure == ResourcePressure.critical:
+                warning = "GPU memory is critically low; Reverie is waiting before starting image generation."
+        return ResourceStatus(
+            pressure=pressure,
+            snapshot=snapshot,
+            tts_active=self._coordinator.tts_active,
+            image_jobs_active=0,
+            warning=warning,
+            recommended_action="Use preview image quality until local resource pressure drops.",
+            headroom_mb=headroom_mb,
+        )
+
+    def _unload_idle_auxiliary_models(self, reason: str) -> list[str]:
+        if hasattr(self._coordinator, "unload_auxiliary_models"):
+            return self._coordinator.unload_auxiliary_models(reason)
+        return []
 
     def _require_job(self, job_id: str) -> ImageJob:
         try:
@@ -927,6 +1010,11 @@ class ImageGenerationService:
             job.output_paths = output_paths
         if error is not None:
             job.error = error
+        if job.warning and not error:
+            logger.info(
+                "Image job running under resource pressure",
+                extra={"job_id": job.job_id, "pressure": job.pressure, "warning": job.warning},
+            )
         self._emit(job, event=f"job.{job.status.value}", message=job.message)
 
     def _emit(self, job: ImageJob, *, event: str, message: str) -> None:
