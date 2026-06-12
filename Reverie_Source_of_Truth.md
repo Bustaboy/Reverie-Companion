@@ -497,4 +497,18 @@ Task 4A adds the Growth Dashboard as the central, polished relationship overview
 - **8GB decision**: the dashboard does not trigger model calls, embedding work, image generation, TTS, or training. It performs bounded existing API reads and local array aggregation only, matching the RTX 4070 8GB mobile responsiveness target.
 
 
+
+## Milestone 3 Task 4C Update — Memory Browser & Editable Controls
+
+Task 4C adds a dedicated Memory Browser so long-term recall is visible, correctable, and removable before it shapes future conversations:
+
+- **Navigation and UI surface**: the sidebar now enables **Memory** as a first-class destination. The page uses the same warm dark, premium card language as Growth and Journal, with a filter bar, paginated cards, detailed modal editing, and explicit deletion warnings.
+- **Search and pagination**: the browser lists application-owned long-term memories through a lightweight `GET /memory` API with keyword, character, theme/tag, memory type, and date filters. Filtering is scalar/local rather than embedding-driven, so browsing does not fire model calls on every keystroke and remains friendly to 8GB systems.
+- **Provenance and growth visibility**: each memory exposes creation/update timestamps, source, session, type, confidence, importance, tags/themes, and raw metadata. This lets users see which remembered facts came from chat, journal/reflection, or backend promotion and how those artifacts support Growth Dashboard evidence.
+- **Editable controls**: the detail modal supports inline content edits. Saving rewrites the local LanceDB row with a refreshed embedding, preserves original creation provenance, and annotates the metadata with `edited_by: MemoryBrowser` and `edited_at` for auditability.
+- **Deletion and pruning**: users can delete individual memories, bulk-delete selected cards, or prune up to a bounded set of old matching memories. The UI requires explicit confirmation and the backend caps bulk operations to avoid accidental large destructive actions.
+- **Memory/RAG integration boundary**: chat retrieval continues to use the existing `MemoryManager.search_memories()` and prompt-safe context formatting. The browser builds on the same `MemoryManager` and LanceDB store without adding a training UI, encyclopedia, or extra resident model.
+
+This completes the user-control side of early self-learning visibility: Journal shows private reflections, Growth summarizes relationship evolution, and Memory exposes the durable recall capsules that can be corrected or removed.
+
 *End of Source of Truth Document v1.0*

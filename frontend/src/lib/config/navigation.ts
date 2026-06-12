@@ -15,7 +15,7 @@ export const navigationItems: NavigationItem[] = [
   { id: 'journal', label: 'Journal', hint: 'Private reflections', enabled: true },
   { id: 'training', label: 'Training', hint: 'Personal LoRA review', enabled: true },
   { id: 'characters', label: 'Characters', hint: 'Coming soon', enabled: false },
-  { id: 'memory', label: 'Memory', hint: 'Long-term recall', enabled: false },
+  { id: 'memory', label: 'Memory', hint: 'Review & edit recall', enabled: true },
   { id: 'visual-novel', label: 'Visual Novel', hint: 'Immersive scene', enabled: true },
   { id: 'images', label: 'Images', hint: 'Gallery & controls', enabled: true },
   { id: 'settings', label: 'Settings', hint: 'Memory controls', enabled: true }

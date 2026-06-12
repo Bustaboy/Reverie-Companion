@@ -59,7 +59,11 @@ class _LanceTable(Protocol):
 
     def add(self, data: list[dict[str, Any]]) -> None: ...
 
+    def delete(self, where: str) -> None: ...
+
     def search(self, query: list[float]) -> Any: ...
+
+    def to_pandas(self) -> Any: ...
 
 
 @dataclass
@@ -497,6 +501,162 @@ class MemoryManager:
         )
         return results
 
+    def list_memories(
+        self,
+        *,
+        query: str = "",
+        character: str = "",
+        theme: str = "",
+        memory_type: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """Return paginated memories for review, editing, and deletion.
+
+        The browser path intentionally uses scalar table scans plus local filtering
+        instead of embedding every keystroke. This keeps review lightweight on 8GB
+        systems and reserves vector search for chat context retrieval.
+        """
+
+        if not self._config.enabled:
+            return {
+                "memories": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "pages": 0,
+            }
+        safe_page = max(page, 1)
+        safe_page_size = min(max(page_size, 1), 50)
+        rows = self._read_all_rows()
+        results = [self._row_to_result(row) for row in rows]
+        filtered = self._filter_memory_results(
+            results,
+            query=query,
+            character=character,
+            theme=theme,
+            memory_type=memory_type,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        filtered.sort(
+            key=lambda item: item.get("updated_at") or item.get("created_at") or "",
+            reverse=True,
+        )
+        total = len(filtered)
+        start = (safe_page - 1) * safe_page_size
+        end = start + safe_page_size
+        pages = math.ceil(total / safe_page_size) if total else 0
+        return {
+            "memories": filtered[start:end],
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_page_size,
+            "pages": pages,
+        }
+
+    def update_memory(
+        self,
+        memory_id: str,
+        *,
+        text: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemorySearchResult:
+        """Edit memory content or metadata while preserving provenance."""
+
+        if not self._config.enabled:
+            raise MemoryStoreError("Memory is disabled by configuration.")
+        current = self._get_memory_by_id(memory_id)
+        if current is None:
+            raise KeyError("Memory not found.")
+        current_metadata = dict(current.get("metadata") or {})
+        normalized_text = (
+            self._normalize_text(text)
+            if text is not None
+            else str(current.get("text") or "")
+        )
+        if metadata is not None:
+            if not isinstance(metadata, dict):
+                raise ValueError("metadata must be a dictionary.")
+            current_metadata.update(metadata)
+        current_metadata["edited_at"] = self._utc_now()
+        current_metadata["edited_by"] = "MemoryBrowser"
+        updated_at = self._utc_now()
+        record = MemoryRecord(
+            id=memory_id,
+            text=normalized_text,
+            vector=self._embed(normalized_text),
+            metadata=current_metadata,
+            created_at=str(current.get("created_at") or updated_at),
+            updated_at=updated_at,
+            user_id=str(current_metadata.get("user_id") or self._config.user_id),
+            session_id=current_metadata.get("session_id") or None,
+            memory_type=str(current_metadata.get("memory_type") or "long_term"),
+            source=str(
+                current_metadata.get("source") or current.get("source") or "reverie"
+            ),
+        )
+        self.delete_memory(memory_id)
+        self._add_to_lancedb(record)
+        return self._record_to_result(record)
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Delete one memory from the application-owned LanceDB table."""
+
+        if not self._config.enabled:
+            raise MemoryStoreError("Memory is disabled by configuration.")
+        table = self._get_table(required=True)
+        before = len(self._read_all_rows())
+        table.delete(f"id = '{self._escape_sql_literal(memory_id)}'")
+        self._table = None
+        after = len(self._read_all_rows())
+        return after < before
+
+    def bulk_delete_memories(
+        self,
+        *,
+        ids: list[str] | None = None,
+        older_than: str | None = None,
+        query: str | None = None,
+        character: str | None = None,
+        theme: str | None = None,
+        memory_type: str | None = None,
+        max_delete: int = 100,
+    ) -> dict[str, Any]:
+        """Delete selected memories or prune a bounded filtered set."""
+
+        if not self._config.enabled:
+            raise MemoryStoreError("Memory is disabled by configuration.")
+        selected_ids = [memory_id for memory_id in (ids or []) if memory_id]
+        if not selected_ids:
+            if not older_than:
+                raise ValueError(
+                    "Bulk prune requires selected ids or an older_than date."
+                )
+            rows = self._read_all_rows()
+            filtered = self._filter_memory_results(
+                [self._row_to_result(row) for row in rows],
+                query=query or "",
+                character=character or "",
+                theme=theme or "",
+                memory_type=memory_type or "",
+                end_date=older_than,
+            )
+            filtered.sort(key=lambda item: item.get("created_at") or "")
+            selected_ids = [str(item["id"]) for item in filtered[:max_delete]]
+        selected_ids = selected_ids[:max_delete]
+        deleted_ids: list[str] = []
+        for memory_id in selected_ids:
+            if self.delete_memory(memory_id):
+                deleted_ids.append(memory_id)
+        return {
+            "deleted": len(deleted_ids),
+            "deleted_ids": deleted_ids,
+            "requested": len(selected_ids),
+        }
+
     def get_relevant_context(self, query: str) -> str:
         """Format relevant memories as compact, instruction-safe LLM context.
 
@@ -557,6 +717,111 @@ class MemoryManager:
             lines.append(line)
             used_chars = projected_chars
         return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _read_all_rows(self) -> list[dict[str, Any]]:
+        try:
+            table = self._get_table(required=True)
+            frame = table.to_pandas()
+        except FileNotFoundError:
+            return []
+        except Exception as exc:
+            logger.exception("Failed to read memory table for browser")
+            raise MemoryStoreError("Failed to read local memory store.") from exc
+        records = frame.to_dict("records")
+        return [dict(row) for row in records]
+
+    def _get_memory_by_id(self, memory_id: str) -> MemorySearchResult | None:
+        for row in self._read_all_rows():
+            if str(row.get("id")) == memory_id:
+                return self._row_to_result(row)
+        return None
+
+    def _filter_memory_results(
+        self,
+        memories: list[MemorySearchResult],
+        *,
+        query: str = "",
+        character: str = "",
+        theme: str = "",
+        memory_type: str = "",
+        start_date: str = "",
+        end_date: str = "",
+    ) -> list[MemorySearchResult]:
+        normalized_query = query.strip().lower()
+        normalized_character = character.strip().lower()
+        normalized_theme = theme.strip().lower()
+        normalized_type = memory_type.strip().lower()
+        return [
+            memory
+            for memory in memories
+            if self._matches_browser_filters(
+                memory,
+                query=normalized_query,
+                character=normalized_character,
+                theme=normalized_theme,
+                memory_type=normalized_type,
+                start_date=start_date.strip(),
+                end_date=end_date.strip(),
+            )
+        ]
+
+    def _matches_browser_filters(
+        self,
+        memory: MemorySearchResult,
+        *,
+        query: str,
+        character: str,
+        theme: str,
+        memory_type: str,
+        start_date: str,
+        end_date: str,
+    ) -> bool:
+        metadata = memory.get("metadata") or {}
+        haystack = " ".join(
+            [
+                str(memory.get("text") or ""),
+                str(memory.get("source") or ""),
+                json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+            ]
+        ).lower()
+        if query and query not in haystack:
+            return False
+        if character:
+            character_fields = [
+                metadata.get("character"),
+                metadata.get("character_id"),
+                metadata.get("persona"),
+            ]
+            if not any(
+                character in str(value or "").lower() for value in character_fields
+            ):
+                return False
+        if theme:
+            theme_values = (
+                metadata.get("themes")
+                or metadata.get("tags")
+                or metadata.get("theme")
+                or []
+            )
+            if isinstance(theme_values, str):
+                theme_values = [theme_values]
+            if not any(theme in str(value).lower() for value in theme_values):
+                return False
+        if (
+            memory_type
+            and memory_type not in str(metadata.get("memory_type") or "").lower()
+        ):
+            return False
+        created_at = str(memory.get("created_at") or metadata.get("created_at") or "")
+        normalized_start = (
+            f"{start_date}T00:00:00" if len(start_date) == 10 else start_date
+        )
+        normalized_end = f"{end_date}T23:59:59" if len(end_date) == 10 else end_date
+        if normalized_start and created_at and created_at < normalized_start:
+            return False
+        if normalized_end and created_at and created_at > normalized_end:
+            return False
+        return True
 
     def _try_mem0_add(self, record: MemoryRecord) -> None:
         """Best-effort mem0 write-through without compromising LanceDB durability."""
@@ -881,6 +1146,9 @@ class MemoryManager:
         # LanceDB commonly returns L2 distance. Convert to a bounded similarity
         # for prompt annotations without pretending it is a calibrated score.
         return round(1.0 / (1.0 + max(float(distance), 0.0)), 4)
+
+    def _escape_sql_literal(self, value: str) -> str:
+        return value.replace("'", "''")
 
     def _memory_id(
         self, text: str, user_id: str, session_id: Any, timestamp: str
