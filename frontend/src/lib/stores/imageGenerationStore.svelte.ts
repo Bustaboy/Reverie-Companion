@@ -55,7 +55,10 @@ const normalizeError = (error: unknown): string => {
   if (error instanceof ImageServiceError) {
     if (error.code === 'image_generation_disabled') return 'Image generation is disabled in the local backend settings.';
     if (error.code === 'image_queue_full') return 'The local image queue is full. Wait for one scene to finish, then try again.';
-    if (error.code === 'image_asset_source_unavailable') return 'That image is not available as a local file yet. Open ComfyUI or regenerate, then save again.';
+    if (error.code === 'image_asset_source_unavailable') return 'That image file is not reachable locally yet. Open ComfyUI or regenerate, then save again.';
+    if (error.code === 'image_asset_manifest_write_failed') return 'The image copied, but Reverie could not update the character asset manifest. Check local file permissions and retry.';
+    if (error.code === 'image_history_write_failed') return 'Reverie could not update the local image gallery metadata. Check that the data folder is writable, then retry.';
+    if (error.code === 'image_history_not_found') return 'That image is no longer in this conversation gallery.';
     if (error.retryable) return `${error.message} You can try again in a moment.`;
     return error.message;
   }
@@ -276,6 +279,7 @@ class ImageGenerationStore {
     } catch (error) {
       this.error = normalizeError(error);
       this.announcement = this.error;
+      void this.loadGallery();
     }
   }
 

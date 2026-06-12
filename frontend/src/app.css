@@ -3232,3 +3232,51 @@ h1 {
 .image-lightbox .lightbox-dialog {
   z-index: 1;
 }
+
+.gallery-card.output-missing {
+  border-color: rgba(255, 199, 137, 0.26);
+  background: linear-gradient(145deg, rgba(58, 42, 45, 0.9), rgba(24, 20, 30, 0.92));
+}
+
+.gallery-card-copy small {
+  color: #ffc789;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.gallery-thumb-fallback,
+.image-job-missing-preview,
+.lightbox-missing {
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+  color: #ffd8d4;
+  border: 1px dashed rgba(255, 216, 212, 0.28);
+  border-radius: 0.95rem;
+  background: rgba(255, 216, 212, 0.055);
+}
+
+.gallery-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  font-size: 2rem;
+}
+
+.image-job-missing-preview,
+.lightbox-missing {
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.image-job-missing-preview span,
+.lightbox-missing p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.gallery-actions button:disabled,
+.image-job-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}

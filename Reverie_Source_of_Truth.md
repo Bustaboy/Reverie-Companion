@@ -450,4 +450,13 @@ Task 3D completes the Milestone 3 image generation system as a polished, local-f
 Short design summary: Milestone 3 image generation is now a complete optional local media workflow: deterministic chat/VN prompt context enters the safe queued backend; ComfyUI/Flux GGUF lowvram produces outputs under strict resource coordination; completed results become inspectable per-conversation gallery records; and users can regenerate, vary, save, or delete images without compromising chat responsiveness, voice priority, or local-first privacy. **Task 3 is complete.**
 
 
+### Task 3D Final Polish Round
+
+The final polish pass keeps the PR #80 gallery/navigation/lightbox integration intact while tightening persistence, asset manifests, and user feedback:
+
+- **History persistence hardening**: image history now writes a schema-versioned JSON payload with both grouped `conversations` and a compatibility `items` list, reloads legacy flat histories, skips malformed entries instead of failing the gallery, and writes JSON atomically through a temporary file replace.
+- **Character asset manifest polish**: saving generated images now normalizes the manifest, deduplicates by `job_id` + output index, records relative and absolute asset paths, source conversation/message metadata, prompt/negative prompt, presets, fallback state, and stable `asset_id`s.
+- **Clearer fallback UI**: gallery and image cards distinguish missing local output files from generation failures, disable save actions when the file is unavailable, and offer retry/regenerate guidance while preserving lazy loading and TTS/VRAM priority behavior.
+
+
 *End of Source of Truth Document v1.0*

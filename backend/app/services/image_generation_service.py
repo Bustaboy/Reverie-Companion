@@ -124,6 +124,9 @@ TERMINAL_STATUSES = {
     ImageJobStatus.cancelled,
 }
 
+IMAGE_HISTORY_SCHEMA_VERSION = 2
+CHARACTER_ASSET_MANIFEST_VERSION = 2
+
 
 @dataclass(frozen=True)
 class ImageOutputReference:
@@ -410,7 +413,11 @@ class ImageGenerationService:
                 retryable=False,
                 details={"job_id": job_id},
             )
-        self._write_history()
+        try:
+            self._write_history(raise_on_error=True)
+        except ImageGenerationError:
+            self._history[job_id] = item
+            raise
         job = self._jobs.get(job_id)
         if job is not None:
             job.output_paths = []
@@ -445,30 +452,62 @@ class ImageGenerationService:
         asset_path = asset_dir / f"{job_id}_{output_index}{extension}"
         shutil.copy2(reference.local_path, asset_path)
         manifest_path = asset_dir.parent / "manifest.json"
-        manifest = self._read_json_file(manifest_path, default={"images": []})
-        images = manifest.setdefault("images", [])
-        images.append(
+        manifest = self._normalize_character_asset_manifest(
+            self._read_json_file(manifest_path, default={}),
+            character_id=safe_character_id,
+        )
+        asset_entry = self._build_character_asset_manifest_entry(
+            item=item,
+            asset_path=asset_path,
+            manifest_path=manifest_path,
+            output_index=output_index,
+            asset_label=asset_label,
+        )
+        images = [
+            image
+            for image in manifest.get("images", [])
+            if not (
+                image.get("job_id") == job_id
+                and image.get("output_index") == output_index
+            )
+        ]
+        images.append(asset_entry)
+        manifest.update(
             {
-                "job_id": job_id,
-                "label": asset_label or item.prompt_summary,
-                "path": str(asset_path),
-                "source_prompt": item.prompt,
-                "saved_at": datetime.now(timezone.utc).isoformat(),
-                "preset": item.active_preset.value,
+                "schema_version": CHARACTER_ASSET_MANIFEST_VERSION,
+                "character_id": safe_character_id,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "images": sorted(
+                    images,
+                    key=lambda image: str(image.get("saved_at", "")),
+                    reverse=True,
+                ),
             }
         )
-        self._write_json_file(manifest_path, manifest)
+        try:
+            self._write_json_file(manifest_path, manifest)
+        except OSError as exc:
+            raise ImageGenerationError(
+                "Reverie copied the image but could not update the character asset manifest. Check local file permissions and try again.",
+                code="image_asset_manifest_write_failed",
+                retryable=True,
+                details={"manifest_path": str(manifest_path)},
+            ) from exc
         updated = item.model_copy(
             update={
                 "saved_to_assets": True,
                 "asset_manifest_path": str(manifest_path),
-                "metadata": {**item.metadata, "last_saved_asset_path": str(asset_path)},
+                "metadata": {
+                    **item.metadata,
+                    "last_saved_asset_path": str(asset_path),
+                    "last_saved_asset_id": asset_entry["asset_id"],
+                },
             }
         )
         self._history[job_id] = updated
         if job_id in self._jobs:
             self._jobs[job_id].saved_to_assets = True
-        self._write_history()
+        self._write_history(raise_on_error=True)
         return ImageSaveToAssetsResponse(
             item=updated, asset_path=str(asset_path), manifest_path=str(manifest_path)
         )
@@ -978,41 +1017,146 @@ class ImageGenerationService:
         self._write_history()
 
     def _load_history(self) -> dict[str, ImageHistoryItem]:
-        raw = self._read_json_file(self._history_path, default={"items": []})
+        raw = self._read_json_file(self._history_path, default={})
+        raw_items: list[Any]
+        if isinstance(raw, list):
+            raw_items = raw
+        elif isinstance(raw, dict) and isinstance(raw.get("items"), list):
+            raw_items = raw["items"]
+        elif isinstance(raw, dict) and isinstance(raw.get("conversations"), dict):
+            raw_items = []
+            for conversation_items in raw["conversations"].values():
+                if isinstance(conversation_items, list):
+                    raw_items.extend(conversation_items)
+        else:
+            raw_items = []
+
         items: dict[str, ImageHistoryItem] = {}
-        for value in raw.get("items", []):
+        skipped_count = 0
+        for value in raw_items:
             try:
                 item = ImageHistoryItem.model_validate(value)
             except Exception:
-                logger.warning("Skipping unreadable image history item")
+                skipped_count += 1
                 continue
             items[item.job_id] = item
+        if skipped_count:
+            logger.warning(
+                "Skipped unreadable image history items",
+                extra={"count": skipped_count, "path": str(self._history_path)},
+            )
         return items
 
-    def _write_history(self) -> None:
+    def _write_history(self, *, raise_on_error: bool = False) -> None:
         items = sorted(
             self._history.values(), key=lambda item: item.completed_at, reverse=True
         )
-        self._write_json_file(
-            self._history_path,
-            {"items": [item.model_dump(mode="json") for item in items]},
-        )
+        conversations: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            conversations.setdefault(item.conversation_id, []).append(
+                item.model_dump(mode="json")
+            )
+        payload = {
+            "schema_version": IMAGE_HISTORY_SCHEMA_VERSION,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "conversations": conversations,
+            # Keep a flat list for compatibility with PR #80-era builds and
+            # lightweight external tooling that only knows about `items`.
+            "items": [item.model_dump(mode="json") for item in items],
+        }
+        try:
+            self._write_json_file(self._history_path, payload)
+        except OSError as exc:
+            logger.warning(
+                "Could not persist image history metadata",
+                extra={"path": str(self._history_path), "error": str(exc)},
+            )
+            if raise_on_error:
+                raise ImageGenerationError(
+                    "Reverie could not save the image gallery metadata. The image job is safe, but the gallery needs writable local storage.",
+                    code="image_history_write_failed",
+                    retryable=True,
+                    details={"history_path": str(self._history_path)},
+                ) from exc
 
-    def _read_json_file(
-        self, path: Path, *, default: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _read_json_file(self, path: Path, *, default: Any) -> Any:
         if not path.exists():
             return default
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Could not read JSON metadata file",
+                extra={"path": str(path), "error": str(exc)},
+            )
             return default
 
     def _write_json_file(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            temp_path.write_text(
+                json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+            )
+            temp_path.replace(path)
+        finally:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except OSError:
+                logger.debug("Could not remove temporary JSON metadata file")
+
+    def _normalize_character_asset_manifest(
+        self, manifest: Any, *, character_id: str
+    ) -> dict[str, Any]:
+        if not isinstance(manifest, dict):
+            manifest = {}
+        images = manifest.get("images")
+        if not isinstance(images, list):
+            images = []
+        schema_version = manifest.get("schema_version")
+        if not isinstance(schema_version, int):
+            schema_version = CHARACTER_ASSET_MANIFEST_VERSION
+        return {
+            **manifest,
+            "schema_version": schema_version,
+            "character_id": str(manifest.get("character_id") or character_id),
+            "images": [image for image in images if isinstance(image, dict)],
+        }
+
+    def _build_character_asset_manifest_entry(
+        self,
+        *,
+        item: ImageHistoryItem,
+        asset_path: Path,
+        manifest_path: Path,
+        output_index: int,
+        asset_label: str | None,
+    ) -> dict[str, Any]:
+        try:
+            manifest_relative_path = asset_path.relative_to(manifest_path.parent)
+            path_for_manifest = manifest_relative_path.as_posix()
+        except ValueError:
+            path_for_manifest = str(asset_path)
+        return {
+            "asset_id": f"image:{item.job_id}:{output_index}",
+            "job_id": item.job_id,
+            "conversation_id": item.conversation_id,
+            "source": item.source,
+            "source_message_id": item.source_message_id,
+            "output_index": output_index,
+            "label": asset_label or item.prompt_summary,
+            "path": path_for_manifest,
+            "absolute_path": str(asset_path),
+            "source_prompt": item.prompt,
+            "negative_prompt": item.negative_prompt,
+            "prompt_summary": item.prompt_summary,
+            "requested_preset": item.requested_preset.value,
+            "active_preset": item.active_preset.value,
+            "fallback_used": item.fallback_used,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
 
     def _safe_slug(self, value: str) -> str:
         slug = (

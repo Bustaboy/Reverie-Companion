@@ -93,7 +93,12 @@ async def delete_image_history_item(
     try:
         return await service.delete_history_item(job_id)
     except ImageGenerationError as exc:
-        raise _image_http_exception(exc, status_code=status.HTTP_404_NOT_FOUND) from exc
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if not exc.retryable
+            else status.HTTP_409_CONFLICT
+        )
+        raise _image_http_exception(exc, status_code=status_code) from exc
 
 
 @router.post("/{job_id}/save-to-assets", response_model=ImageSaveToAssetsResponse)
