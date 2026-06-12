@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.tts import TTSContext
 
-MAX_IMAGE_PROMPT_CHARS = 1200
+MAX_IMAGE_PROMPT_CHARS = 2400
+MAX_IMAGE_NEGATIVE_PROMPT_CHARS = 1000
 
 
 class ImageQualityPreset(StrEnum):
@@ -30,20 +31,38 @@ class ImageJobStatus(StrEnum):
 
 
 class ImageGenerateRequest(BaseModel):
-    """Request accepted by POST /api/images/generate."""
+    """Request accepted by POST /api/images/generate.
 
-    prompt: str = Field(..., min_length=1, max_length=MAX_IMAGE_PROMPT_CHARS)
-    context: TTSContext | dict[str, Any] | None = Field(
+    Callers may send a simple ``prompt`` or provide richer chat/VN/memory
+    ``context`` with an optional prompt-like field. ImagePromptEngine turns both
+    shapes into a deterministic, bounded ComfyUI-ready prompt.
+    """
+
+    prompt: str | None = Field(
+        default=None, min_length=1, max_length=MAX_IMAGE_PROMPT_CHARS
+    )
+    negative_prompt: str | None = Field(
+        default=None, max_length=MAX_IMAGE_NEGATIVE_PROMPT_CHARS
+    )
+    context: dict[str, Any] | TTSContext | None = Field(
         default=None,
-        description="Compact TTSContext-style or scene metadata for later prompt enrichment.",
+        description="Compact TTSContext-style or full chat/VN/memory metadata for deterministic prompt enrichment.",
     )
     quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
 
-    @field_validator("prompt")
+    @model_validator(mode="after")
+    def require_prompt_or_context(self) -> "ImageGenerateRequest":
+        if self.prompt is None and self.context is None:
+            raise ValueError("Image generation requires either prompt or context.")
+        return self
+
+    @field_validator("prompt", "negative_prompt")
     @classmethod
-    def prompt_must_not_be_blank(cls, value: str) -> str:
+    def optional_prompt_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not value.strip():
-            raise ValueError("Image prompt cannot be empty.")
+            raise ValueError("Image prompt field cannot be empty.")
         return value.strip()
 
 
@@ -53,6 +72,9 @@ class ImageJobRead(BaseModel):
     job_id: str
     status: ImageJobStatus
     prompt: str
+    original_prompt: str | None = None
+    negative_prompt: str | None = None
+    prompt_metadata: dict[str, Any] = Field(default_factory=dict)
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime

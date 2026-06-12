@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from app.core.config import Settings
 from app.models.image import ImageGenerateRequest, ImageJobStatus, ImageQualityPreset
 from app.services.image_generation_service import ImageGenerationService
+from app.services.image_prompt_engine import ImagePromptEngine
 from app.services.resource_coordinator import VRAMSnapshot
 
 
@@ -45,10 +46,14 @@ class FakeCoordinator:
 class FakeAdapter:
     def __init__(self) -> None:
         self.calls = []
+        self.prompts = []
+        self.negative_prompts = []
         self.interrupt_calls = 0
 
     async def generate(self, job, preset):
         self.calls.append((job.active_preset, preset.width, preset.height))
+        self.prompts.append(job.prompt)
+        self.negative_prompts.append(job.negative_prompt)
         await asyncio.sleep(0.01)
         return [f"{job.job_id}.png"]
 
@@ -139,5 +144,83 @@ def test_image_job_pauses_while_tts_is_active(tmp_path) -> None:
         assert coordinator.wait_calls == 1
         events = [event.phase for event in service._jobs[job.job_id].events]
         assert "tts_priority" in events
+
+    asyncio.run(run_test())
+
+
+def test_prompt_engine_builds_context_aware_intimate_user_framing() -> None:
+    engine = ImagePromptEngine()
+
+    result = engine.build(
+        prompt="show us kissing on the couch",
+        context={
+            "character": {
+                "name": "Mira",
+                "appearance": "silver hair, amber eyes, soft athletic body",
+                "clothing": "oversized black sweater",
+                "personality": ["possessive", "tender", "playful"],
+            },
+            "visual_state": {
+                "background": "rainy apartment",
+                "expression": "hungry smile",
+            },
+            "recent_messages": [
+                {"role": "assistant", "content": "Come closer."},
+                {"role": "user", "content": "I pull you into my lap and kiss you."},
+            ],
+            "memory_tags": ["rainy nights", "lap cuddles"],
+            "reflection_themes": ["trust after vulnerability"],
+            "growth_cues": ["more comfortable initiating affection"],
+        },
+    )
+
+    assert "Mira" in result.prompt
+    assert "silver hair" in result.prompt
+    assert "rainy apartment" in result.prompt
+    assert "strongly avoid showing the user's face" in result.prompt
+    assert "user face visible" in result.negative_prompt
+    assert result.metadata["intimate_scene"] is True
+    assert result.metadata["includes_user"] is True
+
+
+def test_image_service_engineers_prompt_from_full_context_without_prompt(
+    tmp_path,
+) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                context={
+                    "user_request": "draw the current VN scene",
+                    "character": {
+                        "name": "Tara",
+                        "appearance": "pink hair and green eyes",
+                        "clothing": "white summer dress",
+                    },
+                    "scene": {"background": "sunlit garden"},
+                    "recent_messages": [
+                        {"role": "user", "content": "Can you stand by the flowers?"}
+                    ],
+                },
+                negative_prompt="washed out colors",
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        completed = service.get_job(job.job_id)
+        assert completed.status == ImageJobStatus.completed
+        assert completed.original_prompt is None
+        assert "Tara" in completed.prompt
+        assert "sunlit garden" in completed.prompt
+        assert "washed out colors" in completed.negative_prompt
+        assert completed.prompt_metadata["engine"] == "deterministic_context_v1"
+        assert adapter.prompts and adapter.prompts[0] == completed.prompt
 
     asyncio.run(run_test())

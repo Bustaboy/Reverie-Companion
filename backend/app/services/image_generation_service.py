@@ -41,6 +41,7 @@ from app.models.image import (
     ImageJobStatus,
     ImageQualityPreset,
 )
+from app.services.image_prompt_engine import ImagePromptEngine
 from app.services.resource_coordinator import (
     LocalResourceCoordinator,
     resource_coordinator,
@@ -123,6 +124,9 @@ class ImageJob:
     job_id: str
     prompt: str
     context: dict[str, Any] | None
+    original_prompt: str | None
+    negative_prompt: str
+    prompt_metadata: dict[str, Any]
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -148,6 +152,9 @@ class ImageJob:
             job_id=self.job_id,
             status=self.status,
             prompt=self.prompt,
+            original_prompt=self.original_prompt,
+            negative_prompt=self.negative_prompt,
+            prompt_metadata=dict(self.prompt_metadata),
             requested_preset=self.requested_preset,
             active_preset=self.active_preset,
             created_at=self.created_at,
@@ -266,7 +273,9 @@ class ComfyUIFluxAdapter:
                 "class_type": "ReveriePrompt",
                 "inputs": {
                     "text": job.prompt,
+                    "negative_prompt": job.negative_prompt,
                     "context": job.context or {},
+                    "prompt_metadata": job.prompt_metadata,
                     "seed": 0,
                     "width": preset.width,
                     "height": preset.height,
@@ -301,10 +310,12 @@ class ImageGenerationService:
         *,
         coordinator: LocalResourceCoordinator = resource_coordinator,
         adapter: ComfyUIFluxAdapter | None = None,
+        prompt_engine: ImagePromptEngine | None = None,
     ) -> None:
         self._settings = settings
         self._coordinator = coordinator
         self._adapter = adapter or ComfyUIFluxAdapter(settings)
+        self._prompt_engine = prompt_engine or ImagePromptEngine()
         self._jobs: dict[str, ImageJob] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue(
             maxsize=settings.image_generation_max_queue_size
@@ -326,10 +337,19 @@ class ImageGenerationService:
             if hasattr(request.context, "model_dump")
             else request.context
         )
+        context_dict = context if isinstance(context, dict) else None
+        engineered = self._prompt_engine.build(
+            prompt=request.prompt,
+            context=context_dict,
+            negative_prompt=request.negative_prompt,
+        )
         job = ImageJob(
             job_id=job_id,
-            prompt=request.prompt,
-            context=context if isinstance(context, dict) else None,
+            prompt=engineered.prompt,
+            context=context_dict,
+            original_prompt=request.prompt,
+            negative_prompt=engineered.negative_prompt,
+            prompt_metadata=engineered.metadata,
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )
