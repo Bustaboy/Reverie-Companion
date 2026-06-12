@@ -278,7 +278,19 @@ Milestone 3 Task 4C adds the dedicated Memory destination as the control surface
 
 Task 4C makes Reverie's self-learning controllable instead of mysterious: durable memories are searchable, provenance-rich, editable, and removable while staying local-first and lightweight.
 
-### 3.14 Futa-Vision Integration Vision (Future)
+### 3.14 Character Encyclopedia / Life Summary (Milestone 3 Task 4E)
+
+Milestone 3 Task 4E completes the first Growth-system arc with a Character Encyclopedia: a warm, searchable character bible for the active companion that summarizes who she is becoming without creating a new hidden state store.
+
+- **Navigation and purpose**: `Encyclopedia` is now a first-class sidebar destination. Growth remains the emotional dashboard, Journal remains the evidence diary, Memory remains the correction/deletion control surface, Training remains the explicit LoRA consent area, and Encyclopedia is the readable life-summary view that brings those sources together.
+- **Data sources**: the page derives its profile from already-bounded frontend sources: recent journal entries, current memory page results, approved/recent Personal LoRA examples, and optional character voice profiles. It does not invoke model inference, run embeddings, scan the filesystem, or start training. Missing backend sources degrade gracefully into empty-state copy.
+- **Profile contents**: the page organizes relationship summary, affection/trust/attraction meters, how the character sees important people, living situation and daily routines, likes/dislikes/hobbies/personality quirks, key memories, evolution over time, current mood, and recent growth highlights. Evidence is summarized through lightweight heuristics and source metadata until a future canonical growth-state API replaces those derivations.
+- **Living design**: the UI uses the same warm premium dark language as Growth and Journal: rose glow, portrait card, relationship meters, collapsible profile sections, soft notices, searchable notes, timeline dots, readable typography, and responsive layouts.
+- **8GB behavior**: all work is local array filtering, keyword counting, date sorting, and rendering short lists. The page intentionally stays fast on the RTX 4070 8GB target and keeps training, reflection, embedding, TTS, and image work outside the load path.
+
+Task 4E completes the merged Task 4 Growth suite by making self-learning legible from four angles: Growth shows emotional trajectory, Journal shows reflective reasoning, Memory exposes durable recall controls, Training governs LoRA consent, and Encyclopedia turns the accumulated evidence into a beautiful living character profile.
+
+### 3.15 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
@@ -524,8 +536,6 @@ Task 4C adds the Memory Browser as Reverie's dedicated long-term recall control 
 
 Task 4C deliberately avoids LoRA training UI and encyclopedia work. It focuses on local memory inspection/control and keeps memory browsing lightweight for the 8GB target.
 
-*End of Source of Truth Document v1.0*
-
 
 ### Milestone 3 Task 4D — Automated LoRA Training & Approvals
 
@@ -534,3 +544,16 @@ Reverie's growth system now supports optional automated Personal LoRA training a
 The 8GB-friendly training profile is conservative by design: Unsloth-style 4-bit QLoRA foundation, rank capped at 16, batch size 1, bounded sequence length, low learning rate, serialized background execution, and no hidden chat-path training. Current implementation writes inspectable dataset/job/adapter manifests and can be swapped for a real Unsloth worker while preserving the same safety controls.
 
 The Growth Dashboard surfaces a LoRA Training Status section with current status, last trained time, next scheduled training, data that triggered training, and plain-language learning feedback such as improved reassurance tone, stronger emotional memory recall, better boundary pacing, or more stable playful voice. When “Require approval before applying new LoRA updates” is enabled, completed adapters remain pending with approve/reject controls and are not activated until approved.
+
+### Milestone 3 Task 4E — Character Encyclopedia / Life Summary
+
+Task 4E adds the Character Encyclopedia / Life Summary as the polished reading surface for the active character's lived continuity. The sidebar exposes `Encyclopedia`, and the Svelte shell supports `#encyclopedia` deep-linking so the page is easy to revisit directly.
+
+The implementation composes existing local evidence rather than creating another backend authority: `journalStore` supplies reflection summaries, themes, structured facts, emotional valence/intensity, and growth hypotheses; `memoryStore` supplies editable long-term memory snippets and metadata; `growthStore` supplies approved/recent Personal LoRA examples; and `voiceService` optionally contributes character voice-profile context. The page gracefully renders from partial data when any local source is unavailable.
+
+The design is intentionally warm and readable: a hero summary, active-character portrait card, affection/trust/attraction relationship meters, current mood card, searchable profile notes, collapsible sections for relationship/social/daily-life/traits/memory/evolution/mood, and a recent timeline of journal, memory, and growth anchors. Computation stays lightweight with bounded source lists, keyword/theme heuristics, small maps, and local filtering only.
+
+With 4E complete, Milestone 3 Task 4 now forms a coherent transparent-growth suite: Dashboard for overview, Journal for introspection, Memory Browser for control, Training for automated LoRA approval, and Encyclopedia for a beautiful living character bible.
+
+
+*End of Source of Truth Document v1.0*
