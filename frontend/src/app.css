@@ -4652,3 +4652,62 @@ textarea:disabled {
   font-size: 0.94rem;
   line-height: 1.6;
 }
+
+.extension-settings-card {
+  border-color: rgba(214, 184, 124, 0.24);
+}
+
+.extension-section-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.extension-section {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.extension-section h3 {
+  margin: 0;
+  color: var(--text-strong, #fff4de);
+}
+
+.extension-section p {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted, #d8c8ad);
+}
+
+.extension-setting-fields {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.extension-section select,
+.extension-section textarea,
+.extension-section input[type='number'],
+.extension-section input[type='text'] {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+  background: rgba(5, 6, 10, 0.55);
+  color: inherit;
+  padding: 0.7rem 0.85rem;
+}
+
+.extension-section textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.ghost-button {
+  justify-self: start;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 0.55rem 0.9rem;
+}

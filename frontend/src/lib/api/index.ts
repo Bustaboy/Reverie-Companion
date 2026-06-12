@@ -30,3 +30,5 @@ export { ImageService, ImageServiceError, imageService, type ImageGenerateReques
 export { MemoryService, MemoryServiceError, memoryService, type MemoryServiceOptions } from './memoryService';
 export type { MemoryRecord, MemoryRecordMetadata, MemoryListResponse, MemoryQuery } from '$lib/types/memory';
 export * from './resourceService';
+
+export { ExtensionService, ExtensionServiceError, extensionService } from './extensionService';

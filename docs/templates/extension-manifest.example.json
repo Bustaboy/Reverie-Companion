@@ -1,0 +1,35 @@
+{
+  "id": "example.local.soft-stars",
+  "name": "Soft Stars Example",
+  "version": "0.1.0",
+  "api_version": "2026.06.v1",
+  "description": "Example metadata-only extension manifest for Reverie.",
+  "author": "Local Creator",
+  "capabilities": ["settings_section", "command", "image_workflow"],
+  "permissions": ["register_ui", "request_image_workflow"],
+  "commands": [
+    {
+      "id": "soft-stars.preview",
+      "title": "Queue soft stars preview",
+      "description": "Requests a low-priority image preview through the core image queue.",
+      "target": "image",
+      "payload_schema": {
+        "type": "object",
+        "properties": { "prompt": { "type": "string", "maxLength": 1200 } },
+        "required": ["prompt"]
+      }
+    }
+  ],
+  "panels": [],
+  "settings_sections": [
+    {
+      "id": "style",
+      "title": "Soft Stars Style",
+      "description": "Lightweight local settings rendered by Reverie, not extension code.",
+      "settings": [
+        { "key": "enabled", "label": "Enable style hints", "kind": "boolean", "default": true },
+        { "key": "accent", "label": "Accent color", "kind": "select", "default": "gold", "options": [{ "value": "gold", "label": "Gold" }, { "value": "violet", "label": "Violet" }] }
+      ]
+    }
+  ]
+}

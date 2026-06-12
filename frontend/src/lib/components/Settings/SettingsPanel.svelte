@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { extensionRegistry, extensionSettingsSections } from '$lib/extensions';
+  import { extensionSettingsStore, type ExtensionSettingValue } from '$lib/stores/extensionSettingsStore';
   import { settingsStore, type ContextBudgetPreset, type ReflectionFrequency, type ReflectionSensitivity, type TTSLatencyPreset, type ImageDefaultPreset, type PerformancePreset } from '$lib/stores/settingsStore';
   import { voiceService, type VoiceProfile, type VoiceMoodSettings } from '$lib/api/voiceService';
 
@@ -172,6 +174,7 @@
   };
 
   onMount(() => {
+    void extensionRegistry.refreshFromBackend();
     void loadVoiceProfiles();
     return () => {
       if (cloneRecordingUrl) URL.revokeObjectURL(cloneRecordingUrl);
@@ -283,6 +286,15 @@
     } finally {
       savingMoodVoiceId = null;
     }
+  };
+
+
+
+  const extensionSettingKey = (sectionId: string, key: string) => `${sectionId}.${key}`;
+  const extensionSettingValue = (sectionId: string, key: string, fallback: ExtensionSettingValue) =>
+    $extensionSettingsStore[extensionSettingKey(sectionId, key)] ?? fallback;
+  const updateExtensionSetting = (sectionId: string, key: string, value: ExtensionSettingValue) => {
+    extensionSettingsStore.setValue(extensionSettingKey(sectionId, key), value);
   };
 
   const createVoiceProfile = async () => {
@@ -711,6 +723,86 @@
         TTS always has priority. Image generation runs as one exclusive queued job, unloads idle Orpheus first, and automatically falls back toward preview quality when VRAM approaches the 8GB guardrails.
       </p>
     </article>
+
+
+    {#if $extensionSettingsSections.length > 0}
+      <article class="settings-card settings-wide extension-settings-card">
+        <div class="setting-copy compact">
+          <span class="setting-kicker">Extensions</span>
+          <h2>Extension settings</h2>
+          <p>Registered extensions can add lightweight settings here through typed schemas. Sections are data-rendered and isolated so a broken extension cannot crash the settings page.</p>
+        </div>
+
+        <div class="extension-section-list">
+          {#each $extensionSettingsSections as section (section.id)}
+            <svelte:boundary>
+              <section class="extension-section" aria-labelledby={`${section.id}-title`}>
+                <div>
+                  <h3 id={`${section.id}-title`}>{section.title}</h3>
+                  {#if section.description}
+                    <p>{section.description}</p>
+                  {/if}
+                </div>
+                <div class="extension-setting-fields">
+                  {#each section.settings as setting (setting.key)}
+                    <label class:checkbox-setting={setting.kind === 'boolean'} class:range-setting={setting.kind === 'number'} class:text-setting={setting.kind !== 'boolean' && setting.kind !== 'number'}>
+                      {#if setting.kind === 'boolean'}
+                        <input
+                          type="checkbox"
+                          checked={Boolean(extensionSettingValue(section.id, setting.key, setting.default ?? false))}
+                          onchange={(event) => updateExtensionSetting(section.id, setting.key, (event.currentTarget as HTMLInputElement).checked)}
+                        />
+                        <span>{setting.label}</span>
+                      {:else if setting.kind === 'number'}
+                        <span>{setting.label}</span>
+                        <input
+                          type="number"
+                          value={Number(extensionSettingValue(section.id, setting.key, setting.default ?? 0))}
+                          onchange={(event) => updateExtensionSetting(section.id, setting.key, Number((event.currentTarget as HTMLInputElement).value))}
+                        />
+                      {:else if setting.kind === 'select'}
+                        <span>{setting.label}</span>
+                        <select
+                          value={String(extensionSettingValue(section.id, setting.key, setting.default ?? ''))}
+                          onchange={(event) => updateExtensionSetting(section.id, setting.key, (event.currentTarget as HTMLSelectElement).value)}
+                        >
+                          {#each setting.options ?? [] as option}
+                            <option value={option.value}>{option.label}</option>
+                          {/each}
+                        </select>
+                      {:else if setting.kind === 'textarea'}
+                        <span>{setting.label}</span>
+                        <textarea
+                          value={String(extensionSettingValue(section.id, setting.key, setting.default ?? ''))}
+                          oninput={(event) => updateExtensionSetting(section.id, setting.key, (event.currentTarget as HTMLTextAreaElement).value)}
+                        ></textarea>
+                      {:else}
+                        <span>{setting.label}</span>
+                        <input
+                          type="text"
+                          value={String(extensionSettingValue(section.id, setting.key, setting.default ?? ''))}
+                          oninput={(event) => updateExtensionSetting(section.id, setting.key, (event.currentTarget as HTMLInputElement).value)}
+                        />
+                      {/if}
+                      {#if setting.description}
+                        <small>{setting.description}</small>
+                      {/if}
+                    </label>
+                  {/each}
+                </div>
+                <button type="button" class="ghost-button" onclick={() => extensionSettingsStore.resetSection(section.id)}>Reset section</button>
+              </section>
+              {#snippet failed(error)}
+                <section class="extension-section error" role="alert">
+                  <h3>Extension section isolated</h3>
+                  <p>{error instanceof Error ? error.message : 'This extension settings section could not render.'}</p>
+                </section>
+              {/snippet}
+            </svelte:boundary>
+          {/each}
+        </div>
+      </article>
+    {/if}
 
     <aside class="settings-trust-note" aria-label="Memory and reflection trust note">
       <span aria-hidden="true">✦</span>

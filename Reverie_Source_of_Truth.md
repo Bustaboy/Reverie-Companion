@@ -329,6 +329,7 @@ Task 4E completes the merged Task 4 Growth suite by making self-learning legible
 - All user controls for memory and growth data.
 - One-click model download + 8GB optimized default settings.
 - Clean dark modern UI.
+- ✅ Milestone 3 extensibility foundations complete: typed extension contracts, schema-rendered settings sections, command/event bus, and enriched SillyTavern/Character Card import previews.
 
 **Nice to Have for Alpha**:
 - Visual Novel mode (basic sprite support).
@@ -574,3 +575,15 @@ The image-generation queue now carries resource pressure and warning metadata th
 Settings now includes an explicit 8GB resource mode with clear presets (`8GB Safe`, `Balanced`, `Quality`), background task limits, and a toggle for proactive resource warnings. The default remains conservative for RTX 4070-class 8GB laptops: preview image quality, gentle/balanced context, TTS responsiveness, one non-interactive background task, and automatic explanations when Reverie downgrades or pauses work to avoid OOM. **Task 5B is complete.**
 
 *End of Source of Truth Document v1.0*
+
+### Milestone 3 Task 5C — Extensibility Foundations
+
+Task 5C completes Reverie's first senior extensibility foundation without adding heavyweight runtime plugins or compromising local-first performance:
+
+- **Typed extension contracts**: backend contracts define a versioned extension API (`2026.06.v1`) with bounded capabilities for custom panels, commands, TTS voice hints, image workflows, growth modifiers, settings sections, character importers, and event subscribers. Extension manifests declare permissions and safe capabilities rather than executing arbitrary backend code.
+- **Backend registry and command bus**: the backend exposes `/extensions`, `/extensions/commands`, and `/extensions/events` through a lightweight process-local registry. Commands are wrapped in typed event envelopes targeted at VN, TTS, Image, Growth, Memory, Character, or System surfaces, with defensive error handling so a bad extension request returns a typed failure instead of crashing core services.
+- **Frontend registry and settings extensibility**: the Svelte frontend has a local extension registry, command/event bus, persisted extension settings store, and data-rendered settings sections. Extension sections render from schemas inside Svelte error boundaries, keeping bad UI metadata isolated from the rest of Settings.
+- **Enhanced character import foundation**: SillyTavern / Character Card import preview now normalizes core character fields, lorebooks/world info, sprite and visual asset hints, voice profile hints, mood/growth preferences, and image generation style references into bounded Reverie models before any durable write. Import previews do not create hidden memory, growth state, voice profiles, or media files.
+- **Developer documentation and templates**: `docs/extensions/EXTENSION_DEVELOPER_GUIDE.md`, `docs/templates/extension-manifest.example.json`, and `docs/templates/character-import-card.example.json` document the safe extension API, settings schema, command envelope, character-import enrichment format, and versioning expectations for future extension developers.
+
+This foundation is intentionally metadata-first and low-overhead for 8GB users: no plugin code is dynamically executed, no extra models are loaded, frontend persistence uses local storage, backend event history is bounded, and all heavy actions remain behind existing queued core systems. **Task 5C is complete.**
