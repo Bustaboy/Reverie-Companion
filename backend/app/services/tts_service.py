@@ -24,6 +24,7 @@ from typing import Protocol
 
 from app.core.config import Settings
 from app.models.tts import TTSContext
+from app.services.emotion_engine import emotion_engine
 from app.services.tts_context_router import TTSContextRouter
 from app.services.voice_manager import VoiceManager, VoiceManagerError
 
@@ -428,13 +429,21 @@ class TTSService:
         context: TTSContext | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
+        tts_text: str | None = None,
     ) -> TTSGenerationResult:
-        """Generate speech from text using context-aware voice routing."""
+        """Generate speech from text using context-aware voice routing and tags."""
 
-        normalized_text = text.strip()
+        visible_text = emotion_engine.strip_emotion_tags(text.strip())
+        normalized_text = (
+            tts_text.strip()
+            if tts_text and tts_text.strip()
+            else emotion_engine.analyze_and_tag(
+                text=visible_text, tts_context=context
+            ).tts_text
+        )
         try:
             routing = self._context_router.route(
-                text=normalized_text,
+                text=visible_text or normalized_text,
                 context=context,
                 voice_id=voice_id,
                 character_id=character_id,
@@ -530,6 +539,7 @@ class TTSService:
         context: TTSContext | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
+        tts_text: str | None = None,
     ) -> AsyncIterator[bytes]:
         """Yield generated audio bytes.
 
@@ -545,6 +555,7 @@ class TTSService:
             context=context,
             audio_format=audio_format,
             request_id=request_id,
+            tts_text=tts_text,
         )
         chunk_size = self._settings.tts_stream_chunk_size_bytes
         with io.BytesIO(result.audio_bytes) as audio:

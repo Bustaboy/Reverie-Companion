@@ -244,3 +244,66 @@ def test_generate_speech_routes_rpg_quoted_character_line(tmp_path) -> None:
         assert service._piper.last_kwargs["voice_id"] == "tara_backend"
 
     asyncio.run(run_test())
+
+
+
+def test_generate_speech_prefers_pretagged_tts_text(tmp_path) -> None:
+    async def run_test() -> None:
+        service = make_service(tmp_path)
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"piper wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", result=piper_result
+        )
+
+        await service.generate_speech(
+            text="Stay close.",
+            voice_id="tara",
+            tts_text="<whisper> <gasp> Stay close.",
+            request_id="req_pretagged",
+        )
+
+        assert service._piper.last_kwargs["text"] == "<whisper> <gasp> Stay close."
+        assert service._piper.last_kwargs["voice_id"] == "tara_backend"
+
+    asyncio.run(run_test())
+
+
+def test_generate_speech_adds_fallback_tags_from_context(tmp_path) -> None:
+    async def run_test() -> None:
+        from app.models.tts import TTSContext
+
+        service = make_service(tmp_path)
+        piper_result = TTSGenerationResult(
+            audio_bytes=b"piper wav",
+            backend="piper",
+            voice_id="tara_backend",
+            audio_format="wav",
+            sample_rate=22_050,
+        )
+        service._orpheus = FakeBackend(  # type: ignore[assignment]
+            "orpheus", error=TTSBackendUnavailable("missing", code="missing")
+        )
+        service._piper = FakeBackend(  # type: ignore[assignment]
+            "piper", result=piper_result
+        )
+
+        await service.generate_speech(
+            text="I want you close and I trust you.",
+            voice_id="tara",
+            context=TTSContext(emotion_hint="intimate", intensity=1.5),
+            request_id="req_fallback_tags",
+        )
+
+        assert "<" in service._piper.last_kwargs["text"]
+        assert "I want you close" in service._piper.last_kwargs["text"]
+
+    asyncio.run(run_test())

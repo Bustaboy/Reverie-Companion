@@ -21,6 +21,10 @@ from app.models.chat import (
     ChatResponse,
     GrowthNotification,
 )
+from app.models.tts import TTSEmotionMetadata, TTSContext
+from app.services.emotion_engine import emotion_engine
+from app.services.tts_context_router import TTSContextRouter
+from app.services.voice_manager import VoiceManager, VoiceManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,9 @@ class ChatService:
         GrowthOrchestrator._emitted_growth_notification_ids = type(
             self
         )._emitted_growth_notification_ids
+        self._voice_manager = VoiceManager(settings)
+        self._context_router = TTSContextRouter(self._voice_manager)
+        self._emotion_engine = emotion_engine
         self._growth_orchestrator = growth_orchestrator or GrowthOrchestrator(
             settings=settings,
             memory_manager=memory_manager,
@@ -101,7 +108,7 @@ class ChatService:
         response = self._attach_growth_notification(
             response, growth_context.growth_notification
         )
-        return self._attach_tts_context(response, request)
+        return self._attach_voice_enhancement(response, request, growth_context)
 
     def _attach_growth_notification(
         self,
@@ -122,6 +129,38 @@ class ChatService:
         if request.tts_context is None:
             return response
         return response.model_copy(update={"tts_context": request.tts_context})
+
+    def _attach_voice_enhancement(
+        self,
+        response: ChatResponse,
+        request: ChatRequest,
+        growth_context: GrowthContext,
+    ) -> ChatResponse:
+        """Attach clean visible text, TTS text, voice, and emotion metadata."""
+
+        tagging = self._emotion_engine.analyze_and_tag(
+            text=response.message.content,
+            tts_context=request.tts_context,
+            recent_messages=request.messages,
+            memory_context=growth_context.memory_context,
+            reflection_entries=growth_context.reflection_entries,
+            growth_notification=response.growth_notification,
+        )
+        tts_context, voice_id = self._resolve_tts_context_and_voice(
+            clean_text=tagging.visible_text, request=request
+        )
+        clean_message = response.message.model_copy(
+            update={"content": tagging.visible_text}
+        )
+        return response.model_copy(
+            update={
+                "message": clean_message,
+                "tts_context": tts_context,
+                "tts_text": tagging.tts_text,
+                "voice_id": voice_id,
+                "emotion": TTSEmotionMetadata.model_validate(tagging.to_metadata()),
+            }
+        )
 
     async def stream_chat(
         self,
@@ -502,26 +541,64 @@ class ChatService:
         """Pass through Ollama SSE frames, adding visual reactivity only to done."""
 
         assistant_chunks: list[str] = []
+        pending_visible_tag = ""
         async for frame in self._ollama_client.stream_chat(
             request, request_id=request_id
         ):
             if "event: message" in frame:
-                assistant_chunks.append(self._extract_sse_content(frame))
-                yield frame
+                raw_content = self._extract_sse_content(frame)
+                assistant_chunks.append(raw_content)
+                clean_content, pending_visible_tag = self._clean_stream_chunk(
+                    raw_content, pending_visible_tag
+                )
+                yield self._replace_sse_content(frame, clean_content)
                 continue
 
+            clean_response = self._emotion_engine.strip_emotion_tags(
+                "".join(assistant_chunks)
+            )
             routed_frame = self._growth_orchestrator.inject_reactivity_into_done_sse(
                 frame,
                 request=request,
-                assistant_response="".join(assistant_chunks),
+                assistant_response=clean_response,
                 growth_context=growth_context,
             )
-            yield self._inject_tts_context_into_done_sse(routed_frame, request)
+            yield self._inject_voice_metadata_into_done_sse(
+                routed_frame,
+                request=request,
+                clean_response=clean_response,
+                raw_response="".join(assistant_chunks),
+                growth_context=growth_context,
+            )
 
     def _inject_tts_context_into_done_sse(self, frame: str, request: ChatRequest) -> str:
         """Attach caller-provided TTS context to final stream metadata."""
 
-        if request.tts_context is None or "event: done" not in frame:
+        return self._inject_voice_metadata_into_done_sse(
+            frame,
+            request=request,
+            clean_response="",
+            raw_response="",
+            growth_context=GrowthContext(
+                memory_context="",
+                reflection_entries=[],
+                reflection_context="",
+                growth_notification=None,
+            ),
+        )
+
+    def _inject_voice_metadata_into_done_sse(
+        self,
+        frame: str,
+        *,
+        request: ChatRequest,
+        clean_response: str,
+        raw_response: str,
+        growth_context: GrowthContext,
+    ) -> str:
+        """Attach clean/TTS text, TTSContext, resolved voice, and emotion metadata."""
+
+        if "event: done" not in frame:
             return frame
 
         data_lines: list[str] = []
@@ -539,7 +616,94 @@ class ChatService:
 
         if not isinstance(payload, dict):
             payload = {"done": True}
-        payload["tts_context"] = request.tts_context.model_dump()
+
+        tagging = self._emotion_engine.analyze_and_tag(
+            text=raw_response or clean_response,
+            tts_context=request.tts_context,
+            recent_messages=request.messages,
+            memory_context=growth_context.memory_context,
+            reflection_entries=growth_context.reflection_entries,
+            growth_notification=growth_context.growth_notification,
+        )
+        tts_context, voice_id = self._resolve_tts_context_and_voice(
+            clean_text=tagging.visible_text or clean_response, request=request
+        )
+        payload["text"] = tagging.visible_text or clean_response
+        payload["tts_text"] = tagging.tts_text
+        payload["tts_context"] = tts_context.model_dump()
+        payload["voice_id"] = voice_id
+        payload["emotion"] = tagging.to_metadata()
+        return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
+
+    def _resolve_tts_context_and_voice(
+        self, *, clean_text: str, request: ChatRequest
+    ) -> tuple[TTSContext, str]:
+        """Resolve full TTSContext and durable voice ID without synthesizing audio."""
+
+        try:
+            routing = self._context_router.route(
+                text=clean_text,
+                context=request.tts_context,
+                character_id=(
+                    request.tts_context.character_id if request.tts_context else None
+                ),
+            )
+        except VoiceManagerError:
+            fallback_context = request.tts_context or TTSContext()
+            return fallback_context, self._settings.tts_default_voice_id
+        return routing.context, routing.voice_profile.voice_id
+
+    def _clean_stream_chunk(self, raw_content: str, pending_tag: str) -> tuple[str, str]:
+        """Strip speech tags from a token chunk, including split tag boundaries."""
+
+        combined = f"{pending_tag}{raw_content}"
+        output: list[str] = []
+        index = 0
+        while index < len(combined):
+            char = combined[index]
+            if char != "<":
+                output.append(char)
+                index += 1
+                continue
+
+            tag_end = combined.find(">", index + 1)
+            if tag_end == -1:
+                return "".join(output), combined[index:]
+
+            candidate = combined[index : tag_end + 1]
+            if self._emotion_engine.strip_emotion_tags(candidate) == "":
+                index = tag_end + 1
+                continue
+
+            output.append(candidate)
+            index = tag_end + 1
+
+        clean = self._emotion_engine.strip_emotion_tags("".join(output))
+        if raw_content.startswith(" ") and not clean.startswith(" "):
+            clean = f" {clean}"
+        if raw_content.endswith(" ") and not clean.endswith(" "):
+            clean = f"{clean} "
+        return clean, ""
+
+    def _replace_sse_content(self, frame: str, content: str) -> str:
+        """Replace one message frame's visible token with sanitized content."""
+
+        if "event: message" not in frame:
+            return frame
+        data_lines: list[str] = []
+        other_lines: list[str] = []
+        for line in frame.splitlines():
+            if line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").strip())
+            else:
+                other_lines.append(line)
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            return frame
+        if not isinstance(payload, dict):
+            return frame
+        payload["content"] = content
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
 
     def _extract_sse_content(self, frame: str) -> str:
