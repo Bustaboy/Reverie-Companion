@@ -1,16 +1,23 @@
 import type { CharacterVisualManifest, VisualAssetRef } from '$lib/types/visualNovel';
+import { createSvgPlaceholderAsset } from './placeholderAssets';
 
-const placeholderSprite = (alt: string): VisualAssetRef => ({
-  kind: 'placeholder',
-  alt,
-  dominantColor: '#f09a9f'
-});
+const placeholderSprite = (expression: string, pose: string): VisualAssetRef =>
+  createSvgPlaceholderAsset({
+    kind: 'sprite',
+    alt: `Reverie ${expression} ${pose} placeholder`,
+    label: `Reverie ${expression} ${pose}`,
+    primary: expression === 'sad' || expression === 'concerned' ? '#b995d7' : '#f09a9f',
+    secondary: pose === 'leaning' ? '#9f5f8f' : '#7a4a84'
+  });
 
-const placeholderBackground = (alt: string, dominantColor = '#1b1723'): VisualAssetRef => ({
-  kind: 'placeholder',
-  alt,
-  dominantColor
-});
+const placeholderBackground = (label: string, primary = '#211826'): VisualAssetRef =>
+  createSvgPlaceholderAsset({
+    kind: 'background',
+    alt: `${label} background placeholder`,
+    label,
+    primary,
+    secondary: '#100d14'
+  });
 
 export const DEFAULT_CHARACTER_VISUAL_MANIFEST: CharacterVisualManifest = {
   id: 'reverie-default',
@@ -37,31 +44,31 @@ export const DEFAULT_CHARACTER_VISUAL_MANIFEST: CharacterVisualManifest = {
     leaning: { label: 'Leaning closer' }
   },
   backgrounds: {
-    default: placeholderBackground('Warm default visual novel background'),
-    bedroom: placeholderBackground('Soft bedroom background placeholder', '#211826'),
-    cafe: placeholderBackground('Quiet cafe background placeholder', '#242019'),
-    night: placeholderBackground('Night room background placeholder', '#151827')
+    default: placeholderBackground('Warm default visual novel room'),
+    bedroom: placeholderBackground('Soft bedroom', '#241824'),
+    cafe: placeholderBackground('Quiet cafe', '#242019'),
+    night: placeholderBackground('Night room', '#151827')
   },
   sprites: {
     idle: {
-      neutral: placeholderSprite('Reverie neutral idle placeholder'),
-      happy: placeholderSprite('Reverie happy idle placeholder'),
-      sad: placeholderSprite('Reverie sad idle placeholder'),
-      thinking: placeholderSprite('Reverie thinking idle placeholder'),
-      flirty: placeholderSprite('Reverie flirty idle placeholder'),
-      surprised: placeholderSprite('Reverie surprised idle placeholder'),
-      concerned: placeholderSprite('Reverie concerned idle placeholder')
+      neutral: placeholderSprite('neutral', 'idle'),
+      happy: placeholderSprite('happy', 'idle'),
+      sad: placeholderSprite('sad', 'idle'),
+      thinking: placeholderSprite('thinking', 'idle'),
+      flirty: placeholderSprite('flirty', 'idle'),
+      surprised: placeholderSprite('surprised', 'idle'),
+      concerned: placeholderSprite('concerned', 'idle')
     },
     listening: {
-      neutral: placeholderSprite('Reverie neutral listening placeholder')
+      neutral: placeholderSprite('neutral', 'listening')
     },
     speaking: {
-      neutral: placeholderSprite('Reverie neutral speaking placeholder'),
-      happy: placeholderSprite('Reverie happy speaking placeholder')
+      neutral: placeholderSprite('neutral', 'speaking'),
+      happy: placeholderSprite('happy', 'speaking')
     },
     leaning: {
-      neutral: placeholderSprite('Reverie leaning closer placeholder'),
-      flirty: placeholderSprite('Reverie flirty leaning closer placeholder')
+      neutral: placeholderSprite('neutral', 'leaning'),
+      flirty: placeholderSprite('flirty', 'leaning')
     }
   }
 };

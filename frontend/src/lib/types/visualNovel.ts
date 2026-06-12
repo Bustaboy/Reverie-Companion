@@ -25,6 +25,8 @@ export interface CharacterVisualManifest {
   id: string;
   characterName: string;
   version: number;
+  /** Optional base URL/path for relative sprite and background entries in imported manifests. */
+  assetBasePath?: string;
   defaults: {
     expression: VisualExpression;
     pose: VisualPose;

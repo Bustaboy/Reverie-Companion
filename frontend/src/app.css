@@ -2037,6 +2037,7 @@ h1 {
 
 .vn-background-image {
   object-fit: cover;
+  transition: opacity 180ms ease;
 }
 
 .vn-background-placeholder {
@@ -2084,6 +2085,7 @@ h1 {
   max-height: min(64vh, 42rem);
   object-fit: contain;
   filter: drop-shadow(0 32px 60px rgba(0, 0, 0, 0.38));
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .vn-character-placeholder {
@@ -2101,6 +2103,7 @@ h1 {
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 32px 70px rgba(0, 0, 0, 0.38),
     0 0 48px rgba(240, 154, 159, 0.14);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .vn-character-placeholder span {
@@ -2126,6 +2129,7 @@ h1 {
   background: rgba(20, 16, 25, 0.78);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(20px);
+  transition: transform 180ms ease, border-color 180ms ease;
 }
 
 .vn-speaker-row {
@@ -2160,6 +2164,15 @@ h1 {
 .vn-dialogue-panel small {
   display: block;
   margin-top: 0.55rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vn-background-image,
+  .vn-character-sprite,
+  .vn-character-placeholder,
+  .vn-dialogue-panel {
+    transition: none;
+  }
 }
 
 @media (max-width: 720px) {
