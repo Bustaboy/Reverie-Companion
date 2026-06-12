@@ -11,7 +11,8 @@ The backend is intentionally modular so chat, memory, reflection, journaling, Pe
 - **Reflection journal**: `app.core.reflection.ReflectionManager` writes local, inspectable journal entries from bounded conversation windows and can promote high-confidence insights into memory.
 - **Growth orchestration**: `app.core.growth.GrowthOrchestrator` coordinates memory retrieval, journal context, rare growth notifications, background reflection scheduling, and optional Personal LoRA candidate collection.
 - **Personal LoRA foundation**: `app.core.lora.PersonalLoRATrainer` persists reviewable examples, explicit opt-in settings, approved-only training jobs, and rollback-friendly adapter manifests. The current job runner is a conservative foundation, not a heavyweight fine-tuner yet.
-- **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, or Personal LoRA review state.
+- **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, Personal LoRA review state, or optional ComfyUI image queueing.
+- **Image generation foundation**: queued `POST /api/images/generate` jobs target local ComfyUI + Flux GGUF low-VRAM workflows, pause behind active TTS, downgrade presets under VRAM pressure, and stream progress with SSE.
 
 ## Growth Loop Overview
 
@@ -33,6 +34,7 @@ This keeps the active token path free of training, unbounded scans, and hidden c
 - Reflection is throttled background work, not active response-path work.
 - Personal LoRA collection/training defaults to opt-out, rank 8, batch size 1, short sequence lengths, and one background job at a time.
 - No resident reranker, hosted telemetry, or mandatory external service.
+- Image generation is optional, serialized, batch-size-1 media work; it pauses while Orpheus/Piper TTS is active and can downgrade to lower 8GB presets or CPU/offload preview fallback.
 
 ## Key Settings
 
@@ -69,6 +71,13 @@ Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 - `REVERIE_GROWTH_NOTIFICATION_MESSAGE_INTERVAL`: coarse turn gate
 - `REVERIE_GROWTH_NOTIFICATION_MIN_INTERVAL_SECONDS`: wall-clock quiet period
 - `REVERIE_GROWTH_NOTIFICATION_MIN_CONFIDENCE`, `REVERIE_GROWTH_NOTIFICATION_MIN_EVIDENCE_COUNT`: quality gates
+
+### Image Generation
+
+- `REVERIE_IMAGE_COMFYUI_URL`: local ComfyUI URL, default `http://127.0.0.1:8188`
+- `REVERIE_IMAGE_COMFYUI_WORKFLOW_PATH`: optional exported workflow JSON; placeholders such as `{{prompt}}`, `{{width}}`, and `{{steps}}` are patched per job
+- `REVERIE_IMAGE_PREVIEW_MIN_FREE_VRAM_MB`, `REVERIE_IMAGE_BALANCED_MIN_FREE_VRAM_MB`, `REVERIE_IMAGE_HIGH_MIN_FREE_VRAM_MB`: preset safety gates
+- `REVERIE_IMAGE_ALLOW_CPU_FALLBACK`: permits low-quality CPU/offload preview fallback when GPU headroom is too low
 
 ### Personal LoRA
 
@@ -140,6 +149,15 @@ Returns recent local self-reflection journal entries for the Journal UI.
 ### `GET /growth/personal-lora`
 
 Returns Personal LoRA settings, current job, example counts, and review queue items.
+
+### Image generation actions
+
+- `POST /api/images/generate`
+- `GET /api/images/{job_id}`
+- `GET /api/images/{job_id}/events`
+- `POST /api/images/{job_id}/cancel`
+- `POST /api/images/{job_id}/pause`
+- `POST /api/images/{job_id}/resume`
 
 ### Personal LoRA actions
 

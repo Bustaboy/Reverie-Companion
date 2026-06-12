@@ -235,7 +235,20 @@ Milestone 3 Task 2H closes the Task 2 TTS system as a complete lightweight voice
 
 **Task 2A–2H is complete.** Reverie’s final MVP TTS architecture is local-first, emotionally tagged, clean-text-safe, profile-aware, clone-ready, interruptible, fallback-safe, and polished across Chat, Settings, and Visual Novel mode while staying friendly to RTX 4070 8GB mobile hardware.
 
-### 3.11 Futa-Vision Integration Vision (Future)
+### 3.11 Image Generation Backend Foundation (Milestone 3 Task 3A)
+
+Milestone 3 Task 3A adds the backend foundation for in-chat local image generation without letting optional media work disrupt chat or the completed TTS system:
+
+- **Canonical image service** lives behind `ImageGenerationService` and a process-local queue. `POST /api/images/generate` accepts a user prompt, compact scene/TTS-style context, and one of three strict 8GB presets (`preview_8gb`, `balanced_8gb`, `high_8gb`). Route handlers stay thin; the service owns queueing, resource policy, ComfyUI dispatch, progress states, cancellation, and pause/resume behavior.
+- **ComfyUI + Flux GGUF path** is optional and local-first. The backend targets externally launched ComfyUI with `--lowvram`, Flux GGUF/FP8 assets, model/layer offloading, batch size 1, bounded resolution/steps, and a replaceable exported workflow file. The default workflow skeleton documents Flux GGUF low-VRAM intent while keeping advanced prompt engineering and frontend display out of Task 3A scope.
+- **TTS priority is explicit.** TTSService now exposes a lightweight process-local activity tracker during Orpheus/Piper synthesis and streaming. Image jobs poll this tracker before starting; if Reverie is speaking, image generation enters a `paused` / `tts_priority` state and automatically resumes only after TTS is inactive and VRAM checks pass. Voice is always higher priority than media.
+- **VRAM-aware scheduling** checks best-effort CUDA memory through `torch.cuda.mem_get_info`, falls back to `nvidia-smi`, and treats unknown VRAM conservatively enough for queue serialization. Only one image job runs at a time. Preset budgets leave headroom on RTX 4070 8GB mobile: preview uses 512² / 12 steps, balanced uses 768² / 18 steps, and high uses 896² / 24 steps, all with batch size 1 and configurable free-VRAM thresholds.
+- **Graceful degradation** lowers the effective preset when free VRAM cannot satisfy the requested tier (`high_8gb` → `balanced_8gb` → `preview_8gb`) and can fall back to CPU/offload preview mode when no GPU preset fits. Failures are user-facing and typed (`image_comfyui_unavailable`, `image_queue_full`, `image_comfyui_timeout`, etc.) without breaking chat, memory, growth, or TTS.
+- **Progress and control contract** uses SSE events for `queued`, `waiting_resources`, `paused`, `running`, `completed`, `failed`, and `cancelled` lifecycle states. Clients can inspect jobs, cancel them, or manually pause/resume them; automatic resource pauses use the same visible state model so the UI can explain why generation is waiting.
+
+Short design summary: Task 3A makes image generation a low-priority, observable, cancelable background media job. ComfyUI/Flux can produce local images when available, but Reverie’s conversation and voice layers remain responsive, local-first, and protected by strict 8GB VRAM guardrails.
+
+### 3.12 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

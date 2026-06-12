@@ -146,6 +146,28 @@ class Settings(BaseSettings):
     tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)
 
 
+    # Image generation is optional media work and must never block chat or TTS.
+    # ComfyUI should be launched externally with --lowvram and Flux GGUF/FP8
+    # workflows. The backend queues one job at a time, pauses while TTS is
+    # active, downgrades presets under VRAM pressure, and can use CPU/offload
+    # preview fallback when GPU headroom is too low.
+    image_comfyui_url: str = "http://127.0.0.1:8188"
+    image_comfyui_workflow_path: str | None = None
+    image_comfyui_timeout_seconds: float = Field(default=240.0, gt=0)
+    image_comfyui_poll_seconds: float = Field(default=1.0, gt=0)
+    image_queue_max_jobs: int = Field(default=8, gt=0, le=50)
+    image_job_event_history_limit: int = Field(default=200, gt=10, le=1000)
+    image_resource_poll_seconds: float = Field(default=1.0, gt=0, le=30)
+    image_preview_min_free_vram_mb: int = Field(default=4300, ge=0, le=8192)
+    image_balanced_min_free_vram_mb: int = Field(default=5200, ge=0, le=8192)
+    image_high_min_free_vram_mb: int = Field(default=6200, ge=0, le=8192)
+    image_allow_cpu_fallback: bool = True
+    image_flux_gguf_model_name: str = "flux1-dev-Q4_K_S.gguf"
+    image_flux_clip_l_name: str = "clip_l.safetensors"
+    image_flux_t5xxl_name: str = "t5xxl_fp8_e4m3fn.safetensors"
+    image_flux_vae_name: str = "ae.safetensors"
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return cached application settings."""
