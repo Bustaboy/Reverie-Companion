@@ -23,6 +23,7 @@ from time import perf_counter
 from typing import Protocol
 
 from app.core.config import Settings
+from app.services.voice_manager import VoiceManager, VoiceProfileNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -400,8 +401,12 @@ class PiperBackend:
 class TTSService:
     """Business workflow for local text-to-speech generation."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, voice_manager: VoiceManager | None = None
+    ) -> None:
         self._settings = settings
+        self._voice_manager = voice_manager or VoiceManager(settings)
+        self._voice_manager.ensure_default_narrator_voice()
         self._orpheus = OrpheusBackend(settings)
         self._piper = PiperBackend(settings)
 
@@ -416,13 +421,28 @@ class TTSService:
         *,
         text: str,
         voice_id: str | None = None,
+        character_id: str | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> TTSGenerationResult:
-        """Generate speech from text with Orpheus primary and Piper fallback."""
+        """Generate speech from text with profile-aware Orpheus/Piper fallback."""
 
         normalized_text = text.strip()
-        resolved_voice_id = voice_id or self._settings.tts_default_voice_id
+        try:
+            voice_profile = self._voice_manager.resolve_tts_voice_profile(
+                voice_id=voice_id, character_id=character_id
+            )
+        except VoiceProfileNotFound as exc:
+            raise TTSServiceError(
+                "Requested voice profile was not found.",
+                code=exc.code,
+                retryable=False,
+                details=exc.details,
+            ) from exc
+        resolved_voice_id = self._voice_manager.backend_voice_id_for_profile(
+            voice_profile
+        )
+        response_voice_id = voice_profile.voice_id
         if len(normalized_text) > self._settings.tts_max_text_chars:
             raise TTSServiceError(
                 "TTS text exceeds the configured maximum length.",
@@ -443,16 +463,15 @@ class TTSService:
                     ),
                     timeout=self._timeout_for_backend(backend.name),
                 )
-                if fallback_used:
-                    result = TTSGenerationResult(
-                        audio_bytes=result.audio_bytes,
-                        backend=result.backend,
-                        voice_id=result.voice_id,
-                        audio_format=result.audio_format,
-                        sample_rate=result.sample_rate,
-                        duration_seconds=result.duration_seconds,
-                        fallback_used=True,
-                    )
+                result = TTSGenerationResult(
+                    audio_bytes=result.audio_bytes,
+                    backend=result.backend,
+                    voice_id=response_voice_id,
+                    audio_format=result.audio_format,
+                    sample_rate=result.sample_rate,
+                    duration_seconds=result.duration_seconds,
+                    fallback_used=fallback_used,
+                )
                 logger.info(
                     "Generated TTS audio",
                     extra={
@@ -499,6 +518,7 @@ class TTSService:
         *,
         text: str,
         voice_id: str | None = None,
+        character_id: str | None = None,
         audio_format: str = "wav",
         request_id: str | None = None,
     ) -> AsyncIterator[bytes]:
@@ -512,6 +532,7 @@ class TTSService:
         result = await self.generate_speech(
             text=text,
             voice_id=voice_id,
+            character_id=character_id,
             audio_format=audio_format,
             request_id=request_id,
         )

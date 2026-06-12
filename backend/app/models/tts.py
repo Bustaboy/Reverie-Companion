@@ -23,7 +23,13 @@ class TTSGenerateRequest(BaseModel):
         default=None,
         min_length=1,
         max_length=MAX_TTS_VOICE_ID_LENGTH,
-        description="Simple voice identifier. Character voice profiles arrive later.",
+        description="Durable voice profile identifier to use for synthesis.",
+    )
+    character_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description="Optional character ID used to resolve an assigned voice profile.",
     )
     stream: bool = Field(
         default=False,
@@ -42,13 +48,13 @@ class TTSGenerateRequest(BaseModel):
             raise ValueError("TTS text cannot be empty.")
         return value.strip()
 
-    @field_validator("voice_id")
+    @field_validator("voice_id", "character_id")
     @classmethod
-    def voice_id_must_not_be_blank(cls, value: str | None) -> str | None:
-        """Reject blank voice IDs while still allowing settings fallback."""
+    def optional_identifier_must_not_be_blank(cls, value: str | None) -> str | None:
+        """Reject blank optional IDs while still allowing profile fallback."""
 
         if value is not None and not value.strip():
-            raise ValueError("voice_id cannot be empty.")
+            raise ValueError("identifier cannot be empty.")
         return value.strip() if value is not None else value
 
 

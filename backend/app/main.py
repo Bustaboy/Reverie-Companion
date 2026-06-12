@@ -3,6 +3,8 @@
 import logging
 import platform
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -17,6 +19,7 @@ from app.api.routes.journal import router as journal_router
 from app.api.routes.tts import router as tts_router
 from app.core.config import Settings, get_settings
 from app.core.ollama_client import OllamaClient, OllamaClientError
+from app.services.voice_manager import VoiceManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +78,19 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings)
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        """Initialize lightweight local-first resources on application startup."""
+
+        VoiceManager(settings).ensure_default_narrator_voice()
+        yield
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
         description="Local-first backend foundation for Reverie companion experiences.",
+        lifespan=lifespan,
     )
 
     app.add_exception_handler(RequestValidationError, validation_exception_handler)

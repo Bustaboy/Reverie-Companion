@@ -55,6 +55,7 @@ async def generate_tts(
         extra={
             "request_id": request_id,
             "voice_id": voice_id,
+            "character_id": request.character_id,
             "stream": request.stream,
             "text_chars": len(request.text),
         },
@@ -64,6 +65,7 @@ async def generate_tts(
         result = await tts_service.generate_speech(
             text=request.text,
             voice_id=voice_id,
+            character_id=request.character_id,
             audio_format=request.audio_format,
             request_id=request_id,
         )
