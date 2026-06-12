@@ -1,0 +1,66 @@
+"""Coverage for the lightweight weighted emotion inference layer."""
+
+from app.core.emotion import EmotionInferenceEngine
+from app.models.chat import ChatMessage, GrowthNotification
+
+
+def test_weighted_engine_falls_back_to_neutral_when_confidence_is_low() -> None:
+    result = EmotionInferenceEngine().infer_visual_state(
+        messages=[ChatMessage(role="user", content="Can we talk for a bit?")],
+        assistant_response="Of course. I'm here with you.",
+    )
+
+    assert result.expression == "neutral"
+    assert result.confidence == 0.0
+
+
+def test_weighted_engine_uses_memory_reflection_and_growth_cues() -> None:
+    result = EmotionInferenceEngine().infer_visual_state(
+        messages=[ChatMessage(role="user", content="I feel anxious and need reassurance.")],
+        assistant_response="I remember that gentle comfort helps you feel safe.",
+        memory_context="User prefers gentle reassurance and safety when anxious.",
+        reflection_entries=[
+            {
+                "entry_id": "journal_1",
+                "status": "active",
+                "character_summary": "Trust and reassurance have become meaningful.",
+                "themes": ["trust", "comfort"],
+                "insights": [{"summary": "Offer comfort before problem solving."}],
+                "confidence": 0.9,
+            }
+        ],
+        growth_notification=GrowthNotification(
+            id="growth_1",
+            journal_entry_id="journal_1",
+            created_at="2026-06-11T00:00:00Z",
+            message="Reverie seems steadier in your trust.",
+            why="A private reflection noticed reassurance helps you feel safe.",
+            theme="trust",
+        ),
+    )
+
+    assert result.expression in {"happy", "concerned", "thinking"}
+    assert result.growth_cue == "relationship_trust"
+    assert result.decay_ms == 45_000
+    assert result.confidence >= 0.32
+
+
+def test_growth_priority_boost_can_tip_close_visual_tone() -> None:
+    result = EmotionInferenceEngine().infer_visual_state(
+        messages=[ChatMessage(role="user", content="I am anxious and worried, but listening.")],
+        assistant_response="I am thinking about what you said and what to remember.",
+        memory_context="Earlier memory: comfort and trust help this feel safe.",
+        reflection_entries=[{"themes": ["trust"], "character_summary": "Trust is warming."}],
+        growth_notification=GrowthNotification(
+            id="growth_2",
+            journal_entry_id="journal_2",
+            created_at="2026-06-11T00:00:00Z",
+            message="Reverie seems steadier in your trust.",
+            why="A private reflection noticed the user feels safe with reassurance.",
+            theme="trust",
+        ),
+    )
+
+    assert result.expression == "happy"
+    assert result.pose == "leaning"
+    assert result.growth_cue == "relationship_trust"

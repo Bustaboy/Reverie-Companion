@@ -9,7 +9,7 @@ import time
 from collections.abc import AsyncIterator, Iterable
 
 from app.core.config import Settings
-from app.core.growth import GrowthOrchestrator
+from app.core.growth import GrowthContext, GrowthOrchestrator
 from app.core.lora import get_personal_lora_trainer
 from app.core.memory import MemoryManager
 from app.core.ollama_client import OllamaClient
@@ -92,13 +92,13 @@ class ChatService:
     ) -> ChatResponse:
         """Run a non-streaming chat completion with optional continuity context."""
 
-        prepared_request, growth_notification = await self._prepare_request_with_growth(
+        prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
         response = await self._ollama_client.chat(
             prepared_request, request_id=request_id
         )
-        return self._attach_growth_notification(response, growth_notification)
+        return self._attach_growth_notification(response, growth_context.growth_notification)
 
     def _attach_growth_notification(
         self,
@@ -119,12 +119,12 @@ class ChatService:
     ) -> AsyncIterator[str]:
         """Return an Ollama SSE stream with optional continuity context injected."""
 
-        prepared_request, growth_notification = await self._prepare_request_with_growth(
+        prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
         return self._stream_with_growth_notification(
             prepared_request,
-            growth_notification=growth_notification,
+            growth_context=growth_context,
             request_id=request_id,
         )
 
@@ -136,7 +136,7 @@ class ChatService:
     ) -> ChatRequest:
         """Build the model-facing request while keeping route handlers thin."""
 
-        prepared_request, _growth_notification = (
+        prepared_request, _growth_context = (
             await self._prepare_request_with_growth(request, request_id=request_id)
         )
         return prepared_request
@@ -146,8 +146,8 @@ class ChatService:
         request: ChatRequest,
         *,
         request_id: str | None,
-    ) -> tuple[ChatRequest, GrowthNotification | None]:
-        """Build a model request and choose at most one optional growth notice."""
+    ) -> tuple[ChatRequest, GrowthContext]:
+        """Build a model request and choose bounded continuity/reactivity metadata."""
 
         # The orchestrator ties together existing memory, reflection journals,
         # growth notices, and optional LoRA collection. It only uses already
@@ -158,7 +158,6 @@ class ChatService:
         )
         memory_context = growth_context.memory_context
         reflection_context = growth_context.reflection_context
-        growth_notification = growth_context.growth_notification
         self._growth_orchestrator.schedule_reflection_if_due(
             request, request_id=request_id
         )
@@ -183,7 +182,7 @@ class ChatService:
             )
 
         if not context_messages:
-            return request, growth_notification
+            return request, growth_context
 
         enriched_messages = self._inject_context_after_system_messages(
             request.messages, context_messages
@@ -200,7 +199,7 @@ class ChatService:
         )
         return (
             request.model_copy(update={"messages": enriched_messages}),
-            growth_notification,
+            growth_context,
         )
 
     async def _retrieve_memory_context(
@@ -485,17 +484,43 @@ class ChatService:
         self,
         request: ChatRequest,
         *,
-        growth_notification: GrowthNotification | None,
+        growth_context: GrowthContext,
         request_id: str | None,
     ) -> AsyncIterator[str]:
-        """Pass through Ollama SSE frames, adding growth metadata to done."""
+        """Pass through Ollama SSE frames, adding visual reactivity only to done."""
 
+        assistant_chunks: list[str] = []
         async for frame in self._ollama_client.stream_chat(
             request, request_id=request_id
         ):
-            yield self._growth_orchestrator.inject_growth_notification_into_done_sse(
-                frame, growth_notification
+            if "event: message" in frame:
+                assistant_chunks.append(self._extract_sse_content(frame))
+                yield frame
+                continue
+
+            yield self._growth_orchestrator.inject_reactivity_into_done_sse(
+                frame,
+                request=request,
+                assistant_response="".join(assistant_chunks),
+                growth_context=growth_context,
             )
+
+    def _extract_sse_content(self, frame: str) -> str:
+        """Read token content from one SSE frame without changing the stream."""
+
+        data_lines = [
+            line.removeprefix("data:").strip()
+            for line in frame.splitlines()
+            if line.startswith("data:")
+        ]
+        try:
+            payload = json.loads("\n".join(data_lines) or "{}")
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+        content = payload.get("content")
+        return content if isinstance(content, str) else ""
 
     def _inject_growth_notification_into_done_sse(
         self, frame: str, growth_notification: GrowthNotification | None

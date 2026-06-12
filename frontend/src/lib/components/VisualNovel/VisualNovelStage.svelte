@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fade } from 'svelte/transition';
   import { chatStore } from '$lib/stores/chatStore';
   import { visualNovelScene, visualNovelStore } from '$lib/stores/visualNovelStore';
 
@@ -16,8 +17,19 @@
     return assistantMessage?.content.trim() ?? 'Reverie settles into the quiet, ready for the next moment with you.';
   });
 
+  const growthModifier = $derived($visualNovelStore.growthModifier);
   const stateSummary = $derived(
     `${$visualNovelScene.expressionLabel} expression, ${$visualNovelScene.poseLabel.toLowerCase()} pose`
+  );
+  const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const spriteTransitionMs = prefersReducedMotion ? 0 : 180;
+  const growthCueLabel = $derived(growthModifier ? growthModifier.cue.replaceAll('_', ' ') : '');
+  const growthCueClass = $derived(growthModifier ? growthModifier.cue.replace(/[^a-z0-9_-]/gi, '-') : 'none');
+  const visualSignature = $derived(
+    `${$visualNovelScene.state.expression}:${$visualNovelScene.state.pose}:${$visualNovelScene.sprite.src ?? $visualNovelScene.sprite.alt}`
+  );
+  const growthIntensityStyle = $derived(
+    growthModifier ? `--vn-growth-intensity: ${growthModifier.intensity.toFixed(2)}` : '--vn-growth-intensity: 0'
   );
 
   const handleSpriteError = () => {
@@ -68,32 +80,42 @@
       </div>
     </div>
 
-    <div class="vn-character-layer" aria-label={`Reverie visual state: ${stateSummary}`}>
-      {#if $visualNovelScene.sprite.kind === 'image' && $visualNovelScene.sprite.src}
-        <img
-          class="vn-character-sprite"
-          src={$visualNovelScene.sprite.src}
-          alt={$visualNovelScene.sprite.alt}
-          loading="lazy"
-          decoding="async"
-          onerror={handleSpriteError}
-        />
-      {:else}
-        <div
-          class="vn-character-placeholder"
-          role="img"
-          aria-label={$visualNovelScene.sprite.alt}
-          style={`--vn-character-tone: ${$visualNovelScene.sprite.dominantColor ?? '#f09a9f'}`}
-        >
-          <span aria-hidden="true">R</span>
-        </div>
-      {/if}
+    <div
+      class:growth-reactive={Boolean(growthModifier)}
+      class={`vn-character-layer growth-cue-${growthCueClass}`}
+      aria-label={`Reverie visual state: ${stateSummary}${growthModifier ? `, growth cue ${growthCueLabel}` : ''}`}
+      aria-live="polite"
+      style={growthIntensityStyle}
+    >
+      {#key visualSignature}
+        {#if $visualNovelScene.sprite.kind === 'image' && $visualNovelScene.sprite.src}
+          <img
+            class="vn-character-sprite"
+            src={$visualNovelScene.sprite.src}
+            alt={$visualNovelScene.sprite.alt}
+            loading="lazy"
+            decoding="async"
+            onerror={handleSpriteError}
+            transition:fade={{ duration: spriteTransitionMs }}
+          />
+        {:else}
+          <div
+            class="vn-character-placeholder"
+            role="img"
+            aria-label={$visualNovelScene.sprite.alt}
+            style={`--vn-character-tone: ${$visualNovelScene.sprite.dominantColor ?? '#f09a9f'}`}
+            transition:fade={{ duration: spriteTransitionMs }}
+          >
+            <span aria-hidden="true">R</span>
+          </div>
+        {/if}
+      {/key}
     </div>
 
     <div class="vn-dialogue-panel" aria-label="Visual novel dialogue">
       <div class="vn-speaker-row">
         <strong>{$visualNovelScene.manifest.characterName}</strong>
-        <span>{stateSummary}</span>
+        <span>{growthModifier ? `${stateSummary} · ${growthCueLabel}` : stateSummary}</span>
       </div>
       <p>{latestAssistantLine}</p>
       {#if $visualNovelScene.usedFallback}

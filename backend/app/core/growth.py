@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings, get_settings
+from app.core.emotion import emotion_inference_engine
 from app.core.lora import PersonalLoRATrainer, get_personal_lora_trainer
 from app.core.memory import MemoryManager, get_memory_manager
 from app.core.reflection import (
@@ -487,6 +488,37 @@ class GrowthOrchestrator:
     ) -> str:
         if growth_notification is None or "event: done" not in frame:
             return frame
+        return self.inject_reactivity_into_done_sse(
+            frame,
+            request=None,
+            assistant_response="",
+            growth_context=GrowthContext(
+                memory_context="",
+                reflection_entries=[],
+                reflection_context="",
+                growth_notification=growth_notification,
+            ),
+        )
+
+    def inject_reactivity_into_done_sse(
+        self,
+        frame: str,
+        *,
+        request: ChatRequest | None,
+        assistant_response: str,
+        growth_context: GrowthContext,
+    ) -> str:
+        """Attach growth notices and final visual_state only to SSE done events.
+
+        Emotion inference intentionally happens here, after streaming has
+        completed and using the accumulated assistant text. Message-token SSE
+        frames pass through unchanged so the normal chat path never runs an
+        extra model or classifier while tokens are being generated.
+        """
+
+        if "event: done" not in frame:
+            return frame
+
         data_lines: list[str] = []
         other_lines: list[str] = []
         for line in frame.splitlines():
@@ -500,7 +532,20 @@ class GrowthOrchestrator:
             payload = {"done": True}
         if not isinstance(payload, dict):
             payload = {"done": True}
-        payload["growth_notification"] = growth_notification.model_dump()
+
+        if growth_context.growth_notification is not None:
+            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+
+        if request is not None:
+            visual_state = emotion_inference_engine.infer_visual_state(
+                messages=request.messages,
+                assistant_response=assistant_response,
+                memory_context=growth_context.memory_context,
+                reflection_entries=growth_context.reflection_entries,
+                growth_notification=growth_context.growth_notification,
+            ).to_visual_state()
+            payload["visual_state"] = visual_state
+
         return "\n".join([*other_lines, f"data: {json.dumps(payload)}", "", ""])
 
     def tokenize(self, text: str) -> list[str]:

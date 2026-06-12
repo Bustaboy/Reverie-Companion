@@ -9,7 +9,9 @@ import type {
   VisualStateMetadata
 } from '$lib/types/visualNovel';
 
-const EXPRESSION_ALIASES: Record<string, VisualExpression> = {
+type AliasMap<T extends string> = Record<string, T>;
+
+const EXPRESSION_ALIASES: AliasMap<VisualExpression> = {
   calm: 'neutral',
   content: 'happy',
   joy: 'happy',
@@ -25,7 +27,7 @@ const EXPRESSION_ALIASES: Record<string, VisualExpression> = {
   upset: 'sad'
 };
 
-const POSE_ALIASES: Record<string, VisualPose> = {
+const POSE_ALIASES: AliasMap<VisualPose> = {
   default: 'idle',
   still: 'idle',
   attentive: 'listening',
@@ -36,7 +38,7 @@ const POSE_ALIASES: Record<string, VisualPose> = {
   closer: 'leaning'
 };
 
-const BACKGROUND_ALIASES: Record<string, VisualBackground> = {
+const BACKGROUND_ALIASES: AliasMap<VisualBackground> = {
   room: 'default',
   home: 'default',
   neutral: 'default',
@@ -44,11 +46,13 @@ const BACKGROUND_ALIASES: Record<string, VisualBackground> = {
 };
 
 const URL_WITH_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+const SPRITE_FALLBACK_TONE = '#f09a9f';
+const BACKGROUND_FALLBACK_TONE = '#1b1723';
 
 /**
- * Small resolver for model-provided visual_state metadata.
- * It keeps Task 1A intentionally simple: normalize names, resolve one image per
- * pose/expression slot, and fall back safely without inference or layering.
+ * Small resolver for chat-provided visual_state metadata.
+ * It normalizes names, resolves one image per pose/expression slot, and falls
+ * back safely without layered rendering or additional inference work.
  */
 export class ExpressionManager {
   normalizeState(manifest: CharacterVisualManifest, metadata?: VisualStateMetadata | null): NormalizedVisualState {
@@ -66,7 +70,7 @@ export class ExpressionManager {
     failedAssetUrls: ReadonlySet<string> = new Set()
   ): ResolvedVisualNovelScene {
     const state = this.normalizeState(manifest, metadata);
-    const sprite = firstUsableAsset(
+    const sprite = resolveFirstUsableAsset(
       [
         manifest.sprites[state.pose]?.[state.expression],
         manifest.sprites[state.pose]?.[manifest.defaults.expression],
@@ -78,17 +82,17 @@ export class ExpressionManager {
       {
         kind: 'placeholder',
         alt: `${manifest.characterName} neutral idle placeholder`,
-        dominantColor: '#f09a9f'
+        dominantColor: SPRITE_FALLBACK_TONE
       }
     );
-    const background = firstUsableAsset(
+    const background = resolveFirstUsableAsset(
       [manifest.backgrounds[state.background], manifest.backgrounds[manifest.defaults.background]],
       manifest,
       failedAssetUrls,
       {
         kind: 'placeholder',
         alt: 'Warm default visual novel background',
-        dominantColor: '#1b1723'
+        dominantColor: BACKGROUND_FALLBACK_TONE
       }
     );
 
@@ -104,37 +108,34 @@ export class ExpressionManager {
   }
 }
 
-const normalizeKey = (value?: string): string | undefined => {
+const normalizeKey = (value?: string | null): string | undefined => {
   const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return normalized || undefined;
 };
 
-const pickKnown = <T extends string>(
-  value: string | undefined,
-  fallback: T,
-  known: Record<T, unknown>,
-  aliases: Record<string, T>
-): T => {
+const pickKnown = <T extends string>(value: string | undefined, fallback: T, known: Record<T, unknown>, aliases: AliasMap<T>): T => {
   const key = normalizeKey(value);
   if (!key) return fallback;
   return key in known ? (key as T) : aliases[key] ?? fallback;
 };
 
-const firstUsableAsset = (
+const resolveFirstUsableAsset = (
   candidates: Array<VisualAssetRef | undefined>,
   manifest: CharacterVisualManifest,
   failedAssetUrls: ReadonlySet<string>,
-  hardFallback: VisualAssetRef
+  fallback: VisualAssetRef
 ): { asset: VisualAssetRef; usedFallback: boolean } => {
-  const normalizedCandidates = candidates.map((asset) => normalizeAsset(asset, manifest));
-  const firstCandidate = normalizedCandidates.find(Boolean);
-  const usableCandidate = normalizedCandidates.find((asset) => asset && (!asset.src || !failedAssetUrls.has(asset.src)));
+  const resolvedCandidates = candidates.map((asset) => normalizeAsset(asset, manifest));
+  const firstCandidate = resolvedCandidates.find(Boolean);
+  const asset = resolvedCandidates.find((candidate) => candidate && isUsableAsset(candidate, failedAssetUrls)) ?? fallback;
 
   return {
-    asset: usableCandidate ?? hardFallback,
-    usedFallback: usableCandidate !== firstCandidate || !firstCandidate
+    asset,
+    usedFallback: !firstCandidate || asset !== firstCandidate
   };
 };
+
+const isUsableAsset = (asset: VisualAssetRef, failedAssetUrls: ReadonlySet<string>): boolean => !asset.src || !failedAssetUrls.has(asset.src);
 
 const normalizeAsset = (asset: VisualAssetRef | undefined, manifest: CharacterVisualManifest): VisualAssetRef | undefined => {
   if (!asset?.src) return asset;
