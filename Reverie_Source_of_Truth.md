@@ -556,4 +556,13 @@ The design is intentionally warm and readable: a hero summary, active-character 
 With 4E complete, Milestone 3 Task 4 now forms a coherent transparent-growth suite: Dashboard for overview, Journal for introspection, Memory Browser for control, Training for automated LoRA approval, and Encyclopedia for a beautiful living character bible.
 
 
+### Milestone 3 Task 5A — UI/UX Consistency & Polish
+
+Task 5A completes a senior UI/UX consistency pass across the current Milestone 3 application surfaces. The polish layer standardizes Reverie's warm premium dark aesthetic with shared focus rings, selection colors, glass-panel motion, hover/press transitions, empty-state framing, dialog entrances, and responsive control behavior across Chat, Visual Novel, Growth Dashboard, Journal, Memory Browser, Training, Settings, TTS playback, Image Gallery, and Encyclopedia. Motion is intentionally subtle and is globally neutralized for `prefers-reduced-motion` users.
+
+Accessibility decisions are now part of the core UI contract: the app shell includes a skip link and labeled main workspace, chat history behaves as a polite live log, message bubbles carry readable sender/time labels, the composer exposes keyboard hints and local-draft feedback, TTS progress is announced as a real progressbar, and memory editing supports Escape-to-close dialog behavior with labeled controls. These changes preserve local-first privacy language while making interactive feedback more consistent and keyboard/screen-reader friendly.
+
+8GB and performance decisions remain conservative: Task 5A is CSS/Svelte UI polish only. It adds no resident models, no new dependencies, no background workers, no extra backend calls, and no unbounded rendering paths. Animations are transform/opacity based, short-lived, and reduced-motion aware so chat, voice, image jobs, and growth surfaces remain responsive on the RTX 4070 8GB mobile target. **Task 5A is complete.**
+
+
 *End of Source of Truth Document v1.0*

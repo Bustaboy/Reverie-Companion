@@ -33,11 +33,12 @@
   const returnToChat = () => navigate('chat');
 </script>
 
+<a class="skip-link" href="#reverie-main">Skip to main experience</a>
 <div class:immersive-shell={activeSection === 'visual-novel' && $visualNovelStore.fullImmersive} class="app-shell">
   {#if !(activeSection === 'visual-novel' && $visualNovelStore.fullImmersive)}
     <Sidebar activeSection={activeSection} onNavigate={navigate} />
   {/if}
-  <main class="main-panel">
+  <main id="reverie-main" class="main-panel" tabindex="-1" aria-label="Reverie active workspace">
     {#if activeSection === 'growth'}
       <GrowthDashboard />
     {:else if activeSection === 'journal'}

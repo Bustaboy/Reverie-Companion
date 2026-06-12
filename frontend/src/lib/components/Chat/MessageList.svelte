@@ -58,8 +58,16 @@
   });
 </script>
 
-<section bind:this={listElement} class="message-list" aria-label="Conversation messages" onscroll={updateStickyScrollPreference}>
+<section bind:this={listElement} class="message-list" aria-label="Conversation messages" role="log" aria-live="polite" aria-relevant="additions text" onscroll={updateStickyScrollPreference}>
   <div class="message-list-inner">
+    {#if messages.length === 0 && generationState === 'idle'}
+      <div class="conversation-empty" aria-live="polite">
+        <span aria-hidden="true">✦</span>
+        <h2>Begin a private reverie.</h2>
+        <p>Share a mood, a scene, or a quiet thought. Reverie will keep the interface calm while memory, voice, and imagery stay under your control.</p>
+      </div>
+    {/if}
+
     {#each messages as message (message.id)}
       <MessageBubble {message} />
     {/each}

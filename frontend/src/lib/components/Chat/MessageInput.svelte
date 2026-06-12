@@ -11,6 +11,7 @@
   let textareaElement: HTMLTextAreaElement;
 
   const canSend = $derived(draft.trim().length > 0 && !disabled);
+  const draftLength = $derived(draft.trim().length);
 
   const resizeComposer = () => {
     if (!textareaElement) return;
@@ -61,6 +62,7 @@
 <form
   class:composer-disabled={disabled}
   class="message-composer"
+  aria-busy={disabled}
   onsubmit={(event) => {
     event.preventDefault();
     send();
@@ -76,6 +78,7 @@
     placeholder={disabled ? 'Reverie is finishing her thought...' : 'Share what is on your mind...'}
     rows="1"
     aria-disabled={disabled}
+    aria-describedby="message-input-help"
     readonly={disabled}
   ></textarea>
 
@@ -85,4 +88,6 @@
       <path d="M3.4 20.4 21.2 12 3.4 3.6 6 10.8l8.3 1.2L6 13.2l-2.6 7.2Z" />
     </svg>
   </button>
+
+  <p id="message-input-help" class="composer-help">Enter sends, Shift+Enter adds a line. {draftLength > 0 ? `${draftLength} character${draftLength === 1 ? '' : 's'}` : 'Your draft stays local until you send.'}</p>
 </form>

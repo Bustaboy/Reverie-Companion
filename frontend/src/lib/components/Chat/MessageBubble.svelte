@@ -58,6 +58,7 @@
   class:has-error={message.status === 'error'}
   class:voice-active={isCurrentVoiceLine}
   class="message-row"
+  aria-label={`${message.role === 'assistant' ? 'Reverie' : 'You'} message sent ${formatMessageTime(message.createdAt)}`}
 >
   <div class="avatar" aria-hidden="true">
     {message.role === 'assistant' ? 'R' : 'You'}
@@ -94,7 +95,7 @@
       {/if}
     </div>
 
-    <div class="bubble">
+    <div class="bubble" aria-live={message.status === 'streaming' ? 'polite' : undefined}>
       {#if message.role === 'assistant'}
         {#if message.content}
           <Markdown content={message.content} />
