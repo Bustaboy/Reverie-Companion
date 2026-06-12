@@ -2,7 +2,9 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import { settingsStore } from '$lib/stores/settingsStore';
+import { visualNovelStore } from '$lib/stores/visualNovelStore';
 import type { ChatMessage, GrowthNotification, MemoryContext } from '$lib/types/chat';
+import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 export type ChatGenerationState = 'idle' | 'thinking' | 'streaming';
 
@@ -65,6 +67,18 @@ const applyMemoryContext = (messages: ChatMessage[], messageId: string, memoryCo
   return updateMessage(messages, messageId, { memoryContext });
 };
 
+const applyVisualStateToMessage = (
+  messages: ChatMessage[],
+  messageId: string,
+  visualState?: VisualStateMetadata
+): ChatMessage[] => {
+  if (!visualState) {
+    return messages;
+  }
+
+  return updateMessage(messages, messageId, { visualState });
+};
+
 const applyGrowthNotification = (state: ChatState, growthNotification?: GrowthNotification): ChatState => {
   if (!growthNotification || !state.growthNotificationsEnabled) {
     return state;
@@ -105,7 +119,8 @@ function createChatStore() {
   const finishAssistantMessage = (
     assistantMessageId: string,
     memoryContext?: MemoryContext,
-    growthNotification?: GrowthNotification
+    growthNotification?: GrowthNotification,
+    visualState?: VisualStateMetadata
   ) => {
     store.update((state) =>
       applyGrowthNotification(
@@ -113,7 +128,11 @@ function createChatStore() {
           ...state,
           generationState: 'idle',
           messages: applyMemoryContext(
-            updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+            applyVisualStateToMessage(
+              updateMessage(state.messages, assistantMessageId, { status: 'complete' }),
+              assistantMessageId,
+              visualState
+            ),
             assistantMessageId,
             memoryContext
           )
@@ -172,7 +191,9 @@ function createChatStore() {
       try {
         for await (const event of chatService.sendMessageStream(trimmedContent, history, { signal: controller.signal })) {
           if (event.event === 'message') {
-            if (!event.content && !event.memoryContext?.used) continue;
+            if (!event.content && !event.memoryContext?.used && !event.visualState) continue;
+
+            visualNovelStore.applyVisualState(event.visualState);
 
             // Append token chunks in-place by message id so Svelte only needs to
             // refresh the active assistant bubble during a stream. Memory metadata
@@ -183,7 +204,11 @@ function createChatStore() {
                   ...state,
                   generationState: event.content ? 'streaming' : state.generationState,
                   messages: applyMemoryContext(
-                    event.content ? appendToMessage(state.messages, assistantMessage.id, event.content) : state.messages,
+                    applyVisualStateToMessage(
+                      event.content ? appendToMessage(state.messages, assistantMessage.id, event.content) : state.messages,
+                      assistantMessage.id,
+                      event.visualState
+                    ),
                     assistantMessage.id,
                     event.memoryContext
                   )
@@ -206,7 +231,8 @@ function createChatStore() {
             throw new ChatServiceError(event.error, { requestId: event.requestId, details: event.details });
           }
 
-          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification);
+          visualNovelStore.applyVisualState(event.visualState);
+          finishAssistantMessage(assistantMessage.id, event.memoryContext, event.growthNotification, event.visualState);
         }
       } catch (error) {
         failAssistantMessage(assistantMessage.id, toFriendlyErrorMessage(error));

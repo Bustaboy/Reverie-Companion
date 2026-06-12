@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
 import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -45,6 +46,8 @@ export interface ChatResponse {
   memoryContext?: MemoryContext;
   /** Optional subtle note that a journaled growth signal is available. */
   growthNotification?: GrowthNotification;
+  /** Optional model/backend-provided visual state metadata for VN mode. */
+  visualState?: VisualStateMetadata;
 }
 
 export interface ChatStreamOptions {
@@ -59,6 +62,8 @@ export interface ChatStreamMessageEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  /** Optional model/backend-provided visual state metadata for VN mode. */
+  visualState?: VisualStateMetadata;
 }
 
 export interface ChatStreamMemoryEvent {
@@ -80,6 +85,8 @@ export interface ChatStreamDoneEvent {
   requestId?: string;
   memoryContext?: MemoryContext;
   growthNotification?: GrowthNotification;
+  /** Optional model/backend-provided visual state metadata for VN mode. */
+  visualState?: VisualStateMetadata;
 }
 
 export type ChatStreamEvent =
@@ -115,7 +122,14 @@ interface BackendGrowthNotificationBody {
   growthNotification?: unknown;
 }
 
-interface BackendMemoryContextBody extends BackendGrowthNotificationBody {
+interface BackendVisualStateBody {
+  visual_state?: unknown;
+  visualState?: unknown;
+  visual?: unknown;
+  metadata?: unknown;
+}
+
+interface BackendMemoryContextBody extends BackendGrowthNotificationBody, BackendVisualStateBody {
   memory_context?: unknown;
   memoryContext?: unknown;
   memory?: unknown;
@@ -363,7 +377,8 @@ export class ChatService {
     return {
       ...body,
       memoryContext: this.extractMemoryContext(body),
-      growthNotification: this.extractGrowthNotification(body)
+      growthNotification: this.extractGrowthNotification(body),
+      visualState: this.extractVisualState(body)
     };
   }
 
@@ -467,7 +482,8 @@ export class ChatService {
         model: typeof body.model === 'string' ? body.model : undefined,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body)
       };
     }
 
@@ -492,7 +508,8 @@ export class ChatService {
         done: typeof body.done === 'boolean' ? body.done : true,
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
-        growthNotification: this.extractGrowthNotification(body)
+        growthNotification: this.extractGrowthNotification(body),
+        visualState: this.extractVisualState(body)
       };
     }
 
@@ -508,6 +525,33 @@ export class ChatService {
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
     };
+  }
+
+  private extractVisualState(body: BackendVisualStateBody | Record<string, unknown>): VisualStateMetadata | undefined {
+    const raw = body.visual_state ?? body.visualState ?? body.visual ?? this.getNestedVisualState(body);
+    if (!this.isRecord(raw)) {
+      return undefined;
+    }
+
+    const expression = this.normalizeText(raw.expression ?? raw.emotion ?? raw.mood);
+    const pose = this.normalizeText(raw.pose ?? raw.stance);
+    const background = this.normalizeText(raw.background ?? raw.scene ?? raw.location);
+    const characterId = this.normalizeText(raw.character_id ?? raw.characterId ?? raw.character);
+
+    if (!expression && !pose && !background && !characterId) {
+      return undefined;
+    }
+
+    return { characterId, expression, pose, background };
+  }
+
+  private getNestedVisualState(body: BackendVisualStateBody | Record<string, unknown>): unknown {
+    const metadata = body.metadata;
+    if (!this.isRecord(metadata)) {
+      return undefined;
+    }
+
+    return metadata.visual_state ?? metadata.visualState ?? metadata.visual;
   }
 
   private extractGrowthNotification(body: BackendGrowthNotificationBody | Record<string, unknown>): GrowthNotification | undefined {

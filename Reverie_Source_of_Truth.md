@@ -133,7 +133,19 @@ Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision,
 
 This flow ensures the character both **grows personally** and **contributes to the collective intelligence** of the platform.
 
-### 3.3 Futa-Vision Integration Vision (Future)
+### 3.3 Visual Novel Foundation Architecture (Milestone 3)
+
+Milestone 3 introduces a minimal, 8GB-friendly Visual Novel foundation that stays deliberately lightweight:
+
+- **CharacterVisualManifest** defines the character name, versioned defaults, supported expressions, supported poses, backgrounds, and one resolved sprite image per pose/expression slot. Layered rendering, clothing stacks, and weighted emotion inference are intentionally excluded until later milestones.
+- **ExpressionManager** normalizes `visual_state` metadata from chat into known expression, pose, and background values, resolves relative manifest asset paths, and keeps alias handling deterministic. Unknown or missing values always fall back to **neutral + idle + default background** so broken assets never interrupt chat or immersion.
+- **visualNovelStore** owns the current resolved visual state, full-immersive toggle, and a small failed-asset cache. This keeps Svelte components reactive without repeatedly retrying missing images or expanding memory use.
+- **VisualNovelStage** renders the scene canvas, character visual, dialogue panel, and basic ARIA labels. It uses lazy image loading, lightweight SVG placeholders, and CSS fallbacks so the MVP remains smooth on RTX 4070 8GB mobile systems.
+- Chat SSE `message` and `done` events may include `visual_state` / `visualState` metadata. The frontend applies those updates to VN mode without blocking streaming text.
+
+This foundation is the approved bridge between chat-first companion behavior and future Futa-Vision/reactive visual work. Future tasks may add richer inference, growth-linked visual modifiers, asset packs, or layered sprites, but only behind these typed boundaries.
+
+### 3.4 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.
