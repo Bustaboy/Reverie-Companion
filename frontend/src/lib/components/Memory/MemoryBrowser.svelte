@@ -130,6 +130,13 @@
     }).format(date);
   };
 
+
+  const handleModalKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && detailMemory) {
+      closeModal();
+    }
+  };
+
   const provenanceRows = (memory: MemoryRecord) => [
     ['Created', formatDate(memory.created_at, 'long')],
     ['Updated', formatDate(memory.updated_at, 'long')],
@@ -154,7 +161,7 @@
   <div class="memory-filters" aria-label="Memory filters">
     <label>
       <span>Search memories</span>
-      <input bind:value={search} placeholder="Keyword, theme, date, journal id…" onkeydown={(event) => event.key === 'Enter' && applyFilters()} />
+      <input type="search" bind:value={search} placeholder="Keyword, theme, date, journal id…" onkeydown={(event) => event.key === 'Enter' && applyFilters()} />
     </label>
     <label>
       <span>Character</span>
@@ -271,13 +278,15 @@
   </footer>
 </section>
 
+<svelte:window onkeydown={handleModalKeydown} />
+
 {#if detailMemory}
   <div class="modal-backdrop" role="presentation" onclick={closeModal}></div>
-  <div class="memory-modal" role="dialog" aria-modal="true" aria-label="Memory detail editor">
+  <div class="memory-modal" role="dialog" aria-modal="true" aria-labelledby="memory-modal-title" tabindex="-1">
     <header>
       <div>
         <p class="eyebrow">Learned from {sourceFor(detailMemory)}</p>
-        <h2>Review and edit memory</h2>
+        <h2 id="memory-modal-title">Review and edit memory</h2>
       </div>
       <button class="ghost-button" type="button" onclick={closeModal}>Close</button>
     </header>
@@ -298,7 +307,7 @@
         <h3>Signals</h3>
         <div class="signal-stack">
           <span>Importance {percent(draftImportance)}</span>
-          <input type="range" min="0" max="1" step="0.01" bind:value={draftImportance} />
+          <input type="range" min="0" max="1" step="0.01" bind:value={draftImportance} aria-label="Memory importance" />
           <span>Confidence {percent(scoreFor(detailMemory, 'confidence'))}</span>
         </div>
       </aside>

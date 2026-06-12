@@ -22,7 +22,8 @@
     return ttsStore.announcement;
   });
 
-  const progressStyle = $derived(`--tts-progress: ${(ttsStore.progress * 100).toFixed(1)}%`);
+  const progressPercent = $derived(Math.round(ttsStore.progress * 100));
+  const progressStyle = $derived(`--tts-progress: ${progressPercent}%`);
   const buttonLabel = $derived(ttsStore.playbackState === 'playing' ? 'Pause speech' : 'Play speech');
 
   const togglePlay = () => {
@@ -55,7 +56,15 @@
   <div class:error={Boolean(ttsStore.error)} class="audio-player-copy">
     <p>{statusLabel}</p>
     <small aria-live="polite">{detailLabel}</small>
-    <div class="tts-progress" aria-hidden="true" style={progressStyle}></div>
+    <div
+      class="tts-progress"
+      role="progressbar"
+      aria-label="Speech playback progress"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={progressPercent}
+      style={progressStyle}
+    ></div>
     {#if ttsStore.error}
       <button type="button" class="tts-error-action" onclick={() => ttsStore.clearError()}>Dismiss</button>
     {/if}
