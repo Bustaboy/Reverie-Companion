@@ -102,7 +102,7 @@ A fully local, uncensored, desktop NSFW AI companion application with a modern, 
 | Self-Learning / LoRA Training | Unsloth | Fastest and most VRAM-efficient LoRA trainer available in 2026. Runs comfortably in background on 8GB |
 | Database | SQLite + LanceDB | Zero-config, fully local, fast queries for characters, journals, memories |
 | Image / VN Mode | ComfyUI nodes or Flux/SD via local API | Direct future compatibility with Futa-Vision pipeline |
-| TTS | Piper TTS or Coqui TTS (emotional) | High-quality offline voice |
+| TTS | Orpheus TTS 3B primary + Piper fallback | Expressive offline voice with CPU-friendly graceful degradation |
 
 **Why not full Rust backend?**  
 Python is non-negotiable for deep integration with Unsloth, ComfyUI/Futa-Vision, mem0/Cognee Python libraries, and rapid AI experimentation. Performance-critical hot paths can later be accelerated with Rust (PyO3) or separate micro-services if profiling shows need. For MVP and the first 6–12 months, Python + FastAPI + async is the correct pragmatic choice.
@@ -146,7 +146,17 @@ Milestone 3 introduces a minimal, 8GB-friendly Visual Novel foundation that stay
 
 Task 1A–1C now complete the approved Visual Novel foundation bridge between chat-first companion behavior and future Futa-Vision/reactive visual work: chat can emit lightweight visual metadata, the frontend resolves deterministic layered visuals with graceful degradation, and the UI provides polished, accessible, reduced-motion-aware immersion without adding resident LLMs to the normal chat path. Future work can add richer authored asset packs, manifest import/editing, Live2D/video integrations, or generated media behind the existing lightweight boundaries.
 
-### 3.4 Futa-Vision Integration Vision (Future)
+### 3.4 TTS Foundation Architecture (Milestone 3)
+
+Milestone 3 Task 2A introduces the first local voice backend as a focused FastAPI service boundary:
+
+- **TTSService** is the business layer for speech generation. It accepts text, a simple `voice_id`, and an optional streaming flag, then returns WAV bytes plus engine metadata. Route handlers stay thin and only map typed service failures into stable API errors.
+- **Orpheus TTS 3B** is the expressive primary engine. It is configured by model path, device preference (`auto` / `cuda` / `cpu`), quantization (`4bit` by default for 8GB systems), default Orpheus voice, and a minimum free-VRAM guard. The Orpheus adapter is lazy-loaded so the 3B model is not resident until voice is actually requested.
+- **Piper TTS** is the lightweight fallback. It runs through the local Piper executable and a configured voice model path, making voice mode usable when Orpheus dependencies are missing, GPU memory is busy, CUDA is unavailable, or Orpheus generation fails.
+- **8GB behavior** is explicit: the backend resolves `auto` device selection at request time, checks CUDA memory before loading Orpheus, applies a generation timeout before fallback, recommends 4-bit quantization by default, and falls back to Piper rather than crashing the voice path when possible.
+- **API surface** starts with `POST /api/tts/generate`. Non-streamed calls return base64 WAV audio for easy frontend use; streamed calls return `audio/wav` bytes. Multi-character voice profiles, emotion tags, and context-aware routing remain future Task 2B–2D work.
+
+### 3.5 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

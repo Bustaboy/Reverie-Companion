@@ -11,6 +11,7 @@ The backend is intentionally modular so chat, memory, reflection, journaling, Pe
 - **Reflection journal**: `app.core.reflection.ReflectionManager` writes local, inspectable journal entries from bounded conversation windows and can promote high-confidence insights into memory.
 - **Growth orchestration**: `app.core.growth.GrowthOrchestrator` coordinates memory retrieval, journal context, rare growth notifications, background reflection scheduling, and optional Personal LoRA candidate collection.
 - **Personal LoRA foundation**: `app.core.lora.PersonalLoRATrainer` persists reviewable examples, explicit opt-in settings, approved-only training jobs, and rollback-friendly adapter manifests. The current job runner is a conservative foundation, not a heavyweight fine-tuner yet.
+- **TTS foundation**: `app.services.tts_service.TTSService` uses Orpheus TTS 3B as the expressive lazy-loaded primary path and Piper as the CPU-friendly fallback exposed at `POST /api/tts/generate`.
 - **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, or Personal LoRA review state.
 
 ## Growth Loop Overview
@@ -32,6 +33,7 @@ This keeps the active token path free of training, unbounded scans, and hidden c
 - Capped memory text, retrieval count, journal entries, and context character budgets.
 - Reflection is throttled background work, not active response-path work.
 - Personal LoRA collection/training defaults to opt-out, rank 8, batch size 1, short sequence lengths, and one background job at a time.
+- Orpheus TTS lazy-loads, defaults to 4-bit quantization, checks CUDA free-memory budget before loading, and falls back to Piper when GPU resources are not safe.
 - No resident reranker, hosted telemetry, or mandatory external service.
 
 ## Key Settings
@@ -77,6 +79,16 @@ Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 - `REVERIE_PERSONAL_LORA_RANK`, `REVERIE_PERSONAL_LORA_MAX_RANK`: conservative adapter rank controls
 - `REVERIE_PERSONAL_LORA_MIN_CONFIDENCE`, `REVERIE_PERSONAL_LORA_MIN_EVIDENCE_COUNT`: candidate quality gates
 - `REVERIE_PERSONAL_LORA_MAX_EXAMPLE_CHARS`, `REVERIE_PERSONAL_LORA_MAX_EXAMPLES_PER_JOB`: dataset/job caps
+
+### TTS
+
+- `REVERIE_TTS_ORPHEUS_ENABLED`: toggles the expressive Orpheus primary backend
+- `REVERIE_TTS_ORPHEUS_MODEL_PATH`: local path or Hugging Face ID for Orpheus TTS 3B
+- `REVERIE_TTS_DEVICE`: `auto`, `cuda`, or `cpu` for Orpheus model loading
+- `REVERIE_TTS_QUANTIZATION`: `4bit` by default for 8GB systems; also supports `8bit` or `none`
+- `REVERIE_TTS_MIN_FREE_VRAM_GB`: CUDA free-memory guard before lazy-loading Orpheus
+- `REVERIE_TTS_ORPHEUS_TIMEOUT_SECONDS`: timeout before falling back to Piper for slow Orpheus generation
+- `REVERIE_TTS_PIPER_ENABLED`, `REVERIE_TTS_PIPER_EXECUTABLE`, `REVERIE_TTS_PIPER_MODEL_PATH`: Piper fallback controls
 
 ## Requirements
 
@@ -133,6 +145,10 @@ Streaming response events:
 
 For a non-streaming response, set `"stream": false`.
 
+### `POST /api/tts/generate`
+
+Generates WAV speech from text. Orpheus TTS 3B is attempted first when enabled and safe to load; Piper is used as the lightweight fallback when Orpheus is unavailable or rejected by the VRAM guard. Non-streamed requests return base64 WAV audio and metadata; streamed requests return `audio/wav` bytes.
+
 ### `GET /journal/entries`
 
 Returns recent local self-reflection journal entries for the Journal UI.
@@ -159,7 +175,7 @@ backend/
 │   ├── api/routes/          # Thin FastAPI route modules
 │   ├── core/                # Memory, reflection, growth, LoRA, Ollama clients
 │   ├── models/              # Pydantic request/response schemas
-│   └── services/            # Chat orchestration service
+│   └── services/            # Chat and TTS orchestration services
 ├── tests/                   # Backend service and route tests
 ├── requirements.txt
 └── README.md

@@ -113,6 +113,32 @@ class Settings(BaseSettings):
     personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
     personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
 
+    # TTS is local-first and 8GB-aware. Orpheus 3B is the expressive primary
+    # engine, loaded lazily with quantization by default. Piper remains the
+    # lightweight CPU fallback so voice mode can still respond when GPU memory
+    # is reserved for chat, images, or training.
+    tts_orpheus_enabled: bool = True
+    tts_orpheus_model_path: str = "canopylabs/orpheus-tts-0.1-finetune-prod"
+    tts_orpheus_default_voice: str = "tara"
+    tts_device: str = Field(
+        default="auto",
+        pattern="^(auto|cuda|cpu)$",
+        description="Device preference for Orpheus TTS model loading.",
+    )
+    tts_quantization: str = Field(
+        default="4bit",
+        pattern="^(none|8bit|4bit)$",
+        description="Quantization level for 8GB-friendly Orpheus loading.",
+    )
+    tts_min_free_vram_gb: float = Field(default=2.5, ge=0.0, le=8.0)
+    tts_orpheus_timeout_seconds: float = Field(default=45.0, gt=0.0, le=300.0)
+    tts_default_voice_id: str = "default"
+    tts_default_sample_rate: int = Field(default=24000, gt=0)
+    tts_piper_enabled: bool = True
+    tts_piper_executable: str = "piper"
+    tts_piper_model_path: str | None = None
+    tts_piper_timeout_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
+
 
 @lru_cache
 def get_settings() -> Settings:
