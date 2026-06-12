@@ -1,6 +1,8 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { AudioPlayer } from '$lib/components/TTS';
   import { chatStore } from '$lib/stores/chatStore';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { visualNovelScene, visualNovelStore } from '$lib/stores/visualNovelStore';
   import type { ResolvedVisualLayer, VisualAssetRef } from '$lib/types/visualNovel';
 
@@ -126,6 +128,7 @@
 
     <div
       class:growth-reactive={Boolean(growthModifier)}
+      class:is-speaking={ttsStore.isSpeaking}
       class={`vn-character-layer growth-cue-${growthCueClass}`}
       aria-label={`Reverie layered visual state: ${stateSummary}; layers ${layerAltSummary}${growthModifier ? `; growth cue ${growthCueLabel}` : ''}`}
       aria-live="polite"
@@ -186,6 +189,7 @@
       {#if $visualNovelScene.usedFallback}
         <small>Using safe fallback visuals until every authored layer is available.</small>
       {/if}
+      <AudioPlayer compact label="Visual novel voice playback" />
     </div>
   </div>
 </section>

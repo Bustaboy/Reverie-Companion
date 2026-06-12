@@ -4,6 +4,7 @@ import { get, writable } from 'svelte/store';
 export type ReflectionFrequency = 'low' | 'balanced' | 'high';
 export type ReflectionSensitivity = 'conservative' | 'balanced' | 'responsive';
 export type ContextBudgetPreset = 'gentle' | 'balanced' | 'roomy';
+export type TTSLatencyPreset = 'quality' | 'balanced' | 'speed';
 
 export interface MemoryReflectionSettings {
   longTermMemoryEnabled: boolean;
@@ -12,6 +13,11 @@ export interface MemoryReflectionSettings {
   reflectionSensitivity: ReflectionSensitivity;
   growthNotificationsEnabled: boolean;
   contextBudgetPreset: ContextBudgetPreset;
+  ttsEnabled: boolean;
+  ttsAutoPlay: boolean;
+  ttsVolume: number;
+  ttsSpeed: number;
+  ttsLatencyPreset: TTSLatencyPreset;
 }
 
 export interface SettingsState extends MemoryReflectionSettings {
@@ -30,7 +36,12 @@ export const DEFAULT_MEMORY_REFLECTION_SETTINGS: MemoryReflectionSettings = {
   reflectionFrequency: 'balanced',
   reflectionSensitivity: 'balanced',
   growthNotificationsEnabled: true,
-  contextBudgetPreset: 'balanced'
+  contextBudgetPreset: 'balanced',
+  ttsEnabled: true,
+  ttsAutoPlay: true,
+  ttsVolume: 0.86,
+  ttsSpeed: 1,
+  ttsLatencyPreset: 'balanced'
 };
 
 const INITIAL_STATE: SettingsState = {
@@ -47,7 +58,14 @@ const isReflectionSensitivity = (value: unknown): value is ReflectionSensitivity
 const isContextBudgetPreset = (value: unknown): value is ContextBudgetPreset =>
   value === 'gentle' || value === 'balanced' || value === 'roomy';
 
+const isTTSLatencyPreset = (value: unknown): value is TTSLatencyPreset =>
+  value === 'quality' || value === 'balanced' || value === 'speed';
+
 const toBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
+const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
+  const numberValue = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.min(max, Math.max(min, numberValue));
+};
 
 const normalizePersistedSettings = (value: PersistedSettings): SettingsState => ({
   longTermMemoryEnabled: toBoolean(
@@ -68,6 +86,13 @@ const normalizePersistedSettings = (value: PersistedSettings): SettingsState => 
   contextBudgetPreset: isContextBudgetPreset(value.contextBudgetPreset)
     ? value.contextBudgetPreset
     : DEFAULT_MEMORY_REFLECTION_SETTINGS.contextBudgetPreset,
+  ttsEnabled: toBoolean(value.ttsEnabled, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsEnabled),
+  ttsAutoPlay: toBoolean(value.ttsAutoPlay, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsAutoPlay),
+  ttsVolume: clampNumber(value.ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1),
+  ttsSpeed: clampNumber(value.ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35),
+  ttsLatencyPreset: isTTSLatencyPreset(value.ttsLatencyPreset)
+    ? value.ttsLatencyPreset
+    : DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsLatencyPreset,
   savedAt: typeof value.savedAt === 'string' ? new Date(value.savedAt) : null
 });
 
@@ -94,6 +119,11 @@ const persistSettings = (state: SettingsState) => {
     reflectionSensitivity: state.reflectionSensitivity,
     growthNotificationsEnabled: state.growthNotificationsEnabled,
     contextBudgetPreset: state.contextBudgetPreset,
+    ttsEnabled: state.ttsEnabled,
+    ttsAutoPlay: state.ttsAutoPlay,
+    ttsVolume: state.ttsVolume,
+    ttsSpeed: state.ttsSpeed,
+    ttsLatencyPreset: state.ttsLatencyPreset,
     savedAt: state.savedAt?.toISOString() ?? null
   };
 
@@ -134,6 +164,21 @@ function createSettingsStore() {
     },
     setContextBudgetPreset(contextBudgetPreset: ContextBudgetPreset) {
       save({ contextBudgetPreset });
+    },
+    setTTSEnabled(ttsEnabled: boolean) {
+      save({ ttsEnabled });
+    },
+    setTTSAutoPlay(ttsAutoPlay: boolean) {
+      save({ ttsAutoPlay });
+    },
+    setTTSVolume(ttsVolume: number) {
+      save({ ttsVolume: clampNumber(ttsVolume, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsVolume, 0, 1) });
+    },
+    setTTSSpeed(ttsSpeed: number) {
+      save({ ttsSpeed: clampNumber(ttsSpeed, DEFAULT_MEMORY_REFLECTION_SETTINGS.ttsSpeed, 0.75, 1.35) });
+    },
+    setTTSLatencyPreset(ttsLatencyPreset: TTSLatencyPreset) {
+      save({ ttsLatencyPreset });
     },
     resetMemoryReflectionSettings() {
       save(DEFAULT_MEMORY_REFLECTION_SETTINGS);

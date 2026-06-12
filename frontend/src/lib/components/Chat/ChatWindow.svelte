@@ -1,5 +1,6 @@
 <script lang="ts">
   import MessageInput from './MessageInput.svelte';
+  import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
 
@@ -39,6 +40,8 @@
   </header>
 
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
+
+  <AudioPlayer />
 
   {#if $chatStore.growthNotification}
     <aside class="growth-notification" role="status" aria-live="polite">

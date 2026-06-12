@@ -1,5 +1,5 @@
 import { dev } from '$app/environment';
-import type { GrowthNotification, MemoryContext, MemoryContextItem } from '$lib/types/chat';
+import type { GrowthNotification, MemoryContext, MemoryContextItem, MessageTTSMetadata, TTSEmotionMetadata, TTSContextMetadata, TTSMode } from '$lib/types/chat';
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
 /** Backend origin used when no Vite/Tauri environment override is provided. */
@@ -48,6 +48,8 @@ export interface ChatResponse {
   growthNotification?: GrowthNotification;
   /** Optional model/backend-provided visual state metadata for VN mode. */
   visualState?: VisualStateMetadata;
+  /** Optional enriched speech metadata from the SSE done frame. */
+  tts?: MessageTTSMetadata;
 }
 
 export interface ChatStreamOptions {
@@ -64,6 +66,8 @@ export interface ChatStreamMessageEvent {
   growthNotification?: GrowthNotification;
   /** Optional model/backend-provided visual state metadata for VN mode. */
   visualState?: VisualStateMetadata;
+  /** Optional enriched speech metadata from the SSE done frame. */
+  tts?: MessageTTSMetadata;
 }
 
 export interface ChatStreamMemoryEvent {
@@ -87,6 +91,8 @@ export interface ChatStreamDoneEvent {
   growthNotification?: GrowthNotification;
   /** Optional model/backend-provided visual state metadata for VN mode. */
   visualState?: VisualStateMetadata;
+  /** Optional enriched speech metadata from the SSE done frame. */
+  tts?: MessageTTSMetadata;
 }
 
 export type ChatStreamEvent =
@@ -122,6 +128,21 @@ interface BackendGrowthNotificationBody {
   growthNotification?: unknown;
 }
 
+interface BackendTTSBody {
+  tts_text?: unknown;
+  ttsText?: unknown;
+  text?: unknown;
+  voice_id?: unknown;
+  voiceId?: unknown;
+  resolved_voice_id?: unknown;
+  resolvedVoiceId?: unknown;
+  voice_name?: unknown;
+  voiceName?: unknown;
+  tts_context?: unknown;
+  ttsContext?: unknown;
+  emotion?: unknown;
+}
+
 interface BackendVisualStateBody {
   visual_state?: unknown;
   visualState?: unknown;
@@ -129,7 +150,7 @@ interface BackendVisualStateBody {
   metadata?: unknown;
 }
 
-interface BackendMemoryContextBody extends BackendGrowthNotificationBody, BackendVisualStateBody {
+interface BackendMemoryContextBody extends BackendGrowthNotificationBody, BackendVisualStateBody, BackendTTSBody {
   memory_context?: unknown;
   memoryContext?: unknown;
   memory?: unknown;
@@ -378,7 +399,8 @@ export class ChatService {
       ...body,
       memoryContext: this.extractMemoryContext(body),
       growthNotification: this.extractGrowthNotification(body),
-      visualState: this.extractVisualState(body)
+      visualState: this.extractVisualState(body),
+      tts: this.extractTTSMetadata(body)
     };
   }
 
@@ -509,7 +531,8 @@ export class ChatService {
         requestId: this.readRequestId(body),
         memoryContext: this.extractMemoryContext(body),
         growthNotification: this.extractGrowthNotification(body),
-        visualState: this.extractVisualState(body)
+        visualState: this.extractVisualState(body),
+        tts: this.extractTTSMetadata(body)
       };
     }
 
@@ -525,6 +548,67 @@ export class ChatService {
       memoryContext: memoryContext ?? { used: false, status: 'unknown' },
       requestId: this.readRequestId(body)
     };
+  }
+
+  private extractTTSMetadata(body: BackendTTSBody | Record<string, unknown>): MessageTTSMetadata | undefined {
+    const ttsText = this.normalizeText(body.tts_text ?? body.ttsText);
+    const resolvedVoiceId = this.normalizeText(body.resolved_voice_id ?? body.resolvedVoiceId ?? body.voice_id ?? body.voiceId);
+    const voiceName = this.normalizeText(body.voice_name ?? body.voiceName);
+    const ttsContext = this.normalizeTTSContext(body.tts_context ?? body.ttsContext);
+    const emotion = this.normalizeTTSEmotion(body.emotion);
+
+    if (!ttsText && !resolvedVoiceId && !voiceName && !ttsContext && !emotion) {
+      return undefined;
+    }
+
+    return { ttsText, resolvedVoiceId, voiceName, ttsContext, emotion };
+  }
+
+  private normalizeTTSContext(context: unknown): TTSContextMetadata | undefined {
+    if (!this.isRecord(context)) {
+      return undefined;
+    }
+
+    const characterId = this.normalizeText(context.character_id ?? context.characterId);
+    const mode = this.normalizeTTSMode(context.mode);
+    const emotionHint = this.normalizeText(context.emotion_hint ?? context.emotionHint);
+    const intensity = this.readUnitNumber(context, ['intensity']);
+    const isNarration = this.readBoolean(context, ['is_narration', 'isNarration']);
+
+    if (!characterId && !mode && !emotionHint && intensity === undefined && isNarration === undefined) {
+      return undefined;
+    }
+
+    return { characterId, mode, emotionHint, intensity, isNarration };
+  }
+
+  private normalizeTTSEmotion(emotion: unknown): TTSEmotionMetadata | undefined {
+    if (!this.isRecord(emotion)) {
+      return undefined;
+    }
+
+    const scene = this.normalizeText(emotion.scene);
+    const intensity = this.readNumber(emotion, ['intensity']);
+    const tags = this.normalizeStringList(emotion.tags).slice(0, 8);
+
+    if (!scene || intensity === undefined) {
+      return undefined;
+    }
+
+    return {
+      scene,
+      intensity,
+      tags,
+      isHighEmotion: this.readBoolean(emotion, ['is_high_emotion', 'isHighEmotion']),
+      isIntimate: this.readBoolean(emotion, ['is_intimate', 'isIntimate']),
+      cues: this.normalizeStringList(emotion.cues).slice(0, 12),
+      visibleTextStripped: this.readBoolean(emotion, ['visible_text_stripped', 'visibleTextStripped']),
+      extra: this.isRecord(emotion.extra) ? emotion.extra : undefined
+    };
+  }
+
+  private normalizeTTSMode(value: unknown): TTSMode | undefined {
+    return value === 'one_to_one' || value === 'rpg' ? value : undefined;
   }
 
   private extractVisualState(body: BackendVisualStateBody | Record<string, unknown>): VisualStateMetadata | undefined {
@@ -737,6 +821,14 @@ export class ChatService {
     }
 
     return undefined;
+  }
+
+  private normalizeStringList(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   }
 
   private readNumber(value: Record<string, unknown>, keys: string[]): number | undefined {

@@ -196,7 +196,21 @@ Milestone 3 Task 2D adds rich emotional voice enhancement without adding an LLM 
 
 Short design summary: visible text is the safe, tag-free chat contract; `tts_text` is the speech-only performance script; `tts_context` plus `voice_id` identify who should speak; and `emotion` metadata explains why tags were chosen. This preserves immersion for high-intensity and adult scenes while keeping user-visible chat clean and local-first performance predictable.
 
-### 3.8 Futa-Vision Integration Vision (Future)
+
+### 3.8 Frontend TTS Playback Integration (Milestone 3 Task 2E)
+
+Milestone 3 Task 2E connects the existing Orpheus/Piper backend foundation to the Svelte/Tauri companion UI without moving speech synthesis into the chat streaming path:
+
+- **`ttsStore` frontend architecture** is a Svelte 5 runes store that owns the bounded audio queue, current voice line, playback state, progress, announcements, and cancel/stop/pause/play controls. It generates at most one audio asset at a time, keeps only a tiny queue, revokes blob URLs after use, and cancels active speech when the user sends a new message so 8GB systems avoid audio buildup.
+- **Audio generation contract** uses final SSE `done` metadata: chat renders clean text, while playback sends `tts_text` plus resolved `voice_id`, `tts_context`, and `emotion` metadata to `POST /api/tts/generate`. If metadata is absent, the frontend gracefully falls back to the visible assistant text and default backend voice resolution.
+- **Reusable `AudioPlayer` component** provides a warm compact playback surface with speaking animation, current voice label, progress, play/pause/stop controls, auto-play toggle, and ARIA live announcements. It is reusable across chat and Visual Novel mode and does not preload historical messages.
+- **Chat integration** adds per-assistant-message voice playback and automatic playback for completed assistant responses when TTS and auto-play are enabled. New user messages interrupt prior speech to keep conversation flow responsive and avoid overlapping local TTS jobs.
+- **Visual Novel integration** reuses the same audio player inside the VN dialogue panel and applies a lightweight speaking visual cue to the character layer while speech is preparing or playing, so expression/pose metadata and voice playback feel synchronized without adding heavier animation systems.
+- **Settings** now expose basic local voice controls: enable/disable TTS, auto-play, volume, playback speed, and a quality/balanced/speed preference placeholder for future backend policy. These settings are local-only and designed for graceful fallback when TTS is disabled or unavailable.
+
+Short design summary: Task 2E keeps chat generation, visual state, and speech playback decoupled. The backend enriches final response metadata; the frontend stores that metadata on the assistant message; `ttsStore` decides whether to synthesize and play exactly one interruptible line; and chat/VN mode both consume the same lightweight playback surface.
+
+### 3.9 Futa-Vision Integration Vision (Future)
 - The companion exposes clean APIs or uses shared Python environment.
 - User can say: "Generate a 8-second clip of what we just did with extra slime physics and soft lighting."
 - Chat context + memory is passed to Futa-Vision’s director pipeline.

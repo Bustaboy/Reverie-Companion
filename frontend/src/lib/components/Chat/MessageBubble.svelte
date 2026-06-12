@@ -1,5 +1,6 @@
 <script lang="ts">
   import Markdown from './Markdown.svelte';
+  import { ttsStore } from '$lib/stores/ttsStore.svelte';
   import { formatMessageTime } from '$lib/utils/dates';
   import type { ChatMessage } from '$lib/types/chat';
 
@@ -8,6 +9,20 @@
   }
 
   let { message }: Props = $props();
+
+  const voiceLabel = $derived.by(() => {
+    const voiceId = message.tts?.resolvedVoiceId;
+    if (message.tts?.voiceName) return message.tts.voiceName;
+    if (!voiceId) return 'Default voice';
+
+    return voiceId.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  });
+
+  const canPlayTTS = $derived(message.role === 'assistant' && message.status !== 'streaming' && message.content.trim().length > 0);
+
+  const playMessageAudio = () => {
+    ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
+  };
 
   const memoryHint = $derived.by(() => {
     if (message.role !== 'assistant' || !message.memoryContext?.used) {
@@ -34,6 +49,18 @@
     <div class="message-meta">
       <span>{message.role === 'assistant' ? 'Reverie' : 'You'}</span>
       <time datetime={message.createdAt.toISOString()}>{formatMessageTime(message.createdAt)}</time>
+      {#if canPlayTTS}
+        <button
+          type="button"
+          class="message-voice-button"
+          aria-label={`Play this message with ${voiceLabel}`}
+          title={`Play with ${voiceLabel}`}
+          onclick={playMessageAudio}
+        >
+          <span aria-hidden="true">▶</span>
+          <span>{voiceLabel}</span>
+        </button>
+      {/if}
     </div>
 
     <div class="bubble">
