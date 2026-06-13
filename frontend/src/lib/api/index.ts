@@ -33,3 +33,13 @@ export * from './resourceService';
 
 export { ExtensionService, ExtensionServiceError, extensionService } from './extensionService';
 export type { ExtensionRegistryResponse, ExtensionRead, ExtensionManifest, ExtensionEvent, ExtensionCommandRequest, ExtensionCommandResult, CharacterImportProfile } from '$lib/extensions/contracts';
+
+export {
+  CharacterService,
+  CharacterServiceError,
+  characterService,
+  type CharacterBlueprint,
+  type CharacterCreateInput,
+  type CharacterIdentity,
+  type CharacterSummary
+} from './characterService';

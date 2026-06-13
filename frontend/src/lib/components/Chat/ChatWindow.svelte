@@ -1,5 +1,6 @@
 <script lang="ts">
   import MessageInput from './MessageInput.svelte';
+  import { CharacterSelector } from '$lib/components/Characters';
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
   import { chatStore } from '$lib/stores/chatStore';
@@ -66,6 +67,8 @@
       </div>
     </div>
   </header>
+
+  <CharacterSelector />
 
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
 
