@@ -11,6 +11,11 @@ from app.core.config import Settings
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.models.tts import TTSContext
 from app.services.chat_service import ChatService
+from app.repositories.character_repo import CharacterRepository
+from app.schemas.character_blueprint import CharacterCreate
+from app.services.character_service import CharacterService
+from pathlib import Path
+import tempfile
 
 
 class FakeOllamaClient:
@@ -39,8 +44,8 @@ class FakeMemoryManager:
         self.failure = failure
         self.queries: list[str] = []
 
-    def get_relevant_context(self, query: str) -> str:
-        self.queries.append(query)
+    def get_relevant_context(self, query: str, character_id: str | None = None) -> str:
+        self.queries.append(f"{character_id or 'global'}:{query}")
         if self.failure:
             raise self.failure
         return self.context
@@ -165,6 +170,94 @@ class ChatServiceReflectionTests(unittest.TestCase):
         self.assertEqual(prepared_messages[3].role, "user")
         self.assertEqual(len(reflection.triggered_histories), 1)
         self.assertEqual(reflection.triggered_histories[0][-1]["role"], "user")
+
+    def test_full_character_runtime_roundtrip_create_chat_reflect_prompt(self) -> None:
+        asyncio.run(self._assert_full_character_runtime_roundtrip())
+
+    async def _assert_full_character_runtime_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            character_service = CharacterService(
+                CharacterRepository(Path(tmpdir) / "characters.sqlite3")
+            )
+            character_service.create(
+                CharacterCreate(
+                    character_id="aria",
+                    display_name="Aria",
+                    pronouns="she/her",
+                    species_or_type="moonlit oracle",
+                    relationship_dynamic="slow-burn devotion with honest, playful reassurance",
+                    core_traits=["warm", "playful", "direct"],
+                )
+            )
+            ollama = FakeOllamaClient()
+            memory = FakeMemoryManager(
+                context="[mem_aria_1] User likes candlelit observatory rituals."
+            )
+            reflection = FakeReflectionManager(
+                entries=[
+                    {
+                        "entry_id": "journal_aria_1",
+                        "status": "active",
+                        "character_id": "aria",
+                        "character_summary": "Aria noticed rituals help the user settle into closeness.",
+                        "insights": [
+                            {
+                                "summary": "Mention the observatory ritual gently.",
+                                "memory_worthy": True,
+                            }
+                        ],
+                        "linked_memory_ids": ["mem_aria_1"],
+                        "themes": ["trust", "routine"],
+                        "confidence": 0.82,
+                    }
+                ]
+            )
+            service = ChatService(
+                settings=Settings(
+                    reflection_min_interval_seconds=0,
+                    reflection_user_message_interval=1,
+                ),
+                ollama_client=ollama,  # type: ignore[arg-type]
+                memory_manager=memory,  # type: ignore[arg-type]
+                reflection_manager=reflection,  # type: ignore[arg-type]
+                character_service=character_service,
+            )
+            request = ChatRequest(
+                stream=False,
+                character_id="aria",
+                messages=[
+                    ChatMessage(
+                        role="user",
+                        content="Can we keep our observatory ritual tonight?",
+                    )
+                ],
+            )
+
+            await service.chat(request, request_id="req-roundtrip")
+            await asyncio.gather(*ChatService._inflight_reflection_tasks)
+            prepared = "\n".join(
+                message.content for message in ollama.requests[0].messages
+            )
+            final_prompt = character_service.compile_prompt(
+                "aria",
+                growth_insights=[
+                    {
+                        "entry_id": "journal_aria_1",
+                        "summary": "Mention the observatory ritual gently.",
+                        "evidence_ids": ["journal_aria_1", "mem_aria_1"],
+                    }
+                ],
+            )
+
+        self.assertIn("Character id: aria", prepared)
+        self.assertIn("moonlit oracle", prepared)
+        self.assertIn("[mem_aria_1]", prepared)
+        self.assertIn("Private reflection journal context", prepared)
+        self.assertIn(
+            "aria:user: Can we keep our observatory ritual tonight?", memory.queries[0]
+        )
+        self.assertIn("journal_aria_1", final_prompt)
+        self.assertIn("subordinate to stable canon", final_prompt)
 
     def test_reflection_failures_do_not_block_chat(self) -> None:
         asyncio.run(self._assert_reflection_failures_do_not_block())

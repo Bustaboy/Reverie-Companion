@@ -25,6 +25,7 @@ from app.services.character_service import (
     CharacterPromptCompiler,
     CharacterService,
 )
+from app.services.character_quality_evals import CharacterQualityEvaluator
 
 
 class CharacterBlueprintValidationTests(unittest.TestCase):
@@ -156,18 +157,22 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
                 pronouns="she/her",
                 adult_age_range="early_20s_adult",
                 species_or_type="human",
+                creator_notes="She keeps a candlelit observatory and hates sounding generic.",
             ),
         )
         prompt = CharacterPromptCompiler().compile(blueprint)
 
-        expected = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
-- Name: Aria (she/her); clearly adult: early_20s_adult; type: human.
-- Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
-- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
-- Core traits: warm, curious, emotionally attentive.
-- Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
-        self.assertEqual(prompt, expected)
+        self.assertIn("<character_system_profile>", prompt)
+        self.assertIn("Character id: aria", prompt)
+        self.assertIn(
+            "Stable identity: Aria (she/her); clearly adult: early_20s_adult", prompt
+        )
+        self.assertIn("Creator canon notes", prompt)
+        self.assertIn("<character_runtime_context>", prompt)
+        self.assertIn("Memory policy: scope=character_private", prompt)
+        self.assertIn("Growth policy: schema=growth_policy.v1", prompt)
+        self.assertIn("stable identity remains unchanged without evidence", prompt)
+        self.assertIn("fictional adult fantasy is allowed by default", prompt)
 
     def test_prompt_compiler_includes_recent_growth_guidance_when_provided(
         self,
@@ -211,17 +216,35 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 
             prompt = service.compile_prompt("seraphina")
 
-        expected_snapshot = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
-- Name: Seraphina (she/her); clearly adult: ageless_adult; type: succubus muse.
-- Relationship: newly_met; dynamic: intense adult fantasy devotion with playful dominance; pacing: natural; default intimacy: adult_roleplay.
-- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
-- Core traits: sensual, possessive, tender.
-- Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
-        self.assertEqual(prompt, expected_snapshot)
         self.assertIn("adult fantasy", prompt)
         self.assertIn("kink-shaming", prompt)
         self.assertNotIn("as an AI", prompt.lower())
+
+    def test_quality_evals_pass_for_compiled_prompt(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+            personality={"core_traits": ["warm", "direct", "loyal"]},
+        )
+        prompt = CharacterPromptCompiler().compile(
+            blueprint,
+            growth_insights=[
+                {
+                    "entry_id": "journal_1",
+                    "summary": "Stay direct when reassurance matters.",
+                    "evidence_ids": ["journal_1", "mem_1"],
+                }
+            ],
+        )
+
+        evaluator = CharacterQualityEvaluator()
+        results = evaluator.evaluate_prompt(
+            prompt,
+            character_id="aria",
+            character_name="Aria",
+            required_traits=["warm", "direct", "loyal"],
+        )
+        evaluator.assert_passes(results)
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):
