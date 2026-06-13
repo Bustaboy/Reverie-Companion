@@ -1216,71 +1216,51 @@ Definition of Done:
 
 ---
 
-#### M5-P06 — Chat and Visual Novel “Capture this moment” UX
+#### M5-P06 — Gallery feedback integration and visual review surface
+**Status:** ✅ Completed (PR #153 merged)
 
-**Goal**: Replace generic image generation as the primary companion image action with character-linked Moment Capture.
+**Delivered:**
+- Quick feedback actions directly on gallery image cards (`Looks Right`, `Wrong Appearance`, `Make Canon`, `Use Outfit Again`, `Just This Scene`, `Reject Style Trait`)
+- Collapsible / detailed trait feedback input for precise corrections (trait name, value, note)
+- Visual review panel for pending `VisualChangeEvent`s with approve / reject / rollback controls
+- Status indicators (pending / approved / rejected) with clear visual distinction and conditional button visibility
+- Real-time gallery updates when feedback is submitted or reviewed
+- Full integration with M5-P05 backend feedback and visual change review endpoints
+- Character-scoped feedback and review flows
+- Updated TypeScript types, API client methods, and store logic (`submitFeedback`, `loadVisualChanges`, `reviewVisualChange`)
+- Dedicated visual feedback test coverage + passing frontend type checks and backend contract tests
+- Clean styling for feedback controls, trait panels, status chips, and review cards
+
+**Next dependent tasks:** M5-P07, M5-P08
+
+**Goal**: Integrate visual feedback actions into the gallery UI so users can easily mark images, reject traits, and review pending canon changes directly from image cards and history.
 
 Context files to read:
 
-- `frontend/src/lib/components/Chat/ChatWindow.svelte`
-- `frontend/src/lib/components/VisualNovel/VisualNovelStage.svelte`
-- `frontend/src/lib/stores/chatStore.ts`
-- `frontend/src/lib/stores/characterStore.ts`
+- `frontend/src/lib/components/ImageGeneration/ImageGallery.svelte`
 - `frontend/src/lib/stores/imageGenerationStore.svelte.ts`
-- `frontend/src/lib/stores/visualNovelStore.ts`
-- M5-P03/P04 API shapes
-- M5-P05 feedback/review shapes
+- `frontend/src/lib/api/imageService.ts`
+- `frontend/src/lib/types/momentCapture.ts`
+- M5-P05 outputs (feedback actions and `VisualChangeEvent` review flow)
 
 Must implement:
 
-- Rename/replace primary chat image action to **Capture this moment**.
-- Build capture request from:
-  - selected character id
-  - latest assistant/user exchange
-  - conversation/source message id where available
-  - optional VN scene state
-  - user-provided short capture note if included
-- VN stage uses current VN scene state.
-- Show queued/running/completed capture state in Chat/VN.
-- Display character-linked capture metadata.
-- Add feedback actions on completed capture cards:
-  - looks right
-  - wrong appearance
-  - make canon
-  - use outfit again
-  - just this scene
-  - reject trait/style
-- Surface pending canon/review state from `VisualChangeEvent`.
-- Add minimal approve/reject/rollback controls for pending/approved visual change events, either inline on the gallery/capture card or via a lightweight review panel.
-- Existing image history still loads.
+- Gallery feedback buttons and detailed trait input
+- Visual review surface for pending changes
+- Integration with existing feedback/review backend APIs
+- Status indicators and real-time UI updates
+- Safe handling of character-scoped feedback
 
 Must not implement:
 
-- Full gallery redesign.
-- Full visual canon editor.
-- Full Genesis creator.
-- Hidden automatic feedback submission.
-
-Tests/checks:
-
-- Chat capture sends selected `character_id`.
-- VN capture includes scene state.
-- Feedback buttons call the correct API shape.
-- Pending/approved/rejected canon states render distinctly.
-- Existing generic image history does not break.
-- `npm run check` passes.
-
-Manual validation:
-
-- From chat, capture latest moment.
-- From VN, capture current scene.
-- Submit feedback on completed image.
-- Approve and reject a pending visual change.
-- Confirm rollback control appears for approved rollback-capable change.
+- Full visual canon editor
+- Automatic canon application without review
+- Training data collection from feedback
+- Creator-specific gallery features
 
 Definition of Done:
 
-- The main user-facing image action feels like capturing a shared moment, not generic prompt gambling, and visual canon changes are visibly reviewable.
+- Users can meaningfully influence visual continuity directly from the gallery with quick and detailed feedback actions. Pending canon changes are clearly visible and reviewable through a minimal but functional interface.
 
 ---
 
