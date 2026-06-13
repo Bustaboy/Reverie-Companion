@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { ChatServiceError, chatService, type Message } from '$lib/api';
 import { createChatMessage, createInitialMessages } from '$lib/chat/messages';
 import { settingsStore } from '$lib/stores/settingsStore';
+import { selectedCharacterId } from '$lib/stores/characterStore';
 import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import { visualNovelStore } from '$lib/stores/visualNovelStore';
@@ -210,7 +211,10 @@ function createChatStore() {
       }));
 
       try {
-        for await (const event of chatService.sendMessageStream(trimmedContent, history, { signal: controller.signal })) {
+        for await (const event of chatService.sendMessageStream(trimmedContent, history, {
+          signal: controller.signal,
+          characterId: get(selectedCharacterId)
+        })) {
           if (event.event === 'message') {
             if (!event.content && !event.memoryContext?.used && !event.visualState) continue;
 

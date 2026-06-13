@@ -25,6 +25,8 @@ export interface Message {
 
 export interface ChatRequest {
   messages: MessagePayload[];
+  /** Optional selected companion identity for backend prompt compilation and scoped memory. */
+  character_id?: string;
   model?: string;
   temperature?: number;
   top_p?: number;
@@ -55,6 +57,8 @@ export interface ChatResponse {
 export interface ChatStreamOptions {
   /** Optional cancellation signal for Svelte components to stop generation. */
   signal?: AbortSignal;
+  /** Selected companion identity for backend prompt compilation and scoped memory. */
+  characterId?: string | null;
 }
 
 export interface ChatStreamMessageEvent {
@@ -232,8 +236,8 @@ export class ChatService {
   }
 
   /** Send one user message plus optional prior conversation history to /chat. */
-  async sendMessage(message: string, history: Message[] = []): Promise<ChatResponse> {
-    return this.postChat(this.createChatRequest(message, history, false));
+  async sendMessage(message: string, history: Message[] = [], characterId?: string | null): Promise<ChatResponse> {
+    return this.postChat(this.createChatRequest(message, history, false, characterId));
   }
 
   /**
@@ -249,7 +253,7 @@ export class ChatService {
     history: Message[] = [],
     options: ChatStreamOptions = {}
   ): AsyncGenerator<ChatStreamEvent, void, void> {
-    const request = this.createChatRequest(message, history, true);
+    const request = this.createChatRequest(message, history, true, options.characterId);
     const url = `${this.baseUrl}/chat`;
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
@@ -320,7 +324,7 @@ export class ChatService {
     }
   }
 
-  private createChatRequest(message: string, history: Message[], stream: boolean): ChatRequest {
+  private createChatRequest(message: string, history: Message[], stream: boolean, characterId?: string | null): ChatRequest {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
@@ -329,7 +333,8 @@ export class ChatService {
 
     return {
       messages: [...this.toPayloadMessages(history), { role: 'user', content: trimmedMessage }],
-      stream
+      stream,
+      ...(characterId ? { character_id: characterId } : {})
     };
   }
 
