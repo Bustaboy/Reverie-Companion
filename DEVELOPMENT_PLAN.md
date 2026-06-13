@@ -968,6 +968,23 @@ Definition of Done:
 ---
 
 #### M5-P03 — Moment Capture backend API and service
+**Status:** ✅ Completed (PR #144 merged)
+
+**Delivered:**
+- `MomentCaptureService` as the central orchestration layer
+- API endpoint `POST /api/moment-capture`
+- Full orchestration flow:
+  1. Load selected character via `CharacterService`
+  2. Build `VisualPromptBundle` using `VisualPromptCompiler`
+  3. Submit queue-only job to `ImageGenerationService`
+  4. Create and persist `MomentCaptureRecord` linked to the job
+- Proper metadata propagation (`character_id`, `prompt_hash`, scene state, visual identity version, source IDs, etc.)
+- Structured error handling for missing characters
+- Non-blocking design that respects existing TTS priority and resource coordination
+- Unit tests covering successful queuing, metadata propagation, missing character errors, and non-blocking behavior
+- Clear documentation of endpoint decision and orchestration flow
+
+**Next dependent tasks:** M5-P04, M5-P05, M5-P07
 
 **Goal**: Add a backend path that turns selected character + scene/dialogue context into a queued image generation job and durable capture record.
 
