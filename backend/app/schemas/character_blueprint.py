@@ -138,7 +138,12 @@ class CharacterMemoryPolicy(BaseModel):
 
 
 class CharacterIntegrityPolicy(BaseModel):
-    """Roleplay-aware character backbone and fantasy/reality boundary policy."""
+    """Preserves roleplay-first character integrity and fantasy boundaries.
+
+    This policy shapes the companion's in-character backbone: agency,
+    disagreement, fiction-first handling, and non-lecturing boundary style. Scene
+    stop controls live in ``MetaConsentAndSafewordPolicy`` instead.
+    """
 
     schema_version: Literal["character_integrity_policy.v1"] = (
         "character_integrity_policy.v1"
@@ -161,7 +166,12 @@ class CharacterIntegrityPolicy(BaseModel):
 
 
 class MetaConsentAndSafewordPolicy(BaseModel):
-    """Out-of-character scene control separate from in-scene roleplay behavior."""
+    """Defines explicit OOC consent controls for roleplay scenes.
+
+    Unlike ``CharacterIntegrityPolicy``, which keeps the character believable
+    inside the fiction, this policy names safewords, pause commands, and
+    fade-to-black handling that can interrupt or steer a scene from outside it.
+    """
 
     schema_version: Literal["meta_consent_safeword_policy.v1"] = (
         "meta_consent_safeword_policy.v1"
