@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from app.core.config import Settings
 from app.models.chat import ChatMessage, ChatRequest, ChatResponse
 from app.models.tts import TTSContext
+from app.schemas.character_blueprint import CharacterCreate
+from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.chat_service import ChatService
 
 
@@ -39,8 +42,10 @@ class FakeMemoryManager:
         self.failure = failure
         self.queries: list[str] = []
 
-    def get_relevant_context(self, query: str) -> str:
-        self.queries.append(query)
+    def get_relevant_context(
+        self, query: str, *, character_id: str | None = None
+    ) -> str:
+        self.queries.append(f"{character_id or 'global'}:{query}")
         if self.failure:
             raise self.failure
         return self.context
@@ -59,13 +64,18 @@ class FakeReflectionManager:
         self.recent_failure = recent_failure
         self.triggered_histories: list[list[dict[str, str]]] = []
 
-    def get_recent_journal_entries(self, limit: int = 5) -> list[dict[str, Any]]:
+    def get_recent_journal_entries(
+        self, limit: int = 5, *, character_id: str | None = None
+    ) -> list[dict[str, Any]]:
         if self.recent_failure:
             raise self.recent_failure
         return self.entries[:limit]
 
     def trigger_reflection(
-        self, conversation_history: list[dict[str, str]]
+        self,
+        conversation_history: list[dict[str, str]],
+        *,
+        character_id: str | None = None,
     ) -> dict[str, Any]:
         if self.trigger_failure:
             raise self.trigger_failure
@@ -75,6 +85,168 @@ class FakeReflectionManager:
             "insights": [{"summary": "The user values reassurance."}],
             "linked_memory_ids": [],
         }
+
+
+class MissingCharacterService:
+    def compile_prompt(self, character_id: str, **_: Any) -> str:
+        raise CharacterNotFoundError(character_id)
+
+    def get_growth_policy(self, character_id: str):
+        raise CharacterNotFoundError(character_id)
+
+
+class ChatServiceCharacterRuntimeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        ChatService._reflection_lock = None
+        ChatService._last_reflection_started_at = 0.0
+        ChatService._inflight_reflection_tasks.clear()
+        ChatService._last_growth_notification_at = 0.0
+        ChatService._emitted_growth_notification_ids.clear()
+
+    def test_chat_with_character_id_injects_selected_character_above_memory(
+        self,
+    ) -> None:
+        async def run_test() -> None:
+            ollama = FakeOllamaClient()
+            with TemporaryDirectory() as tmpdir:
+                character_service = CharacterService.from_settings(
+                    Settings(character_db_path=f"{tmpdir}/characters.sqlite3")
+                )
+                character_service.create(
+                    CharacterCreate(
+                        character_id="aria",
+                        display_name="Aria",
+                        pronouns="she/her",
+                        relationship_dynamic="devoted starship companion",
+                        core_traits=["brave", "playful", "protective"],
+                    )
+                )
+                service = ChatService(
+                    settings=Settings(memory_enabled=True, reflection_enabled=False),
+                    ollama_client=ollama,  # type: ignore[arg-type]
+                    memory_manager=FakeMemoryManager(context="User loves quiet stargazing."),  # type: ignore[arg-type]
+                    character_service=character_service,
+                )
+
+                await service.chat(
+                    ChatRequest(
+                        stream=False,
+                        character_id="aria",
+                        messages=[
+                            ChatMessage(
+                                role="system",
+                                content="High priority system instruction.",
+                            ),
+                            ChatMessage(
+                                role="user", content="Sit with me by the viewport."
+                            ),
+                        ],
+                    ),
+                    request_id="req-character",
+                )
+
+                prepared = ollama.requests[0].messages
+                self.assertEqual(
+                    prepared[0].content, "High priority system instruction."
+                )
+                self.assertIn("<character_system_prompt>", prepared[1].content)
+                self.assertIn("Name: Aria", prepared[1].content)
+                self.assertIn("devoted starship companion", prepared[1].content)
+                self.assertIn("Long-term memory context", prepared[2].content)
+                self.assertEqual(prepared[3].role, "user")
+
+        asyncio.run(run_test())
+
+    def test_chat_without_character_id_uses_reverie_default_fallback(self) -> None:
+        async def run_test() -> None:
+            ollama = FakeOllamaClient()
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=ollama,  # type: ignore[arg-type]
+                character_service=MissingCharacterService(),  # type: ignore[arg-type]
+            )
+
+            await service.chat(
+                ChatRequest(
+                    stream=False,
+                    messages=[ChatMessage(role="user", content="Hello there.")],
+                ),
+                request_id="req-default-character",
+            )
+
+            prepared = ollama.requests[0].messages
+            self.assertIn("Name: Reverie", prepared[0].content)
+            self.assertIn("Character id: reverie_default", prepared[0].content)
+            self.assertEqual(prepared[1].role, "user")
+
+        asyncio.run(run_test())
+
+    def test_invalid_character_id_uses_safe_fallback_instead_of_crashing(self) -> None:
+        async def run_test() -> None:
+            ollama = FakeOllamaClient()
+            service = ChatService(
+                settings=Settings(memory_enabled=False, reflection_enabled=False),
+                ollama_client=ollama,  # type: ignore[arg-type]
+                character_service=MissingCharacterService(),  # type: ignore[arg-type]
+            )
+
+            response = await service.chat(
+                ChatRequest(
+                    stream=False,
+                    character_id="missing_aria",
+                    messages=[ChatMessage(role="user", content="Are you there?")],
+                ),
+                request_id="req-missing-character",
+            )
+
+            self.assertEqual(response.message.content, "I hear you.")
+            prepared = ollama.requests[0].messages
+            self.assertIn("Character id: reverie_default", prepared[0].content)
+            self.assertIn("selected_character_not_found", prepared[0].content)
+            self.assertEqual(prepared[1].role, "user")
+
+        asyncio.run(run_test())
+
+    def test_stream_with_character_id_uses_character_context(self) -> None:
+        async def run_test() -> None:
+            ollama = FakeOllamaClient()
+            with TemporaryDirectory() as tmpdir:
+                character_service = CharacterService.from_settings(
+                    Settings(character_db_path=f"{tmpdir}/characters.sqlite3")
+                )
+                character_service.create(
+                    CharacterCreate(
+                        character_id="mira",
+                        display_name="Mira",
+                        core_traits=["gentle", "wry"],
+                    )
+                )
+                service = ChatService(
+                    settings=Settings(memory_enabled=False, reflection_enabled=False),
+                    ollama_client=ollama,  # type: ignore[arg-type]
+                    character_service=character_service,
+                )
+
+                frames = [
+                    frame
+                    async for frame in await service.stream_chat(
+                        ChatRequest(
+                            stream=True,
+                            character_id="mira",
+                            messages=[
+                                ChatMessage(role="user", content="Stay with me.")
+                            ],
+                        ),
+                        request_id="req-stream-character",
+                    )
+                ]
+
+                self.assertTrue(any("event: done" in frame for frame in frames))
+                prepared = ollama.requests[0].messages
+                self.assertIn("Name: Mira", prepared[0].content)
+                self.assertEqual(prepared[1].role, "user")
+
+        asyncio.run(run_test())
 
 
 class ChatServiceReflectionTests(unittest.TestCase):
@@ -154,15 +326,16 @@ class ChatServiceReflectionTests(unittest.TestCase):
         )
         prepared_messages = ollama.requests[0].messages
         self.assertEqual(prepared_messages[0].content, "You are Reverie.")
-        self.assertIn("Long-term memory context", prepared_messages[1].content)
-        self.assertIn("User prefers gentle reassurance", prepared_messages[1].content)
+        self.assertIn("Name: Reverie", prepared_messages[1].content)
+        self.assertIn("Long-term memory context", prepared_messages[2].content)
+        self.assertIn("User prefers gentle reassurance", prepared_messages[2].content)
         self.assertIn(
-            "Private reflection journal context", prepared_messages[2].content
+            "Private reflection journal context", prepared_messages[3].content
         )
-        self.assertIn("tentative, lower-priority", prepared_messages[2].content)
-        self.assertIn("not canon rewrites", prepared_messages[2].content)
-        self.assertIn("reassurance helps the user", prepared_messages[2].content)
-        self.assertEqual(prepared_messages[3].role, "user")
+        self.assertIn("tentative, lower-priority", prepared_messages[3].content)
+        self.assertIn("not canon rewrites", prepared_messages[3].content)
+        self.assertIn("reassurance helps the user", prepared_messages[3].content)
+        self.assertEqual(prepared_messages[4].role, "user")
         self.assertEqual(len(reflection.triggered_histories), 1)
         self.assertEqual(reflection.triggered_histories[0][-1]["role"], "user")
 
@@ -193,7 +366,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
         self.assertEqual(response.message.content, "I hear you.")
         self.assertEqual(len(ollama.requests), 1)
-        self.assertEqual(ollama.requests[0].messages, request.messages)
+        self.assertIn("Name: Reverie", ollama.requests[0].messages[0].content)
+        self.assertEqual(ollama.requests[0].messages[-1], request.messages[-1])
 
     def test_reflection_disabled_skips_journal_context_and_background_work(
         self,
@@ -224,7 +398,8 @@ class ChatServiceReflectionTests(unittest.TestCase):
 
         await service.chat(request, request_id="req-disabled")
 
-        self.assertEqual(ollama.requests[0].messages, request.messages)
+        self.assertIn("Name: Reverie", ollama.requests[0].messages[0].content)
+        self.assertEqual(ollama.requests[0].messages[-1], request.messages[-1])
         self.assertEqual(reflection.triggered_histories, [])
 
     def test_growth_notifications_wait_for_message_count_and_interval(self) -> None:

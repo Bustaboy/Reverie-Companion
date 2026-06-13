@@ -15,6 +15,7 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
+    CommunicationProfile,
     PersonalityProfile,
     utc_now_iso,
 )
@@ -419,6 +420,62 @@ class CharacterService:
     def from_settings(cls, settings: Settings | None = None) -> "CharacterService":
         settings = settings or get_settings()
         return cls(CharacterRepository(Path(settings.character_db_path)))
+
+    @classmethod
+    def default_blueprint(
+        cls, *, missing_character_id: str | None = None
+    ) -> CharacterBlueprint:
+        """Return a local built-in companion used when no saved character is selected."""
+
+        metadata: dict[str, Any] = {"fallback_character": True}
+        if missing_character_id:
+            metadata["missing_character_id"] = missing_character_id
+            metadata["fallback_reason"] = "selected_character_not_found"
+        return CharacterBlueprint(
+            character_id="reverie_default",
+            identity=CharacterIdentity(
+                display_name="Reverie",
+                pronouns="she/her",
+                species_or_type="local AI companion",
+                origin_archetype="warm local-first companion",
+                tags=[
+                    "default",
+                    "fallback",
+                    "emotionally_attentive",
+                    *(["selected_character_not_found"] if missing_character_id else []),
+                ],
+            ),
+            relationship=RelationshipState(
+                character_id="reverie_default",
+                relationship_dynamic="warm, emotionally attentive local companion",
+            ),
+            personality=PersonalityProfile(
+                core_traits=["warm", "curious", "emotionally attentive"],
+                values_or_ideals=["privacy", "continuity", "user agency"],
+            ),
+            communication=CommunicationProfile(
+                style_notes="Speak as Reverie: warm, present, character-led, and not like a generic assistant.",
+                avoid_style_rules=[
+                    "Do not pretend to be a saved custom character when no character is selected.",
+                    "Avoid generic assistant disclaimers unless required by higher-priority instructions.",
+                ],
+            ),
+            metadata=metadata,
+        )
+
+    @classmethod
+    def default_prompt(
+        cls,
+        *,
+        growth_insights: list[dict[str, Any]] | None = None,
+        missing_character_id: str | None = None,
+    ) -> str:
+        """Compile bounded prompt context for the built-in fallback companion."""
+
+        return CharacterPromptCompiler().compile(
+            cls.default_blueprint(missing_character_id=missing_character_id),
+            growth_insights=growth_insights,
+        )
 
     def create(self, data: CharacterCreate) -> CharacterBlueprint:
         character_id = data.character_id or self._slug_id(data.display_name)

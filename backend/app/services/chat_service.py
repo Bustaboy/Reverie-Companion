@@ -95,6 +95,7 @@ class ChatService:
             lora_trainer=(
                 get_personal_lora_trainer() if settings.personal_lora_enabled else None
             ),
+            character_service=character_service,
         )
 
     async def chat(
@@ -275,31 +276,55 @@ class ChatService:
         growth_context: GrowthContext | None = None,
         request_id: str | None,
     ) -> str:
-        """Load selected character identity without making chat depend on storage."""
+        """Load selected character identity or a local fallback for prompt grounding."""
 
-        if not request.character_id or self._character_service is None:
-            return ""
-        try:
-            return self._character_service.compile_prompt(
-                request.character_id,
-                growth_insights=self._growth_insights_for_prompt(growth_context),
-            )
-        except CharacterNotFoundError:
-            logger.warning(
-                "Selected character was not found; continuing without character context",
-                extra={
-                    "request_id": request_id,
-                    "character_id": request.character_id,
-                    "chat_continues": True,
-                },
-            )
-            return ""
-        except Exception as exc:  # pragma: no cover - defensive graceful degradation.
-            logger.warning(
-                "Character prompt compilation failed; continuing without character context",
-                extra={"request_id": request_id, "error": str(exc)},
-            )
-            return ""
+        growth_insights = self._growth_insights_for_prompt(growth_context)
+        if self._character_service is None:
+            return self._default_character_context(growth_insights=growth_insights)
+
+        if request.character_id:
+            try:
+                return self._character_service.compile_prompt(
+                    request.character_id,
+                    growth_insights=growth_insights,
+                )
+            except CharacterNotFoundError:
+                logger.warning(
+                    "Selected character was not found; using default character fallback",
+                    extra={
+                        "request_id": request_id,
+                        "character_id": request.character_id,
+                        "fallback_character_id": "reverie_default",
+                        "chat_continues": True,
+                    },
+                )
+                return self._default_character_context(
+                    growth_insights=growth_insights,
+                    missing_character_id=request.character_id,
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive graceful degradation.
+                logger.warning(
+                    "Character prompt compilation failed; using default character fallback",
+                    extra={"request_id": request_id, "error": str(exc)},
+                )
+                return self._default_character_context(growth_insights=growth_insights)
+
+        return self._default_character_context(growth_insights=growth_insights)
+
+    def _default_character_context(
+        self,
+        *,
+        growth_insights: list[dict[str, object]],
+        missing_character_id: str | None = None,
+    ) -> str:
+        """Compile the local Reverie fallback so no-character chat remains grounded."""
+
+        return CharacterService.default_prompt(
+            growth_insights=growth_insights,
+            missing_character_id=missing_character_id,
+        )
 
     def _growth_insights_for_prompt(
         self, growth_context: GrowthContext | None
@@ -1137,18 +1162,16 @@ class ChatService:
         """Mirror orchestrator process state for legacy tests and callers."""
 
         type(self)._reflection_lock = GrowthOrchestrator._reflection_lock
-        type(
-            self
-        )._last_reflection_started_at = GrowthOrchestrator._last_reflection_started_at
-        type(
-            self
-        )._inflight_reflection_tasks = GrowthOrchestrator._inflight_reflection_tasks
-        type(
-            self
-        )._last_growth_notification_at = GrowthOrchestrator._last_growth_notification_at
-        type(
-            self
-        )._emitted_growth_notification_ids = (
+        type(self)._last_reflection_started_at = (
+            GrowthOrchestrator._last_reflection_started_at
+        )
+        type(self)._inflight_reflection_tasks = (
+            GrowthOrchestrator._inflight_reflection_tasks
+        )
+        type(self)._last_growth_notification_at = (
+            GrowthOrchestrator._last_growth_notification_at
+        )
+        type(self)._emitted_growth_notification_ids = (
             GrowthOrchestrator._emitted_growth_notification_ids
         )
 
