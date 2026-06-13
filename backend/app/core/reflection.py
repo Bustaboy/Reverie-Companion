@@ -473,7 +473,9 @@ class ReflectionManager:
         self._config = config or ReflectionManagerConfig.from_settings()
         self._memory_manager = memory_manager or get_memory_manager()
 
-    def trigger_reflection(self, conversation_history: Any) -> JournalEntry:
+    def trigger_reflection(
+        self, conversation_history: Any, *, character_id: str | None = None
+    ) -> JournalEntry:
         """Generate insights from recent conversation history and journal them.
 
         Args:
@@ -540,6 +542,7 @@ class ReflectionManager:
                 "source": "ReflectionManager",
                 "local_first": True,
                 "lora_ready": True,
+                **({"character_id": character_id} if character_id else {}),
             },
         )
 
@@ -674,7 +677,9 @@ class ReflectionManager:
             ) from exc
         return normalized
 
-    def get_recent_journal_entries(self, limit: int = 5) -> list[JournalEntry]:
+    def get_recent_journal_entries(
+        self, limit: int = 5, *, character_id: str | None = None
+    ) -> list[JournalEntry]:
         """Return the newest active journal entries, newest first."""
 
         safe_limit = self._safe_limit(limit)
@@ -682,8 +687,22 @@ class ReflectionManager:
             entry
             for entry in self._read_journal_entries()
             if entry.get("status", "active") == "active"
+            and self._entry_matches_character_scope(entry, character_id)
         ]
         return list(reversed(entries[-safe_limit:]))
+
+    def _entry_matches_character_scope(
+        self, entry: JournalEntry | dict[str, Any], character_id: str | None
+    ) -> bool:
+        if not character_id:
+            return True
+        metadata = entry.get("metadata", {}) or {}
+        entry_character_id = metadata.get("character_id") or entry.get("character_id")
+        if entry_character_id == character_id:
+            return True
+        if metadata.get("memory_scope") in {"shared", "global"}:
+            return True
+        return False
 
     def get_relevant_reflections(self, query: str) -> list[JournalEntry]:
         """Return journal entries relevant to a query using memory plus local scoring.
@@ -1043,6 +1062,11 @@ class ReflectionManager:
                     "memory_type": "reflection",
                     "source": "reflection_journal",
                     "journal_entry_id": entry.get("entry_id"),
+                    **(
+                        {"character_id": entry.get("metadata", {}).get("character_id")}
+                        if entry.get("metadata", {}).get("character_id")
+                        else {}
+                    ),
                     "source_journal_ids": [entry.get("entry_id")],
                     "source_turn_indices": decision.get("source_turn_indices", []),
                     "confidence": entry.get("confidence", 0.0),
