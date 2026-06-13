@@ -74,6 +74,7 @@ def test_wrong_appearance_metadata_is_negative_only() -> None:
     assert "green eyes" in bundle.negative_prompt
     assert "short bob" in bundle.negative_prompt
     assert bundle.metadata["wrong_appearance_excluded"] == ["green eyes", "short bob"]
+    assert " wrong_appearance_excluded " not in bundle.metadata
 
 
 def test_scene_mutable_traits_can_change_without_affecting_identity_anchors() -> None:
