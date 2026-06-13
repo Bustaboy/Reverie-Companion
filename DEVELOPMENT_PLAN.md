@@ -293,7 +293,7 @@ When a task touches character runtime or creator work, Grok should load `charact
 
 ## 5. Milestone 4 — Character Runtime & Capability Alignment
 
-**Status**: Current.  
+**Status**: Complete — closed June 13, 2026.  
 **Goal**: Build the internal character runtime that lets future creator choices actually affect the app.
 
 Milestone 4 is not the full character creator. It is the substrate that prevents the future creator from lying.
@@ -311,6 +311,25 @@ By the end of M4:
 - `RelationshipState` exists as structured data even if relationship evolution is basic.
 - Character integrity policy exists as runtime configuration, not a lecture engine.
 - Tests prove selected character data changes chat prompt assembly and persistence behavior.
+
+
+### M4 completion summary
+
+Milestone 4 delivered the runtime substrate required before the full Companion Genesis creator can honestly expose character choices:
+
+- Versioned `CharacterBlueprint` persistence with local CRUD APIs, schema defaults, validation, and migration seams.
+- Runtime policies for relationship state, growth, visual identity, character-scoped memory, roleplay-first character integrity, and OOC/safeword controls.
+- `CharacterPromptCompiler` v1 with compact structured prompt sections instead of raw JSON dumps.
+- Selected-character chat integration, default-character fallback, TTS/context propagation seams, and character-scoped memory/reflection hooks to prevent cross-character bleed.
+- Minimal frontend character runtime shell: API client, store, selector, basic creation form, selected-character persistence, and chat request integration.
+- Backend/frontend tests and eval-style fixtures covering prompt impact, persistence, roleplay boundary scaffolding, visual summaries, and memory scoping.
+
+Intentional deviations / future work:
+
+- Character storage currently uses local SQLite-backed blueprint persistence rather than the early JSON-path example; this remains local-first and keeps a migration seam.
+- The frontend shell is deliberately minimal and not the immersive Companion Genesis creator. Full creator UX remains Milestone 6/7 scope.
+- Visual identity is stored and summarized for prompts, but full visual rendering, Moment Capture, visual feedback writeback, and `VisualChangeEvent` workflows remain Milestone 5 scope.
+- Relationship and growth updates are durable but conservative; autonomous progression and richer approval/rollback flows remain future milestones.
 
 ### M4 prompt queue
 
