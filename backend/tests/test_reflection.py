@@ -81,7 +81,8 @@ class ReflectionManagerSmokeTests(unittest.TestCase):
             self.assertEqual(metadata["training_eligibility"], "needs_review")
             self.assertIsNotNone(entry.get("growth_notification"))
             growth_notification = entry["growth_notification"]
-            self.assertIn("Reverie seems to be growing", growth_notification["message"])
+            self.assertIn("She seems more attuned", growth_notification["message"])
+            self.assertIn("💕", growth_notification["message"])
             self.assertIn("no raw conversation text", growth_notification["why"])
             self.assertEqual(growth_notification["journal_entry_id"], entry["entry_id"])
             self.assertIn("dismiss", growth_notification["controls"])

@@ -221,6 +221,8 @@ class GrowthOrchestrator:
                 },
             )
             return
+        # 8GB safety: reflection is queued as non-blocking idle/background work,
+        # so chat can continue without waiting on journal writes or extra model load.
         task = asyncio.create_task(
             self._run_reflection_background(
                 self.reflection_history_window(request.messages),

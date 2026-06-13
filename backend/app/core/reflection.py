@@ -614,7 +614,7 @@ class ReflectionManager:
             id=f"growth_{entry_id}",
             journal_entry_id=entry_id,
             created_at=created_at,
-            message=f"Reverie seems to be growing around {theme} — {behavior}",
+            message=f"She seems more attuned around {theme} lately — {behavior} 💕",
             why=self._growth_why_for_theme(theme, evidence_count),
             theme=theme,
             style=self._config.growth_notification_style,

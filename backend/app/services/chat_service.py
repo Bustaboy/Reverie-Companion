@@ -223,6 +223,8 @@ class ChatService:
         # Keep retrieved continuity context below caller/system instructions and
         # above dialogue. Memory is inserted before reflection so durable facts
         # remain clearer than tentative character-growth hypotheses.
+        # Reflection context supports slow long-term growth on future turns while
+        # the current chat stays responsive because new reflection work runs later.
         context_messages: list[ChatMessage] = []
         character_context = self._compile_character_context(
             request, growth_context=growth_context, request_id=request_id
