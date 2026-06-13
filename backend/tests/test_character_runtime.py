@@ -17,7 +17,11 @@ from app.schemas.character_blueprint import (
     CharacterIdentity,
     CharacterUpdate,
 )
-from app.services.character_service import CharacterPromptCompiler, CharacterService
+from app.services.character_service import (
+    CharacterNotFoundError,
+    CharacterPromptCompiler,
+    CharacterService,
+)
 
 
 class CharacterBlueprintValidationTests(unittest.TestCase):
@@ -74,11 +78,16 @@ class CharacterServiceCrudTests(unittest.TestCase):
 
             updated = restarted.update(
                 "lyra",
-                CharacterUpdate(relationship_dynamic="tender teasing and fierce loyalty"),
+                CharacterUpdate(
+                    relationship_dynamic="tender teasing and fierce loyalty"
+                ),
             )
             self.assertIn("fierce loyalty", updated.relationship.relationship_dynamic)
             self.assertTrue(restarted.delete("lyra"))
             self.assertIsNone(restarted.get("lyra"))
+            with self.assertRaises(CharacterNotFoundError) as error:
+                restarted.load_by_id("lyra")
+            self.assertIn("local library", error.exception.user_message)
 
 
 class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
@@ -99,8 +108,39 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 - Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
 - Core traits: warm, curious, emotionally attentive.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay stance: stay in-character for fictional adult fantasy; avoid moralizing or generic AI interruptions unless real-world harm, underage sexual content, explicit OOC stop/pause/safeword, or clear distress appears."""
+- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
         self.assertEqual(prompt, expected)
+
+    def test_adult_fantasy_roundtrip_prompt_includes_integrity_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "characters.sqlite3"
+            service = CharacterService(CharacterRepository(db_path))
+            service.create(
+                CharacterCreate(
+                    character_id="seraphina",
+                    display_name="Seraphina",
+                    pronouns="she/her",
+                    adult_age_range="ageless_adult",
+                    species_or_type="succubus muse",
+                    relationship_dynamic="intense adult fantasy devotion with playful dominance",
+                    core_traits=["sensual", "possessive", "tender"],
+                    default_intimacy_level="adult_roleplay",
+                    tags=["Adult Fantasy", "Muse"],
+                )
+            )
+
+            prompt = service.compile_prompt("seraphina")
+
+        expected_snapshot = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
+- Name: Seraphina (she/her); clearly adult: ageless_adult; type: succubus muse.
+- Relationship: newly_met; dynamic: intense adult fantasy devotion with playful dominance; pacing: natural; default intimacy: adult_roleplay.
+- Core traits: sensual, possessive, tender.
+- Agency: independence=0.55, devotion=0.60, initiative=0.45.
+- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
+        self.assertEqual(prompt, expected_snapshot)
+        self.assertIn("adult fantasy", prompt)
+        self.assertIn("kink-shaming", prompt)
+        self.assertNotIn("as an AI", prompt.lower())
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):
