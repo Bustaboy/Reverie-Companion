@@ -33,6 +33,10 @@
     ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
   };
 
+  const captureMoment = () => {
+    imageGenerationStore.captureFromMessage(message);
+  };
+
   const generateImage = () => {
     imageGenerationStore.generateFromMessage(message);
   };
@@ -72,14 +76,15 @@
         <button
           type="button"
           class="message-image-button"
-          aria-label="Generate an image from this message"
-          title="Generate an image from this message"
+          aria-label="Capture this moment from this message"
+          title="Capture this moment with character continuity"
           disabled={imageBusy}
-          onclick={generateImage}
+          onclick={captureMoment}
         >
           <span aria-hidden="true">✦</span>
-          <span>{imageBusy ? 'Composing' : 'Generate image'}</span>
+          <span>{imageBusy ? 'Capturing' : 'Capture this moment'}</span>
         </button>
+        <button type="button" class="message-image-button legacy" aria-label="Generate a legacy image from this message" title="Legacy generic image generation" disabled={imageBusy} onclick={generateImage}>Legacy image</button>
       {/if}
       {#if canPlayTTS}
         <button

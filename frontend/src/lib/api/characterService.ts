@@ -14,7 +14,20 @@ export interface CharacterIdentity {
 export interface CharacterRelationshipState {
   relationship_dynamic?: string;
   current_relationship_phase?: string;
+  starting_relationship_phase?: string;
+  phase?: string;
   default_intimacy_level?: string;
+}
+
+export interface CharacterVisualIdentity {
+  schema_version?: string;
+  identity_anchors?: string[];
+  evolving_traits?: Array<{ name: string; value: string; provenance?: string; updated_at?: string }>;
+  scene_mutable_traits?: string[];
+  rejected_traits?: string[];
+  current_appearance?: string | null;
+  adult_only_policy?: Record<string, unknown>;
+  updated_at?: string;
 }
 
 export interface CharacterPersonalityProfile {
@@ -27,6 +40,7 @@ export interface CharacterBlueprint {
   identity: CharacterIdentity;
   relationship?: CharacterRelationshipState;
   personality?: CharacterPersonalityProfile;
+  visual_identity?: CharacterVisualIdentity;
   updated_at?: string;
 }
 

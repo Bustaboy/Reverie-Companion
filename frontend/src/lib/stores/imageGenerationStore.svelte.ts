@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { characterStore } from '$lib/stores/characterStore';
 import {
   imageService,
   ImageServiceError,
@@ -10,7 +12,8 @@ import { settingsStore } from '$lib/stores/settingsStore';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
-import type { VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
+import type { MomentCaptureRequest, SceneState, VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
+import type { CharacterBlueprint } from '$lib/api/characterService';
 
 export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery' | 'moment_capture';
 
@@ -42,6 +45,149 @@ interface QueueImageInput {
 const MAX_VISIBLE_JOBS = 8;
 const PROMPT_SOFT_LIMIT = 900;
 const DEFAULT_CONVERSATION_ID = 'default';
+
+const SESSION_ID = `frontend-${Date.now().toString(36)}`;
+
+const stableHash = (value: unknown): string => {
+  const text = JSON.stringify(value);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fe${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
+
+const compact = (value: string | undefined | null, limit = 240): string | null => {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  return normalized ? normalized.slice(0, limit) : null;
+};
+
+const activeCharacter = (): CharacterBlueprint | null => get(characterStore).selectedCharacter;
+
+const visualIdentitySnapshot = (character: CharacterBlueprint): Record<string, unknown> => {
+  const now = new Date().toISOString();
+  return {
+    schema_version: 'visual_identity_profile.v1',
+    identity_anchors: [
+      ...(character.visual_identity?.identity_anchors ?? []),
+      character.identity.display_name,
+      character.identity.species_or_type
+    ].filter(Boolean),
+    evolving_traits: character.visual_identity?.evolving_traits ?? [],
+    scene_mutable_traits: character.visual_identity?.scene_mutable_traits ?? [],
+    rejected_traits: character.visual_identity?.rejected_traits ?? [],
+    current_appearance: character.visual_identity?.current_appearance ?? character.identity.creator_notes ?? null,
+    adult_only_policy: character.visual_identity?.adult_only_policy ?? {
+      schema_version: 'adult_only_visual_policy.v1',
+      clearly_adult: true,
+      adult_age_range: character.identity.adult_age_range ?? 'mid_20s_adult',
+      adult_baseline_note: 'clearly adult presentation; no underage or deliberately childlike sexual presentation',
+      disallow_underage_or_childlike_sexualization: true
+    },
+    updated_at: character.visual_identity?.updated_at ?? character.updated_at ?? now
+  };
+};
+
+const relationshipPhase = (character: CharacterBlueprint): string =>
+  character.relationship?.phase ?? character.relationship?.current_relationship_phase ?? character.relationship?.starting_relationship_phase ?? 'newly_met';
+
+export const buildMomentCaptureRequestFromMessage = (
+  message: ChatMessage,
+  messages: ChatMessage[],
+  character: CharacterBlueprint,
+  input: { conversationId: string; qualityPreset: ImageQualityPreset }
+): MomentCaptureRequest => {
+  const sourceTurnIndex = Math.max(0, messages.findIndex((candidate) => candidate.id === message.id));
+  const previous = messages.slice(Math.max(0, sourceTurnIndex - 3), sourceTurnIndex).filter((candidate) => candidate.content.trim());
+  const appearance = visualIdentitySnapshot(character);
+  const sceneState: SceneState = {
+    schema_version: 'scene_state.v1',
+    location: compact(message.visualState?.background ?? (message.tts?.emotion?.scene || undefined), 120),
+    time_of_day: null,
+    mood: compact(message.tts?.emotion?.tags?.join(', ') ?? message.tts?.emotion?.scene, 160),
+    emotional_tone: compact(message.tts?.ttsContext?.emotionHint ?? message.tts?.emotion?.scene, 160),
+    character_appearance: [
+      ...((appearance.identity_anchors as string[] | undefined) ?? []),
+      compact(appearance.current_appearance as string | null, 120)
+    ].filter(Boolean) as string[],
+    pose: message.visualState?.pose ?? null,
+    outfit: null,
+    key_objects: message.memoryContext?.items?.map((item) => item.label).slice(0, 6) ?? [],
+    background_details: [message.visualState?.background, message.tts?.emotion?.scene].filter(Boolean) as string[],
+    continuity_notes: [character.relationship?.relationship_dynamic, message.memoryContext?.summary].filter(Boolean) as string[],
+    wrong_appearance: ((appearance.rejected_traits as string[] | undefined) ?? []).slice(0, 12),
+    metadata: {
+      source: 'chat',
+      source_role: message.role,
+      source_excerpt: clipPrompt(message.content),
+      recent_messages: previous.map((candidate) => ({ id: candidate.id, role: candidate.role, content: clipPrompt(candidate.content) })),
+      visual_state: message.visualState,
+      tts_context: message.tts?.ttsContext
+    }
+  };
+  return {
+    schema_version: 'moment_capture.v1',
+    character_id: character.character_id,
+    conversation_id: input.conversationId,
+    session_id: SESSION_ID,
+    source_message_id: message.id,
+    source_turn_index: sourceTurnIndex,
+    scene_state: sceneState,
+    relationship_phase_snapshot: relationshipPhase(character),
+    visual_identity_snapshot: appearance,
+    visual_identity_version: String(appearance.schema_version ?? 'visual_identity_profile.v1'),
+    visual_identity_updated_at: String(appearance.updated_at ?? new Date().toISOString()),
+    prompt_hash: stableHash({ character_id: character.character_id, source: message.content, sceneState, appearanceUpdatedAt: appearance.updated_at }),
+    quality_preset: input.qualityPreset,
+    relevant_visual_memories: [],
+    created_at: new Date().toISOString(),
+    metadata: { capture_source: 'chat', legacy_prompt: promptFromMessage(message) }
+  };
+};
+
+export const buildMomentCaptureRequestFromScene = (
+  scene: ResolvedVisualNovelScene,
+  latestDialogue: string,
+  character: CharacterBlueprint,
+  input: { conversationId: string; qualityPreset: ImageQualityPreset; sourceTurnIndex?: number; sourceMessageId?: string }
+): MomentCaptureRequest => {
+  const appearance = visualIdentitySnapshot(character);
+  const sceneState: SceneState = {
+    schema_version: 'scene_state.v1',
+    location: scene.state.background,
+    time_of_day: scene.state.background === 'night' ? 'night' : null,
+    mood: compact(latestDialogue, 180),
+    emotional_tone: scene.expressionLabel,
+    character_appearance: [...((appearance.identity_anchors as string[] | undefined) ?? []), compact(appearance.current_appearance as string | null, 120)].filter(Boolean) as string[],
+    pose: scene.state.pose,
+    outfit: null,
+    key_objects: [],
+    background_details: [scene.background.alt, scene.state.background].filter(Boolean),
+    continuity_notes: [character.relationship?.relationship_dynamic, scene.usedFallback ? 'Visual novel renderer used fallback assets.' : null].filter(Boolean) as string[],
+    wrong_appearance: ((appearance.rejected_traits as string[] | undefined) ?? []).slice(0, 12),
+    visual_hint: { expression: scene.state.expression, background: scene.state.background },
+    metadata: { source: 'visual_novel', latest_dialogue: clipPrompt(latestDialogue), layers: scene.characterLayers.map((layer) => layer.label), sprite: scene.sprite.alt }
+  };
+  return {
+    schema_version: 'moment_capture.v1',
+    character_id: character.character_id,
+    conversation_id: input.conversationId,
+    session_id: SESSION_ID,
+    source_message_id: input.sourceMessageId ?? `vn-${scene.state.characterId}`,
+    source_turn_index: input.sourceTurnIndex ?? 0,
+    scene_state: sceneState,
+    relationship_phase_snapshot: relationshipPhase(character),
+    visual_identity_snapshot: appearance,
+    visual_identity_version: String(appearance.schema_version ?? 'visual_identity_profile.v1'),
+    visual_identity_updated_at: String(appearance.updated_at ?? new Date().toISOString()),
+    prompt_hash: stableHash({ character_id: character.character_id, scene: sceneState, appearanceUpdatedAt: appearance.updated_at }),
+    quality_preset: input.qualityPreset,
+    relevant_visual_memories: [],
+    created_at: new Date().toISOString(),
+    metadata: { capture_source: 'visual_novel', legacy_prompt: clipPrompt(`Visualize the current visual novel scene with ${scene.manifest.characterName}: ${scene.expressionLabel}, ${scene.poseLabel}, ${scene.state.background}`) }
+  };
+};
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -243,6 +389,16 @@ class ImageGenerationStore {
     return this.jobs.find((job) => job.sourceMessageId === messageId && job.status === 'completed') ?? null;
   }
 
+  captureFromMessage(message: ChatMessage, messages: ChatMessage[] = [message]) {
+    const character = activeCharacter();
+    if (!character) {
+      this.error = 'Select a character before capturing this moment.';
+      this.announcement = this.error;
+      return;
+    }
+    void this.queueMomentCapture(buildMomentCaptureRequestFromMessage(message, messages, character, { conversationId: this.currentConversationId, qualityPreset: this.defaultPreset }), 'Chat moment', message.id);
+  }
+
   generateFromMessage(message: ChatMessage, source: ImageGenerationSource = 'chat-message') {
     if (!message.content.trim()) return;
     void this.queueImage({
@@ -255,9 +411,34 @@ class ImageGenerationStore {
     });
   }
 
+  captureLatestMessage(messages: ChatMessage[]) {
+    const message = [...messages].reverse().find((candidate) => candidate.content.trim() && candidate.status !== 'streaming');
+    if (message) this.captureFromMessage(message, messages);
+  }
+
   generateFromLatestMessage(messages: ChatMessage[]) {
     const message = [...messages].reverse().find((candidate) => candidate.content.trim() && candidate.status !== 'streaming');
     if (message) this.generateFromMessage(message, 'chat-global');
+  }
+
+  captureScene(scene: ResolvedVisualNovelScene, latestDialogue: string, messages: ChatMessage[] = []) {
+    const character = activeCharacter();
+    if (!character) {
+      this.error = 'Select a character before capturing this scene.';
+      this.announcement = this.error;
+      return;
+    }
+    const latest = [...messages].reverse().find((candidate) => candidate.content.trim() && candidate.status !== 'streaming');
+    void this.queueMomentCapture(
+      buildMomentCaptureRequestFromScene(scene, latestDialogue, character, {
+        conversationId: this.currentConversationId,
+        qualityPreset: this.defaultPreset,
+        sourceMessageId: latest?.id,
+        sourceTurnIndex: latest ? Math.max(0, messages.findIndex((candidate) => candidate.id === latest.id)) : 0
+      }),
+      'Visual novel Moment Capture',
+      latest?.id
+    );
   }
 
   visualizeScene(scene: ResolvedVisualNovelScene, latestDialogue: string) {
@@ -462,6 +643,29 @@ class ImageGenerationStore {
 
   setDefaultPreset(preset: ImageQualityPreset) {
     settingsStore.setImageDefaultPreset(preset);
+  }
+
+  private async queueMomentCapture(request: MomentCaptureRequest, sourceLabel: string, sourceMessageId?: string) {
+    this.error = null;
+    this.announcement = ttsStore.isSpeaking ? 'Queued Moment Capture. Voice has priority, so rendering will wait safely.' : 'Queued Moment Capture.';
+    try {
+      const response = await imageService.createMomentCapture(request);
+      const job = jobFromRead(response.job, {
+        source: 'moment_capture',
+        sourceMessageId,
+        sourceLabel,
+        prompt: String(request.metadata.legacy_prompt ?? 'Moment Capture'),
+        context: { moment_capture: { capture_id: response.record.capture_id, scene_state: request.scene_state }, character: { id: request.character_id } },
+        qualityPreset: request.quality_preset,
+        conversationId: request.conversation_id,
+        characterId: request.character_id
+      });
+      this.upsertJob({ ...job, moment_capture_id: response.record.capture_id, character_id: request.character_id, session_id: request.session_id, prompt_hash: request.prompt_hash });
+      this.watchJob(job.job_id);
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
   }
 
   private async queueImage(input: QueueImageInput) {
