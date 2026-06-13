@@ -1049,6 +1049,19 @@ Definition of Done:
 ---
 
 #### M5-P04 — Gallery metadata v2 and character-linked image history
+**Status:** ✅ Completed (PR #146 merged)
+
+**Delivered:**
+- Extended image history records with rich metadata: `character_id`, `session_id`, `moment_capture_id`, `scene_summary`, `prompt_hash`, feedback/review/canon status, and tombstone delete support
+- Backend normalization logic for legacy image history records (backward compatible)
+- Character and conversation filtering support in gallery/history APIs
+- Frontend gallery updates to display character, source/context, capture status, feedback/review/canon status, and saved asset information
+- Improved metadata propagation into `ImageJobEvent` and `ImageJobRead` models
+- Safe tombstone delete behavior that preserves metadata while allowing clean hiding of records
+- Comprehensive backend tests (metadata creation, legacy normalization, filtering, delete consistency)
+- Frontend type safety maintained
+
+**Next dependent tasks:** M5-P05, M5-P07
 
 **Goal**: Make gallery/image history useful as memory-linked evidence, not a pile of anonymous PNGs.
 
