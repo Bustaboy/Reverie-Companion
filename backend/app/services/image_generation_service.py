@@ -128,7 +128,7 @@ TERMINAL_STATUSES = {
 
 IMAGE_HISTORY_SCHEMA_VERSION = 2
 CHARACTER_ASSET_MANIFEST_VERSION = 2
-CAPTURE_ASSET_EXPORT_SCHEMA_VERSION = "capture_asset_export.v1"
+CAPTURE_ASSET_EXPORT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -138,6 +138,38 @@ class ImageOutputReference:
     output_path: str
     local_path: Path | None
     comfyui_view_url: str | None
+
+
+@dataclass(frozen=True)
+class CaptureAssetExportV1:
+    """M5 baseline export metadata for saved capture assets.
+
+    Future M6 character import/export and M8 backup/import/export flows can add
+    new versioned shapes without mutating this v1 contract.
+    """
+
+    asset_id: str
+    capture_id: str | None
+    character_id: str | None
+    source_message_id: str | None
+    feedback_state: str
+    canon_state: str
+    path: str
+    created_at: str
+    schema_version: int = CAPTURE_ASSET_EXPORT_SCHEMA_VERSION
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "asset_id": self.asset_id,
+            "capture_id": self.capture_id,
+            "character_id": self.character_id,
+            "source_message_id": self.source_message_id,
+            "feedback_state": self.feedback_state,
+            "canon_state": self.canon_state,
+            "path": self.path,
+            "created_at": self.created_at,
+        }
 
 
 @dataclass
@@ -1517,17 +1549,16 @@ class ImageGenerationService:
         created_at = datetime.now(timezone.utc).isoformat()
         feedback_state = item.feedback_status
         canon_state = item.canon_status
-        export_metadata = {
-            "schema_version": CAPTURE_ASSET_EXPORT_SCHEMA_VERSION,
-            "asset_id": asset_id,
-            "capture_id": capture_id,
-            "character_id": item.character_id,
-            "source_message_id": item.source_message_id,
-            "feedback_state": feedback_state,
-            "canon_state": canon_state,
-            "path": path_for_manifest,
-            "created_at": created_at,
-        }
+        export_metadata = CaptureAssetExportV1(
+            asset_id=asset_id,
+            capture_id=capture_id,
+            character_id=item.character_id,
+            source_message_id=item.source_message_id,
+            feedback_state=feedback_state,
+            canon_state=canon_state,
+            path=path_for_manifest,
+            created_at=created_at,
+        ).to_manifest()
         # M5-P10 only makes capture asset metadata stable and reusable. Full
         # character import/export belongs to M6-P09; full backup/export/import
         # belongs to M8-P04. Keep this local-first manifest small and avoid

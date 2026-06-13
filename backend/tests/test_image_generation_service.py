@@ -316,7 +316,7 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         assert entry["path"] == f"images/{job.job_id}_0.png"
         assert "created_at" in entry
         assert entry["export"] == {
-            "schema_version": "capture_asset_export.v1",
+            "schema_version": 1,
             "asset_id": f"image:{job.job_id}:0",
             "capture_id": None,
             "character_id": "mira",
@@ -403,7 +403,7 @@ def test_capture_save_asset_manifest_includes_export_metadata_and_filters_unsafe
         assert entry["path"] == f"images/{job.job_id}_0.png"
         assert not entry["path"].startswith("/")
         assert ".." not in entry["path"].split("/")
-        assert entry["export"]["schema_version"] == "capture_asset_export.v1"
+        assert entry["export"]["schema_version"] == 1
         assert entry["export"]["capture_id"] == "cap-99"
 
     asyncio.run(run_test())
