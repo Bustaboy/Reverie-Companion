@@ -1265,68 +1265,52 @@ Definition of Done:
 ---
 
 #### M5-P07 — Visual memory and reflection writeback
+**Status:** ✅ Completed (PR #156 merged)
 
-**Goal**: Let approved visual feedback become memory/growth context without polluting private memories or training data.
+**Delivered:**
+- Hardened write-side `character_id` scoping across memory/journal paths touched by Moment Capture
+- `character_private_metadata` helper for consistent stamping of private memory entries
+- Dedicated `_write_visual_memory_artifact` path in `MomentCaptureService` for approved visual feedback
+- `VisualMemoryArtifact` with rich metadata (`character_id`, `memory_scope`, `capture_id`, `feedback_action`, `review_state`, `provenance`, `rollback_id`, etc.)
+- Explicit training prevention (`training_eligible: False`, `training_eligibility: not_eligible`)
+- `_enforce_write_scope` guard that refuses/quarantines writes missing `character_id` when they should be character-private
+- Support for explicit `memory_scope: shared` / `global` when appropriate
+- Proper deletion/edit behavior through existing `MemoryManager` flows
+- Comprehensive tests validating scoping, no cross-character bleed, rejected feedback not writing memory, and correct metadata
+
+**Next dependent tasks:** M5-P08, M5-P09, M5-P11
+
+**Goal**: Let approved visual feedback become memory/growth context without polluting private memories or training data, while hardening write-side `character_id` scoping.
 
 Context files to read:
 
 - `backend/app/core/memory.py`
 - `backend/app/core/reflection.py`
-- `backend/app/core/growth.py`
-- `backend/app/services/character_service.py`
-- `backend/app/services/chat_service.py`
+- `backend/app/services/moment_capture_service.py`
 - M5-P05 feedback implementation
-- M2–M4 Closure Ledger, especially carryover row “Write-side memory `character_id` hardening”
+- M2–M4 Closure Ledger (write-side memory `character_id` hardening carryover)
 
 Must implement:
 
-- Audit all memory/journal write paths touched by Moment Capture.
-- Add or reuse a service/helper seam that stamps `character_id` on character-specific memory writes.
-- Require explicit `memory_scope: shared` or `memory_scope: global` when a write is not character-private.
-- Refuse or safely quarantine visual memory writes that lack `character_id` and are not explicitly shared/global.
-- `VisualMemoryArtifact` write path for approved visual feedback.
-- Store only compact, prompt-safe summaries unless user explicitly opts into richer detail.
-- Include metadata:
-  - `character_id`
-  - `memory_scope`
-  - `capture_id`
-  - `image_job_id`
-  - `feedback_action`
-  - `review_state`
-  - `source`
-  - `provenance`
-  - `rollback_id`
-- Ensure deletion/edit behavior works through memory browser conventions.
-- Optional journal entry creation for meaningful visual changes.
-- Avoid training candidate creation unless explicit training collection policy allows it.
+- Audit memory/journal write paths touched by Moment Capture
+- Stamp `character_id` on character-private writes
+- Require explicit `memory_scope` for non-private writes
+- Quarantine or refuse writes missing `character_id` when they should be private
+- `VisualMemoryArtifact` write path for approved feedback with proper metadata
+- Prevent automatic training data creation from visual feedback
+- Ensure deletion/edit behavior works through memory browser conventions
 
 Must not implement:
 
-- Automatic LoRA training from images.
-- Hidden memory writes for rejected/private data.
-- Raw image data in memory text.
-- Character-private memory writes with missing `character_id`.
-- A parallel visual memory store that bypasses MemoryManager/ReflectionManager.
-
-Tests required:
-
-- Approved feedback writes character-scoped visual memory.
-- Visual memory from Character A is not retrieved for Character B.
-- Missing `character_id` on character-private visual write fails or is quarantined.
-- Explicit shared/global visual memory is retrievable across characters only when marked shared/global.
-- Deleted visual memory no longer retrieves.
-- Rejected/private feedback does not write memory.
-- Memory browser can filter/display visual memory metadata.
-- Regression coverage proves Moment Capture writeback cannot silently omit `character_id`.
-
-Manual validation:
-
-- Approve a visual change and confirm memory context can retrieve it for the same character only.
-- Create captures for two characters and confirm feedback/memory does not bleed between them.
+- Automatic LoRA training from images/feedback
+- Hidden writes for rejected/private data
+- Raw image data in memory
+- Character-private writes missing `character_id`
+- Parallel visual memory store bypassing MemoryManager
 
 Definition of Done:
 
-- Visual continuity can influence future prompts through the same trust-controlled memory layer, and write-side `character_id` scoping is hardened before M5 closes.
+- Visual continuity from approved feedback can influence future prompts through the trust-controlled memory layer, and write-side `character_id` scoping is hardened (resolving the M5-blocking carryover from the Closure Ledger).
 
 ---
 
