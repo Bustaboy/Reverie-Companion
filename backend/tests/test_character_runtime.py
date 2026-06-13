@@ -10,6 +10,9 @@ from pydantic import ValidationError
 
 from app.core.memory import MemoryManager
 from app.repositories.character_repo import CharacterRepository
+from app.schemas.growth_policy import GrowthPolicy
+from app.schemas.relationship_state import RelationshipState
+from app.schemas.self_reflection_journal import SelfReflectionJournalEntry
 from app.schemas.character_blueprint import (
     AdultAgeRange,
     CharacterBlueprint,
@@ -50,6 +53,58 @@ class CharacterBlueprintValidationTests(unittest.TestCase):
                     adult_only_confirmed=False,
                 ),
             )
+
+
+class RelationshipGrowthJournalSchemaTests(unittest.TestCase):
+    def test_relationship_growth_and_journal_are_versioned_and_scoped(self) -> None:
+        relationship = RelationshipState(
+            character_id="aria",
+            trust_level=0.62,
+            affection_level=0.7,
+            comfort_with_closeness=0.55,
+            dynamic_tags=["Slow Burn", "Slow Burn", "repair"],
+            unresolved_threads=["talk about the promise"],
+            last_interaction="2026-06-13T00:00:00+00:00",
+        )
+        growth = GrowthPolicy(
+            character_id="aria", learning_rate=0.4, reflection_frequency="high"
+        )
+        entry = SelfReflectionJournalEntry(
+            entry_id="journal_aria_1",
+            character_id="aria",
+            insight="She noticed trust grows when reassurance comes before teasing.",
+            linked_memory_id="mem_aria_1",
+        )
+
+        self.assertEqual(relationship.schema_version, "relationship_state.v1")
+        self.assertEqual(relationship.phase, relationship.current_relationship_phase)
+        self.assertEqual(relationship.dynamic_tags, ["Slow Burn", "repair"])
+        self.assertIn("trust=0.62", relationship.prompt_summary())
+        self.assertEqual(growth.schema_version, "growth_policy.v1")
+        self.assertEqual(growth.character_id, "aria")
+        self.assertEqual(entry.schema_version, "self_reflection_journal.v1")
+        self.assertEqual(entry.character_id, "aria")
+
+    def test_character_service_relationship_roundtrip_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "characters.sqlite3"
+            service = CharacterService(CharacterRepository(db_path))
+            service.create(CharacterCreate(character_id="aria", display_name="Aria"))
+            updated = service.update_relationship_state(
+                "aria",
+                {
+                    "trust_level": 0.8,
+                    "affection_level": 0.75,
+                    "dynamic_tags": ["devoted", "playful"],
+                },
+            )
+
+            restarted = CharacterService(CharacterRepository(db_path))
+            loaded = restarted.get_relationship_state("aria")
+
+        self.assertEqual(updated.trust_level, 0.8)
+        self.assertEqual(loaded.affection_level, 0.75)
+        self.assertEqual(loaded.dynamic_tags, ["devoted", "playful"])
 
 
 class CharacterServiceCrudTests(unittest.TestCase):
@@ -106,6 +161,7 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         expected = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
 - Name: Aria (she/her); clearly adult: early_20s_adult; type: human.
 - Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
+- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
 - Core traits: warm, curious, emotionally attentive.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
 - Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
@@ -134,6 +190,7 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         expected_snapshot = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
 - Name: Seraphina (she/her); clearly adult: ageless_adult; type: succubus muse.
 - Relationship: newly_met; dynamic: intense adult fantasy devotion with playful dominance; pacing: natural; default intimacy: adult_roleplay.
+- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
 - Core traits: sensual, possessive, tender.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
 - Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""

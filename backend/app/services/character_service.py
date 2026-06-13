@@ -14,10 +14,10 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
-    RelationshipState,
     PersonalityProfile,
     utc_now_iso,
 )
+from app.schemas.relationship_state import RelationshipState
 
 
 class CharacterNotFoundError(KeyError):
@@ -57,6 +57,7 @@ class CharacterPromptCompiler:
             "Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):",
             f"- Name: {identity.display_name} ({identity.pronouns}); clearly adult: {identity.adult_age_range.value}; type: {identity.species_or_type}.",
             f"- Relationship: {relationship.current_relationship_phase or relationship.starting_relationship_phase}; dynamic: {relationship.relationship_dynamic}; pacing: {relationship.relationship_pacing.value}; default intimacy: {relationship.default_intimacy_level.value}.",
+            f"- Bond state: {relationship.prompt_summary()}.",
             f"- Core traits: {', '.join(personality.core_traits)}.",
             f"- Agency: independence={personality.independence:.2f}, devotion={personality.devotion:.2f}, initiative={personality.dominance_or_initiative:.2f}.",
         ]
@@ -119,6 +120,7 @@ class CharacterService:
                 creator_notes=data.creator_notes,
             ),
             relationship=RelationshipState(
+                character_id=character_id,
                 relationship_dynamic=data.relationship_dynamic,
                 default_intimacy_level=data.default_intimacy_level,
             ),
@@ -178,6 +180,28 @@ class CharacterService:
             }
         )
         return self._repository.upsert(CharacterBlueprint.model_validate(updated))
+
+    def get_relationship_state(self, character_id: str) -> RelationshipState:
+        return self.load_by_id(character_id).relationship
+
+    def update_relationship_state(
+        self, character_id: str, patch: dict[str, object]
+    ) -> RelationshipState:
+        blueprint = self.load_by_id(character_id)
+        updated_relationship = RelationshipState.model_validate(
+            blueprint.relationship.model_copy(
+                update={
+                    **patch,
+                    "character_id": character_id,
+                    "last_updated_at": utc_now_iso(),
+                }
+            )
+        )
+        self.save(blueprint.model_copy(update={"relationship": updated_relationship}))
+        return updated_relationship
+
+    def get_growth_policy(self, character_id: str):
+        return self.load_by_id(character_id).growth_policy
 
     def delete(self, character_id: str) -> bool:
         return self._repository.delete(character_id)

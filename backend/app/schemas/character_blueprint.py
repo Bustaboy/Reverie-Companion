@@ -8,6 +8,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.growth_policy import GrowthPolicy
+from app.schemas.relationship_state import (
+    DefaultIntimacyLevel,
+    RelationshipPacing,
+    RelationshipPhase,
+    RelationshipState,
+)
+
 CHARACTER_BLUEPRINT_VERSION = 1
 MAX_SHORT_TEXT = 240
 MAX_LIST_ITEMS = 12
@@ -29,32 +37,10 @@ class PrivacyScope(StrEnum):
     shared_on_device = "shared_on_device"
 
 
-class RelationshipPhase(StrEnum):
-    strangers = "strangers"
-    newly_met = "newly_met"
-    friends = "friends"
-    close = "close"
-    romantic = "romantic"
-    established_partners = "established_partners"
-
-
-class RelationshipPacing(StrEnum):
-    slow_burn = "slow_burn"
-    natural = "natural"
-    direct = "direct"
-    user_led = "user_led"
-
-
-class DefaultIntimacyLevel(StrEnum):
-    sfw = "sfw"
-    flirtatious = "flirtatious"
-    romantic = "romantic"
-    adult_roleplay = "adult_roleplay"
-
-
 class MemoryScope(StrEnum):
     character_private = "character_private"
     character_plus_shared = "character_plus_shared"
+
 
 
 class CharacterIdentity(BaseModel):
@@ -90,27 +76,6 @@ class CharacterIdentity(BaseModel):
                 seen.add(tag)
                 normalized.append(tag)
         return normalized
-
-
-class RelationshipState(BaseModel):
-    """Current relationship baseline consumed by chat, memory, and growth."""
-
-    starting_relationship_phase: RelationshipPhase = RelationshipPhase.newly_met
-    current_relationship_phase: RelationshipPhase | None = None
-    relationship_dynamic: str = Field(
-        default="warm, emotionally attentive companion", min_length=1, max_length=MAX_SHORT_TEXT
-    )
-    user_desired_experience: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
-    relationship_pacing: RelationshipPacing = RelationshipPacing.natural
-    default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
-    user_role_in_story: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
-
-    @model_validator(mode="after")
-    def fill_current_phase(self) -> "RelationshipState":
-        if self.current_relationship_phase is None:
-            self.current_relationship_phase = self.starting_relationship_phase
-        return self
-
 
 class BigFiveProfile(BaseModel):
     openness: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -172,12 +137,6 @@ class RoleplayPolicy(BaseModel):
         default="Respect explicit OOC stop, pause, safeword, or clear distress immediately.",
         max_length=MAX_SHORT_TEXT,
     )
-
-
-class GrowthPolicy(BaseModel):
-    character_scoped_growth: bool = True
-    evidence_required_for_drift: bool = True
-    allow_lora_candidates: bool = False
 
 
 def utc_now_iso() -> str:
