@@ -24,8 +24,8 @@ class CharacterNotFoundError(KeyError):
     """Raised when a selected companion cannot be found locally."""
 
     user_message = (
-        "We couldn’t find that companion in your local library yet. "
-        "They may need to be imported or created again before this scene can continue."
+        "I couldn’t find that companion in your local library right now. "
+        "Want to create a new one together? 💕"
     )
 
     def __init__(self, character_id: str) -> None:
@@ -69,6 +69,10 @@ class CharacterPromptCompiler:
             )
         if personality.values_or_ideals:
             lines.append(f"- Values: {', '.join(personality.values_or_ideals)}.")
+
+        # Per ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY, inject a compact
+        # roleplay-integrity block so character prompts preserve adult-fiction
+        # immersion while still honoring OOC stops, distress, and hard safety lines.
         lines.append(self._roleplay_integrity_block(roleplay))
         return "\n".join(lines)
 

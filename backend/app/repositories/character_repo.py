@@ -20,7 +20,7 @@ class CharacterRepositoryError(RuntimeError):
 
     user_message = (
         "Your companion library needs a gentle moment before it can save or load that. "
-        "Nothing about your bond was intentionally changed—please try again."
+        "Nothing about your bond was changed—please try again, and I’ll stay close. 💕"
     )
 
     def __init__(self, message: str | None = None) -> None:

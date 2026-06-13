@@ -42,4 +42,13 @@ CREATE INDEX IF NOT EXISTS idx_character_blueprints_relationship_phase
 CREATE INDEX IF NOT EXISTS idx_character_blueprints_updated_at
     ON character_blueprints(updated_at);
 
+-- Character-scoped runtime lookups are hot paths on 8GB-class systems; keep
+-- relationship, reflection, and growth reads index-friendly as those tables land.
+CREATE INDEX IF NOT EXISTS idx_relationship_state_character_id
+    ON relationship_state(character_id);
+CREATE INDEX IF NOT EXISTS idx_self_reflection_journal_character_id
+    ON self_reflection_journal(character_id);
+CREATE INDEX IF NOT EXISTS idx_growth_policy_character_id
+    ON growth_policy(character_id);
+
 COMMIT;
