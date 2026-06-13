@@ -23,7 +23,12 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
-from app.core.memory import MemoryError, MemoryManager, get_memory_manager
+from app.core.memory import (
+    MemoryError,
+    MemoryManager,
+    character_private_metadata,
+    get_memory_manager,
+)
 from app.core.reflection import ReflectionManager, get_reflection_manager
 from app.models.image import ImageGenerateRequest, ImageJobRead
 from app.schemas.moment_capture import (
@@ -408,8 +413,7 @@ class MomentCaptureService:
             "visual_change_event_id": event.event_id if event else None,
             "prompt_hash": record.prompt_hash,
         }
-        memory_metadata = {
-            "character_id": record.character_id,
+        base_memory_metadata = {
             "memory_scope": memory_scope,
             "memory_type": "visual_memory",
             "source": "visual_feedback",
@@ -420,9 +424,15 @@ class MomentCaptureService:
             "provenance": provenance,
             "rollback_id": (event.rollback_id if event else record.rollback_id),
             "training_eligible": False,
+            "training_eligibility": "not_eligible",
             "training_policy": "disabled_without_explicit_collection_policy",
             "tags": ["visual_memory", action.value],
         }
+        memory_metadata = (
+            character_private_metadata(record.character_id, base_memory_metadata)
+            if memory_scope == "character_private"
+            else {**base_memory_metadata, "character_id": record.character_id}
+        )
         try:
             memory = self._memory_manager.add_memory(summary, memory_metadata)
         except MemoryError as exc:
@@ -455,6 +465,10 @@ class MomentCaptureService:
                 "source": "visual_feedback",
                 "provenance": provenance,
                 "rollback_id": event.rollback_id if event else record.rollback_id,
+                "training_candidate": False,
+                "training_eligible": False,
+                "training_eligibility": "not_eligible",
+                "training_policy": "disabled_without_explicit_collection_policy",
             },
         )
         artifacts = [*record.visual_memory_artifacts, artifact]

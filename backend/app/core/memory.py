@@ -26,6 +26,28 @@ from app.core.config import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 
+def character_private_metadata(
+    character_id: str, metadata: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Stamp metadata for a character-private memory write.
+
+    This helper keeps write paths consistent: private character memories must
+    carry the owning ``character_id`` and default to ``memory_scope``
+    ``character_private`` unless a caller has already provided compatible
+    metadata for a narrower use case. Cross-character writes should not use this
+    helper; they must explicitly set ``memory_scope`` to ``shared`` or
+    ``global`` at the call site.
+    """
+
+    normalized_character_id = str(character_id or "").strip()
+    if not normalized_character_id:
+        raise ValueError("Character-private memory metadata requires character_id.")
+    stamped = dict(metadata or {})
+    stamped["character_id"] = normalized_character_id
+    stamped.setdefault("memory_scope", "character_private")
+    return stamped
+
+
 class MemoryError(Exception):
     """Base exception for expected memory infrastructure failures."""
 

@@ -458,7 +458,12 @@ def test_approved_visual_feedback_writes_character_scoped_visual_memory(
     assert metadata["feedback_action"] == "looks_right"
     assert metadata["source"] == "visual_feedback"
     assert metadata["training_eligible"] is False
+    artifact_metadata = response.record.visual_memory_artifacts[0].metadata
     assert response.record.visual_memory_artifacts[0].memory_id == "mem-1"
+    assert response.record.visual_memory_artifacts[0].training_candidate is False
+    assert artifact_metadata["training_candidate"] is False
+    assert artifact_metadata["training_eligible"] is False
+    assert artifact_metadata["training_eligibility"] == "not_eligible"
     assert memory.search_memories("pendant", character_id="aria")
     assert memory.search_memories("pendant", character_id="other") == []
 

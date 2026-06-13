@@ -9,7 +9,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.api.routes.memory import get_memory_browser_service
-from app.core.memory import MemoryManager
+from app.core.memory import MemoryManager, character_private_metadata
 from app.main import app
 
 
@@ -173,6 +173,13 @@ if __name__ == "__main__":
 
 
 class MemoryManagerScopeHardeningTests(unittest.TestCase):
+    def test_character_private_metadata_stamps_character_and_scope(self) -> None:
+        metadata = character_private_metadata("aria", {"source": "visual_feedback"})
+
+        self.assertEqual(metadata["character_id"], "aria")
+        self.assertEqual(metadata["memory_scope"], "character_private")
+        self.assertEqual(metadata["source"], "visual_feedback")
+
     def test_visual_private_write_without_character_id_is_refused(self) -> None:
         manager = MemoryManager.__new__(MemoryManager)
         with self.assertRaises(ValueError):
