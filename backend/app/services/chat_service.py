@@ -224,9 +224,13 @@ class ChatService:
         # above dialogue. Memory is inserted before reflection so durable facts
         # remain clearer than tentative character-growth hypotheses.
         context_messages: list[ChatMessage] = []
-        character_context = self._compile_character_context(request, request_id=request_id)
+        character_context = self._compile_character_context(
+            request, growth_context=growth_context, request_id=request_id
+        )
         if character_context:
-            context_messages.append(ChatMessage(role="system", content=character_context))
+            context_messages.append(
+                ChatMessage(role="system", content=character_context)
+            )
         if memory_context:
             context_messages.append(
                 ChatMessage(
@@ -263,14 +267,21 @@ class ChatService:
         )
 
     def _compile_character_context(
-        self, request: ChatRequest, *, request_id: str | None
+        self,
+        request: ChatRequest,
+        *,
+        growth_context: GrowthContext | None = None,
+        request_id: str | None,
     ) -> str:
         """Load selected character identity without making chat depend on storage."""
 
         if not request.character_id or self._character_service is None:
             return ""
         try:
-            return self._character_service.compile_prompt(request.character_id)
+            return self._character_service.compile_prompt(
+                request.character_id,
+                growth_insights=self._growth_insights_for_prompt(growth_context),
+            )
         except CharacterNotFoundError:
             logger.warning(
                 "Selected character was not found; continuing without character context",
@@ -287,6 +298,31 @@ class ChatService:
                 extra={"request_id": request_id, "error": str(exc)},
             )
             return ""
+
+    def _growth_insights_for_prompt(
+        self, growth_context: GrowthContext | None
+    ) -> list[dict[str, object]]:
+        if growth_context is None:
+            return []
+        insights: list[dict[str, object]] = []
+        for entry in growth_context.reflection_entries[:3]:
+            entry_id = str(entry.get("entry_id") or "")
+            for insight in entry.get("insights", [])[:2]:
+                if not isinstance(insight, dict):
+                    continue
+                summary = str(insight.get("summary") or "").strip()
+                if not summary:
+                    continue
+                insights.append(
+                    {
+                        "entry_id": entry_id,
+                        "summary": summary,
+                        "evidence_ids": [entry_id, *entry.get("linked_memory_ids", [])],
+                    }
+                )
+                if len(insights) >= 3:
+                    return insights
+        return insights
 
     async def _retrieve_memory_context(
         self,
@@ -1099,16 +1135,18 @@ class ChatService:
         """Mirror orchestrator process state for legacy tests and callers."""
 
         type(self)._reflection_lock = GrowthOrchestrator._reflection_lock
-        type(self)._last_reflection_started_at = (
-            GrowthOrchestrator._last_reflection_started_at
-        )
-        type(self)._inflight_reflection_tasks = (
-            GrowthOrchestrator._inflight_reflection_tasks
-        )
-        type(self)._last_growth_notification_at = (
-            GrowthOrchestrator._last_growth_notification_at
-        )
-        type(self)._emitted_growth_notification_ids = (
+        type(
+            self
+        )._last_reflection_started_at = GrowthOrchestrator._last_reflection_started_at
+        type(
+            self
+        )._inflight_reflection_tasks = GrowthOrchestrator._inflight_reflection_tasks
+        type(
+            self
+        )._last_growth_notification_at = GrowthOrchestrator._last_growth_notification_at
+        type(
+            self
+        )._emitted_growth_notification_ids = (
             GrowthOrchestrator._emitted_growth_notification_ids
         )
 

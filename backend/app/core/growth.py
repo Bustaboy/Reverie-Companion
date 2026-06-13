@@ -15,6 +15,7 @@ from app.core.emotion import emotion_inference_engine
 from app.core.lora import PersonalLoRATrainer, get_personal_lora_trainer
 from app.core.memory import MemoryManager, get_memory_manager
 from app.core.reflection import (
+    ReflectionSchedulerConfig,
     JournalEntry,
     ReflectionManager,
     ReflectionScheduler,
@@ -26,6 +27,9 @@ from app.models.chat import (
     ChatRequest,
     GrowthNotification,
 )
+
+from app.schemas.growth_policy import GrowthPace, GrowthPolicy
+from app.services.character_service import CharacterService
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +73,13 @@ class GrowthOrchestrator:
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
         lora_trainer: PersonalLoRATrainer | None = None,
+        character_service: CharacterService | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
         self._lora_trainer = lora_trainer
+        self._character_service = character_service
         self._reflection_scheduler = ReflectionScheduler.from_settings(self._settings)
 
     @classmethod
@@ -93,6 +99,7 @@ class GrowthOrchestrator:
             memory_manager=memory_manager,
             reflection_manager=reflection_manager,
             lora_trainer=lora_trainer,
+            character_service=CharacterService.from_settings(settings),
         )
 
     async def prepare_chat_growth_context(
@@ -197,7 +204,7 @@ class GrowthOrchestrator:
 
         if not self._settings.reflection_enabled or self._reflection_manager is None:
             return
-        decision = self._reflection_scheduler.evaluate(
+        decision = self._scheduler_for_request(request).evaluate(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,
@@ -248,7 +255,9 @@ class GrowthOrchestrator:
         try:
             try:
                 entry = await asyncio.to_thread(
-                    self._reflection_manager.trigger_reflection, history, character_id=character_id
+                    self._reflection_manager.trigger_reflection,
+                    history,
+                    character_id=character_id,
                 )
             except TypeError:
                 entry = await asyncio.to_thread(
@@ -262,17 +271,25 @@ class GrowthOrchestrator:
             return
 
         self.after_journal_entry(
-            entry, trigger_reason=trigger_reason, request_id=request_id
+            entry,
+            character_id=character_id,
+            trigger_reason=trigger_reason,
+            request_id=request_id,
         )
 
     def after_journal_entry(
         self,
         entry: JournalEntry | dict[str, Any],
         *,
+        character_id: str | None = None,
         trigger_reason: str = "manual",
         request_id: str | None = None,
     ) -> None:
-        """Continue the loop after journaling: optional dataset candidate collection."""
+        """Continue the loop after journaling: relationship state and optional LoRA."""
+
+        self._apply_relationship_growth(
+            entry, character_id=character_id, request_id=request_id
+        )
 
         if self._lora_trainer is None or not self._settings.personal_lora_enabled:
             return
@@ -305,7 +322,9 @@ class GrowthOrchestrator:
             )
         try:
             job = self._lora_trainer.evaluate_auto_training()
-        except Exception as exc:  # pragma: no cover - auto training must not affect chat.
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - auto training must not affect chat.
             logger.warning(
                 "Automated personal LoRA training check skipped",
                 extra={"request_id": request_id, "error": str(exc)},
@@ -318,6 +337,98 @@ class GrowthOrchestrator:
                     "request_id": request_id,
                     "job_id": job.get("job_id"),
                     "trigger_reason": job.get("trigger_reason"),
+                },
+            )
+
+    def _scheduler_for_request(self, request: ChatRequest) -> ReflectionScheduler:
+        """Build a cheap per-character scheduler from GrowthPolicy frequency.
+
+        This keeps reflection cadence character-scoped without retaining extra
+        model state or moving reflection onto the active token path.
+        """
+
+        policy = self._growth_policy_for_request(request)
+        if policy is None:
+            return self._reflection_scheduler
+        sensitivity = {
+            GrowthPace.slow: "conservative",
+            GrowthPace.balanced: "balanced",
+            GrowthPace.responsive: "responsive",
+        }[policy.growth_pace]
+        return ReflectionScheduler(
+            ReflectionSchedulerConfig(
+                enabled=self._settings.reflection_enabled
+                and policy.character_scoped_growth,
+                frequency=policy.reflection_frequency.value,
+                sensitivity=sensitivity,
+                user_message_interval=policy.reflection_after_significant_turns,
+                min_interval_seconds=self._settings.reflection_min_interval_seconds,
+                min_user_messages=self._settings.reflection_min_user_messages,
+            )
+        )
+
+    def _growth_policy_for_request(self, request: ChatRequest) -> GrowthPolicy | None:
+        if not request.character_id or self._character_service is None:
+            return None
+        try:
+            return self._character_service.get_growth_policy(request.character_id)
+        except Exception as exc:  # pragma: no cover - graceful storage boundary.
+            logger.debug(
+                "Character growth policy unavailable; using global reflection cadence",
+                extra={"character_id": request.character_id, "error": str(exc)},
+            )
+            return None
+
+    def _apply_relationship_growth(
+        self,
+        entry: JournalEntry | dict[str, Any],
+        *,
+        character_id: str | None,
+        request_id: str | None,
+    ) -> None:
+        if self._character_service is None:
+            return
+        scoped_character_id = character_id or (entry.get("metadata", {}) or {}).get(
+            "character_id"
+        )
+        if not scoped_character_id:
+            return
+        try:
+            policy = self._character_service.get_growth_policy(scoped_character_id)
+            relationship = self._character_service.get_relationship_state(
+                scoped_character_id
+            )
+        except Exception:
+            return
+        confidence = float(entry.get("confidence", 0.0) or 0.0)
+        if confidence < 0.45:
+            return
+        themes = set(str(theme) for theme in entry.get("themes", []) or [])
+        step = min(0.03, max(0.005, policy.learning_rate * confidence * 0.025))
+        patch: dict[str, object] = {}
+        if themes & {"trust", "reassurance", "routine", "growth"}:
+            patch["trust_level"] = min(1.0, relationship.trust_level + step)
+        if themes & {"affection", "intimacy", "playfulness"}:
+            patch["affection_level"] = min(1.0, relationship.affection_level + step)
+        if themes & {"trust", "affection", "intimacy", "routine"}:
+            patch["comfort_with_closeness"] = min(
+                1.0, relationship.comfort_with_closeness + (step * 0.8)
+            )
+        if not patch:
+            return
+        try:
+            self._character_service.update_relationship_state(
+                scoped_character_id, patch
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - relationship growth must not affect chat.
+            logger.debug(
+                "Relationship growth update skipped",
+                extra={
+                    "request_id": request_id,
+                    "character_id": scoped_character_id,
+                    "error": str(exc),
                 },
             )
 
@@ -497,7 +608,7 @@ class GrowthOrchestrator:
         return sum(1 for message in request.messages if message.role == "user")
 
     def reflection_trigger_reason(self, request: ChatRequest) -> str | None:
-        decision = self._reflection_scheduler.evaluate(
+        decision = self._scheduler_for_request(request).evaluate(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,
@@ -577,7 +688,9 @@ class GrowthOrchestrator:
             payload = {"done": True}
 
         if growth_context.growth_notification is not None:
-            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+            payload["growth_notification"] = (
+                growth_context.growth_notification.model_dump()
+            )
 
         if request is not None:
             visual_state = emotion_inference_engine.infer_visual_state(
