@@ -128,6 +128,7 @@ TERMINAL_STATUSES = {
 
 IMAGE_HISTORY_SCHEMA_VERSION = 2
 CHARACTER_ASSET_MANIFEST_VERSION = 2
+CAPTURE_ASSET_EXPORT_SCHEMA_VERSION = "capture_asset_export.v1"
 
 
 @dataclass(frozen=True)
@@ -517,8 +518,11 @@ class ImageGenerationService:
             self._read_json_file(manifest_path, default={}),
             character_id=safe_character_id,
         )
+        item_for_asset = item.model_copy(
+            update={"character_id": item.character_id or safe_character_id}
+        )
         asset_entry = self._build_character_asset_manifest_entry(
-            item=item,
+            item=item_for_asset,
             asset_path=asset_path,
             manifest_path=manifest_path,
             output_index=output_index,
@@ -527,7 +531,8 @@ class ImageGenerationService:
         images = [
             image
             for image in manifest.get("images", [])
-            if not (
+            if image.get("asset_id") != asset_entry["asset_id"]
+            and not (
                 image.get("job_id") == job_id
                 and image.get("output_index") == output_index
             )
@@ -556,7 +561,7 @@ class ImageGenerationService:
             ) from exc
         updated = item.model_copy(
             update={
-                "character_id": item.character_id or safe_character_id,
+                "character_id": item_for_asset.character_id,
                 "saved_to_assets": True,
                 "asset_manifest_path": str(manifest_path),
                 "metadata": {
@@ -1462,11 +1467,23 @@ class ImageGenerationService:
         schema_version = manifest.get("schema_version")
         if not isinstance(schema_version, int):
             schema_version = CHARACTER_ASSET_MANIFEST_VERSION
+        safe_images = []
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            path = image.get("path")
+            if path is not None and not self._is_safe_local_relative_path(str(path)):
+                logger.warning(
+                    "Skipped unsafe character asset manifest entry",
+                    extra={"character_id": character_id, "path": str(path)},
+                )
+                continue
+            safe_images.append(image)
         return {
             **manifest,
             "schema_version": schema_version,
             "character_id": str(manifest.get("character_id") or character_id),
-            "images": [image for image in images if isinstance(image, dict)],
+            "images": safe_images,
         }
 
     def _build_character_asset_manifest_entry(
@@ -1479,28 +1496,70 @@ class ImageGenerationService:
         asset_label: str | None,
     ) -> dict[str, Any]:
         try:
-            manifest_relative_path = asset_path.relative_to(manifest_path.parent)
-            path_for_manifest = manifest_relative_path.as_posix()
-        except ValueError:
-            path_for_manifest = str(asset_path)
+            path_for_manifest = asset_path.relative_to(manifest_path.parent).as_posix()
+        except ValueError as exc:
+            raise ImageGenerationError(
+                "Character asset paths must stay inside the local character asset directory.",
+                code="image_asset_path_unsafe",
+                retryable=False,
+                details={"asset_path": asset_path.name},
+            ) from exc
+        if not self._is_safe_local_relative_path(path_for_manifest):
+            raise ImageGenerationError(
+                "Character asset paths must be relative, safe, and local-only.",
+                code="image_asset_path_unsafe",
+                retryable=False,
+                details={"asset_path": path_for_manifest},
+            )
+
+        asset_id = f"image:{item.job_id}:{output_index}"
+        capture_id = item.moment_capture_id
+        created_at = datetime.now(timezone.utc).isoformat()
+        feedback_state = item.feedback_status
+        canon_state = item.canon_status
+        export_metadata = {
+            "schema_version": CAPTURE_ASSET_EXPORT_SCHEMA_VERSION,
+            "asset_id": asset_id,
+            "capture_id": capture_id,
+            "character_id": item.character_id,
+            "source_message_id": item.source_message_id,
+            "feedback_state": feedback_state,
+            "canon_state": canon_state,
+            "path": path_for_manifest,
+            "created_at": created_at,
+        }
+        # M5-P10 only makes capture asset metadata stable and reusable. Full
+        # character import/export belongs to M6-P09; full backup/export/import
+        # belongs to M8-P04. Keep this local-first manifest small and avoid
+        # copying image binaries except inside explicit save_to_character_assets.
         return {
-            "asset_id": f"image:{item.job_id}:{output_index}",
+            **export_metadata,
             "job_id": item.job_id,
             "conversation_id": item.conversation_id,
             "source": item.source,
-            "source_message_id": item.source_message_id,
             "output_index": output_index,
             "label": asset_label or item.prompt_summary,
-            "path": path_for_manifest,
-            "absolute_path": str(asset_path),
             "source_prompt": item.prompt,
             "negative_prompt": item.negative_prompt,
             "prompt_summary": item.prompt_summary,
             "requested_preset": item.requested_preset.value,
             "active_preset": item.active_preset.value,
             "fallback_used": item.fallback_used,
-            "saved_at": datetime.now(timezone.utc).isoformat(),
+            "review_state": item.review_status,
+            "session_id": item.session_id,
+            "prompt_hash": item.prompt_hash,
+            "scene_summary": item.scene_summary,
+            "saved_at": created_at,
+            "export": export_metadata,
         }
+
+    def _is_safe_local_relative_path(self, value: str) -> bool:
+        path = Path(value)
+        return (
+            bool(value)
+            and not path.is_absolute()
+            and all(part not in {"", ".", ".."} for part in path.parts)
+        )
 
     def _safe_slug(self, value: str) -> str:
         slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()

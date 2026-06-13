@@ -306,8 +306,26 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         )
         assert manifest["schema_version"] == 2
         assert manifest["character_id"] == "mira"
-        assert manifest["images"][0]["asset_id"] == f"image:{job.job_id}:0"
-        assert manifest["images"][0]["path"] == f"images/{job.job_id}_0.png"
+        entry = manifest["images"][0]
+        assert entry["asset_id"] == f"image:{job.job_id}:0"
+        assert entry["capture_id"] is None
+        assert entry["character_id"] == "mira"
+        assert entry["source_message_id"] is None
+        assert entry["feedback_state"] == "pending"
+        assert entry["canon_state"] == "not_requested"
+        assert entry["path"] == f"images/{job.job_id}_0.png"
+        assert "created_at" in entry
+        assert entry["export"] == {
+            "schema_version": "capture_asset_export.v1",
+            "asset_id": f"image:{job.job_id}:0",
+            "capture_id": None,
+            "character_id": "mira",
+            "source_message_id": None,
+            "feedback_state": "pending",
+            "canon_state": "not_requested",
+            "path": f"images/{job.job_id}_0.png",
+            "created_at": entry["created_at"],
+        }
 
         saved_again = await service.save_to_character_assets(
             job.job_id, character_id="Mira", asset_label="Portrait"
@@ -320,6 +338,73 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
 
         remaining = await service.delete_history_item(job.job_id)
         assert remaining.items == []
+
+    asyncio.run(run_test())
+
+
+def test_capture_save_asset_manifest_includes_export_metadata_and_filters_unsafe_paths(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                conversation_id="conv-moment",
+                prompt="asset capture portrait",
+                source="moment_capture",
+                source_message_id="msg-99",
+                context={
+                    "moment_capture": {
+                        "capture_id": "cap-99",
+                        "character_id": "char-mira",
+                        "session_id": "sess-99",
+                        "prompt_hash": "hash-99",
+                        "capture_intent": "exportable capture",
+                    }
+                },
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        output_file = tmp_path / "images" / f"{job.job_id}.png"
+        output_file.write_bytes(b"fake png")
+        manifest_path = tmp_path / "characters" / "char-mira" / "assets" / "manifest.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "character_id": "char-mira",
+                    "images": [
+                        {"asset_id": "bad-absolute", "path": str(tmp_path / "escape.png")},
+                        {"asset_id": "bad-parent", "path": "../escape.png"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        saved = await service.save_to_character_assets(job.job_id, character_id="char-mira")
+        manifest = json.loads(manifest_path.read_text())
+        assert saved.item.asset_manifest_path == str(manifest_path)
+        assert len(manifest["images"]) == 1
+        entry = manifest["images"][0]
+        assert entry["asset_id"] == f"image:{job.job_id}:0"
+        assert entry["capture_id"] == "cap-99"
+        assert entry["character_id"] == "char-mira"
+        assert entry["source_message_id"] == "msg-99"
+        assert entry["feedback_state"] == "pending"
+        assert entry["canon_state"] == "not_requested"
+        assert entry["path"] == f"images/{job.job_id}_0.png"
+        assert not entry["path"].startswith("/")
+        assert ".." not in entry["path"].split("/")
+        assert entry["export"]["schema_version"] == "capture_asset_export.v1"
+        assert entry["export"]["capture_id"] == "cap-99"
 
     asyncio.run(run_test())
 
