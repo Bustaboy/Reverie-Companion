@@ -35,6 +35,7 @@ interface QueueImageInput {
   context?: Record<string, unknown>;
   qualityPreset?: ImageQualityPreset;
   conversationId?: string;
+  characterId?: string;
 }
 
 const MAX_VISIBLE_JOBS = 8;
@@ -138,6 +139,7 @@ class ImageGenerationStore {
   autoGenerateOnAssistant = $state(settingsStore.getSnapshot().imageAutoGenerateOnAssistant);
   defaultPreset = $state<ImageQualityPreset>(settingsStore.getSnapshot().imageDefaultPreset);
   currentConversationId = $state(DEFAULT_CONVERSATION_ID);
+  currentCharacterFilter = $state<string | undefined>(undefined);
 
   private controllers = new Map<string, AbortController>();
 
@@ -256,12 +258,13 @@ class ImageGenerationStore {
     });
   }
 
-  async loadGallery(conversationId = this.currentConversationId) {
+  async loadGallery(conversationId = this.currentConversationId, characterId = this.currentCharacterFilter) {
     this.galleryLoading = true;
     this.error = null;
     this.currentConversationId = conversationId;
+    this.currentCharacterFilter = characterId;
     try {
-      const response = await imageService.listHistory(conversationId);
+      const response = await imageService.listHistory(conversationId, { characterId });
       this.gallery = response.items.slice(0, 80).map(galleryItemFromHistory);
       this.announcement = this.gallery.length ? `Loaded ${this.gallery.length} saved images.` : 'No saved images for this conversation yet.';
     } catch (error) {
@@ -349,7 +352,7 @@ class ImageGenerationStore {
         source: input.source,
         source_message_id: input.sourceMessageId,
         prompt,
-        context: input.context,
+        context: input.characterId ? { ...(input.context ?? {}), character: { ...((input.context?.character as Record<string, unknown> | undefined) ?? {}), id: input.characterId } } : input.context,
         quality_preset: input.qualityPreset ?? this.defaultPreset
       });
       const job = jobFromRead(response.job, { ...input, prompt });

@@ -57,6 +57,16 @@ export interface ImageHistoryItem {
   conversation_id: string;
   source?: string | null;
   source_message_id?: string | null;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_status?: string;
+  review_status?: string;
+  canon_status?: string;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
   prompt: string;
   prompt_summary: string;
   negative_prompt: string;
@@ -224,8 +234,11 @@ export class ImageService {
     }
   }
 
-  async listHistory(conversationId = 'default'): Promise<ImageHistoryResponse> {
-    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}`, {
+  async listHistory(conversationId = 'default', filters: { characterId?: string } = {}): Promise<ImageHistoryResponse> {
+    const params = new URLSearchParams();
+    if (filters.characterId) params.set('character_id', filters.characterId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}${query}`, {
       headers: { Accept: 'application/json' }
     });
     const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);

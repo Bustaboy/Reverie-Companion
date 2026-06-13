@@ -120,6 +120,16 @@ class ImageHistoryItem(BaseModel):
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
+    prompt_hash: str | None = None
+    feedback_status: str = "pending"
+    review_status: str = "unreviewed"
+    canon_status: str = "not_requested"
+    is_deleted: bool = False
+    deleted_at: datetime | None = None
     prompt: str
     prompt_summary: str
     negative_prompt: str
