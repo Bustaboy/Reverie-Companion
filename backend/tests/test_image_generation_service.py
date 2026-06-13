@@ -284,7 +284,17 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         service = make_service(tmp_path, coordinator, adapter)
 
         job = await service.submit(
-            ImageGenerateRequest(conversation_id="conv-a", prompt="asset portrait")
+            ImageGenerateRequest(
+                conversation_id="conv-a",
+                source_message_id="msg-asset",
+                prompt="asset portrait",
+                context={
+                    "moment_capture": {
+                        "capture_id": "cap-asset",
+                        "character_id": "Mira",
+                    }
+                },
+            )
         )
         while service.get_job(job.job_id).status not in {
             ImageJobStatus.completed,
@@ -307,7 +317,32 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         assert manifest["schema_version"] == 2
         assert manifest["character_id"] == "mira"
         assert manifest["images"][0]["asset_id"] == f"image:{job.job_id}:0"
+        assert manifest["images"][0]["capture_id"] == "cap-asset"
+        assert manifest["images"][0]["character_id"] == "mira"
+        assert manifest["images"][0]["source_message_id"] == "msg-asset"
+        assert manifest["images"][0]["feedback_state"] == {
+            "status": "pending",
+            "review_status": "unreviewed",
+        }
+        assert manifest["images"][0]["canon_state"] == {"status": "not_requested"}
         assert manifest["images"][0]["path"] == f"images/{job.job_id}_0.png"
+        assert "created_at" in manifest["images"][0]
+        assert "absolute_path" not in manifest["images"][0]
+        assert manifest["images"][0]["export"] == {
+            "schema_version": "capture_asset_export.v1",
+            "kind": "character_capture_asset",
+            "asset_id": f"image:{job.job_id}:0",
+            "capture_id": "cap-asset",
+            "character_id": "mira",
+            "source_message_id": "msg-asset",
+            "path": f"images/{job.job_id}_0.png",
+            "created_at": manifest["images"][0]["created_at"],
+            "feedback_state": {
+                "status": "pending",
+                "review_status": "unreviewed",
+            },
+            "canon_state": {"status": "not_requested"},
+        }
 
         saved_again = await service.save_to_character_assets(
             job.job_id, character_id="Mira", asset_label="Portrait"
@@ -322,6 +357,28 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         assert remaining.items == []
 
     asyncio.run(run_test())
+
+
+def test_character_asset_manifest_rejects_unsafe_paths(tmp_path) -> None:
+    coordinator = FakeCoordinator(free_vram_mb=7000)
+    adapter = FakeAdapter()
+    service = make_service(tmp_path, coordinator, adapter)
+
+    manifest = service._normalize_character_asset_manifest(  # noqa: SLF001
+        {
+            "schema_version": 2,
+            "images": [
+                {"asset_id": "ok", "path": "images/ok.png"},
+                {"asset_id": "absolute", "path": "/tmp/escape.png"},
+                {"asset_id": "parent", "path": "../escape.png"},
+                {"asset_id": "remote", "path": "https://example.test/a.png"},
+                {"asset_id": "windows", "path": r"..\\escape.png"},
+            ],
+        },
+        character_id="mira",
+    )
+
+    assert [image["asset_id"] for image in manifest["images"]] == ["ok"]
 
 
 def test_image_history_reloads_legacy_flat_items(tmp_path) -> None:

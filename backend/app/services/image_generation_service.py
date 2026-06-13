@@ -128,6 +128,7 @@ TERMINAL_STATUSES = {
 
 IMAGE_HISTORY_SCHEMA_VERSION = 2
 CHARACTER_ASSET_MANIFEST_VERSION = 2
+CAPTURE_ASSET_EXPORT_SCHEMA_VERSION = "capture_asset_export.v1"
 
 
 @dataclass(frozen=True)
@@ -523,6 +524,7 @@ class ImageGenerationService:
             manifest_path=manifest_path,
             output_index=output_index,
             asset_label=asset_label,
+            character_id=safe_character_id,
         )
         images = [
             image
@@ -1466,7 +1468,12 @@ class ImageGenerationService:
             **manifest,
             "schema_version": schema_version,
             "character_id": str(manifest.get("character_id") or character_id),
-            "images": [image for image in images if isinstance(image, dict)],
+            "images": [
+                image
+                for image in images
+                if isinstance(image, dict)
+                and self._is_safe_manifest_relative_path(image.get("path"))
+            ],
         }
 
     def _build_character_asset_manifest_entry(
@@ -1477,22 +1484,53 @@ class ImageGenerationService:
         manifest_path: Path,
         output_index: int,
         asset_label: str | None,
+        character_id: str,
     ) -> dict[str, Any]:
         try:
             manifest_relative_path = asset_path.relative_to(manifest_path.parent)
             path_for_manifest = manifest_relative_path.as_posix()
         except ValueError:
-            path_for_manifest = str(asset_path)
+            raise ImageGenerationError(
+                "Character asset paths must stay inside the local character asset manifest directory.",
+                code="image_asset_path_unsafe",
+                retryable=False,
+                details={
+                    "asset_path": str(asset_path),
+                    "manifest_path": str(manifest_path),
+                },
+            )
+        if not self._is_safe_manifest_relative_path(path_for_manifest):
+            raise ImageGenerationError(
+                "Character asset paths must be relative, local-only paths.",
+                code="image_asset_path_unsafe",
+                retryable=False,
+                details={"asset_path": path_for_manifest},
+            )
+        asset_id = f"image:{item.job_id}:{output_index}"
+        capture_id = item.moment_capture_id or item.job_id
+        character_id = self._safe_slug(item.character_id or character_id)
+        created_at = item.completed_at.isoformat()
+        feedback_state = {
+            "status": item.feedback_status,
+            "review_status": item.review_status,
+        }
+        canon_state = {
+            "status": item.canon_status,
+        }
         return {
-            "asset_id": f"image:{item.job_id}:{output_index}",
+            "asset_id": asset_id,
+            "capture_id": capture_id,
+            "character_id": character_id,
             "job_id": item.job_id,
             "conversation_id": item.conversation_id,
             "source": item.source,
             "source_message_id": item.source_message_id,
+            "feedback_state": feedback_state,
+            "canon_state": canon_state,
             "output_index": output_index,
             "label": asset_label or item.prompt_summary,
             "path": path_for_manifest,
-            "absolute_path": str(asset_path),
+            "created_at": created_at,
             "source_prompt": item.prompt,
             "negative_prompt": item.negative_prompt,
             "prompt_summary": item.prompt_summary,
@@ -1500,7 +1538,35 @@ class ImageGenerationService:
             "active_preset": item.active_preset.value,
             "fallback_used": item.fallback_used,
             "saved_at": datetime.now(timezone.utc).isoformat(),
+            # M5-P10 compatibility metadata only. Full character import/export
+            # belongs to M6-P09; full app backup/export/import belongs to
+            # M8-P04. Keep this shape serializable, relative-path-only, and
+            # local-first so those future flows can reuse it without copying
+            # large binaries unless the user explicitly saved the capture here.
+            "export": {
+                "schema_version": CAPTURE_ASSET_EXPORT_SCHEMA_VERSION,
+                "kind": "character_capture_asset",
+                "asset_id": asset_id,
+                "capture_id": capture_id,
+                "character_id": character_id,
+                "source_message_id": item.source_message_id,
+                "path": path_for_manifest,
+                "created_at": created_at,
+                "feedback_state": feedback_state,
+                "canon_state": canon_state,
+            },
         }
+
+    def _is_safe_manifest_relative_path(self, value: Any) -> bool:
+        if not isinstance(value, str) or not value.strip():
+            return False
+        candidate = Path(value)
+        return (
+            not candidate.is_absolute()
+            and ".." not in candidate.parts
+            and "\\" not in value
+            and "://" not in value
+        )
 
     def _safe_slug(self, value: str) -> str:
         slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
