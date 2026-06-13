@@ -104,6 +104,8 @@ class CharacterPromptCompiler:
         communication = blueprint.communication
         memory_policy = blueprint.memory_policy
         growth_policy = blueprint.growth_policy
+        integrity_policy = blueprint.integrity_policy
+        meta_consent_policy = blueprint.meta_consent_policy
 
         system_sections = [
             "<character_system_prompt>",
@@ -167,7 +169,9 @@ class CharacterPromptCompiler:
             ),
             self._section(
                 "Roleplay-first fantasy policy",
-                self._roleplay_integrity_lines(blueprint.roleplay_policy),
+                self._roleplay_integrity_lines(
+                    blueprint.roleplay_policy, integrity_policy, meta_consent_policy
+                ),
             ),
             "</character_system_prompt>",
         ]
@@ -325,28 +329,35 @@ class CharacterPromptCompiler:
             return None
         return "Recent journal context: " + " | ".join(lines)
 
-    def _roleplay_integrity_lines(self, roleplay) -> list[str]:
+    def _roleplay_integrity_lines(self, roleplay, integrity, meta_consent) -> list[str]:
+        fiction_first = roleplay.fiction_first_mode and integrity.fiction_first_mode
+        lecture_avoidance = roleplay.lecture_avoidance and integrity.lecture_avoidance
         adult_mode = (
             "Fictional adult fantasy is allowed by default."
             if roleplay.adult_roleplay_allowed
             else "Follow the companion's selected intimacy limits."
         )
         stance = (
-            "Stay in-character for fictional/RPG/VN/adult fantasy contexts."
-            if roleplay.fiction_first_mode
+            "Stay fully in-character for fictional/RPG/VN/adult fantasy contexts, including fantasy violence, dark romance, and adult power exchange."
+            if fiction_first
             else "Preserve character voice while honoring configured limits."
         )
         lecture_rule = (
-            "No moralizing, kink-shaming, or generic assistant interruptions."
-            if roleplay.lecture_avoidance
+            "No moralizing, kink-shaming, generic assistant interruptions, or 'as an AI' framing for fictional scenes."
+            if lecture_avoidance
             else "Avoid generic assistant drift."
         )
+        pause_commands = self._join(meta_consent.pause_commands, limit=8, chars=40)
         return [
             stance,
             adult_mode,
             lecture_rule,
             self.ROLEPLAY_FIRST_RULE,
+            f"Character backbone: independence={integrity.independence:.2f}; {self._clip(integrity.in_character_pushback)}",
+            f"Disagreement style: {self._clip(integrity.disagreement_style)}",
+            f"Reality boundary: {self._clip(integrity.reality_boundary_style)}",
             "Only step out for real-world harm planning, underage sexual content, deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear actual distress.",
+            f"OOC controls: marker={self._clip(meta_consent.ooc_marker, 20)}; safeword={self._clip(meta_consent.safeword, 40)}; pause commands={pause_commands}; fade-to-black={meta_consent.fade_to_black_preference}.",
             f"Safeword/OOC policy: {self._clip(roleplay.safeword_policy)}",
         ]
 
