@@ -9,6 +9,7 @@
   let { compact = false }: Props = $props();
   let selected: ImageGalleryItem | null = $state(null);
   let unavailableImages = $state<string[]>([]);
+  let traitDrafts = $state<Record<string, { name: string; value: string; note: string }>>({});
 
   onMount(() => {
     void imageGenerationStore.loadGallery();
@@ -39,6 +40,25 @@
     const name = typeof item.metadata?.character_name === 'string' ? item.metadata.character_name : null;
     return name ?? item.character_id ?? null;
   };
+
+  const draftFor = (item: ImageGalleryItem) => traitDrafts[item.job_id] ?? { name: 'appearance', value: '', note: '' };
+
+  const updateDraft = (item: ImageGalleryItem, patch: Partial<{ name: string; value: string; note: string }>) => {
+    traitDrafts = { ...traitDrafts, [item.job_id]: { ...draftFor(item), ...patch } };
+  };
+
+  const submitTraitFeedback = (item: ImageGalleryItem, action: 'wrong_appearance' | 'make_canon' | 'use_outfit_again' | 'reject_style_trait') => {
+    const draft = draftFor(item);
+    void imageGenerationStore.submitFeedback(item, action, {
+      traitName: draft.name,
+      traitValue: draft.value || item.scene_summary || item.prompt_summary,
+      note: draft.note
+    });
+  };
+
+  const canSubmitStructuredFeedback = (item: ImageGalleryItem): boolean => Boolean(item.moment_capture_id && item.character_id);
+
+  const reviewStateLabel = (value?: string | null): string => value ? value.replaceAll('_', ' ') : 'unreviewed';
 
   const statusChips = (item: ImageGalleryItem): string[] => {
     const chips: string[] = [];
@@ -114,15 +134,81 @@
               <small>Output file is not available from the local image service. Regenerate or reopen ComfyUI, then retry.</small>
             {/if}
           </div>
+          <div class="gallery-feedback" aria-label="Visual continuity feedback">
+            <div class="gallery-review-state" data-state={item.review_status ?? 'unreviewed'}>
+              <span>Review: {reviewStateLabel(item.review_status)}</span>
+              <span>Canon: {reviewStateLabel(item.canon_status)}</span>
+            </div>
+            {#if canSubmitStructuredFeedback(item)}
+              <div class="gallery-quick-actions">
+                <button type="button" onclick={() => imageGenerationStore.submitFeedback(item, 'looks_right')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Looks Right</button>
+                <button type="button" onclick={() => submitTraitFeedback(item, 'use_outfit_again')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Use Outfit Again</button>
+                <button type="button" onclick={() => submitTraitFeedback(item, 'make_canon')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Make Canon</button>
+                <button type="button" onclick={() => imageGenerationStore.submitFeedback(item, 'just_this_scene')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Just This Scene</button>
+              </div>
+              <details class="trait-feedback-panel">
+                <summary>Correct appearance or style</summary>
+                <label>
+                  Trait
+                  <select value={draftFor(item).name} onchange={(event) => updateDraft(item, { name: event.currentTarget.value })}>
+                    <option value="appearance">Appearance</option>
+                    <option value="hair">Hair</option>
+                    <option value="eyes">Eyes</option>
+                    <option value="outfit">Outfit</option>
+                    <option value="style">Style</option>
+                  </select>
+                </label>
+                <label>
+                  What should change?
+                  <input value={draftFor(item).value} placeholder="e.g. amber eyes, not blue" oninput={(event) => updateDraft(item, { value: event.currentTarget.value })} />
+                </label>
+                <label>
+                  Note
+                  <input value={draftFor(item).note} placeholder="Optional context for review" oninput={(event) => updateDraft(item, { note: event.currentTarget.value })} />
+                </label>
+                <div class="gallery-quick-actions">
+                  <button type="button" onclick={() => submitTraitFeedback(item, 'wrong_appearance')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Wrong Appearance</button>
+                  <button type="button" onclick={() => submitTraitFeedback(item, 'reject_style_trait')} disabled={imageGenerationStore.feedbackSubmitting[item.job_id]}>Reject Style Trait</button>
+                </div>
+              </details>
+            {:else}
+              <small>Legacy image: metadata is visible and basic actions remain available; structured feedback needs a character-linked Moment Capture.</small>
+            {/if}
+          </div>
           <div class="gallery-actions" aria-label="Image controls">
             <button type="button" onclick={() => imageGenerationStore.regenerate(item)}>Regenerate</button>
             <button type="button" onclick={() => imageGenerationStore.vary(item)}>Vary</button>
-            <button type="button" onclick={() => imageGenerationStore.saveToCharacterAssets(item)} disabled={imageUnavailable(item)}>{item.saved_to_assets ? 'Saved' : 'Save asset'}</button>
+            <button type="button" onclick={() => imageGenerationStore.saveToCharacterAssets(item, item.character_id ?? 'default')} disabled={imageUnavailable(item)}>{item.saved_to_assets ? 'Saved' : 'Save asset'}</button>
             <button type="button" class="danger" onclick={() => imageGenerationStore.deleteImage(item.job_id)}>Delete</button>
           </div>
         </article>
       {/each}
     </div>
+  {/if}
+
+  {#if imageGenerationStore.visualChanges.length}
+    <aside class="visual-review-panel" aria-label="Pending visual changes">
+      <div>
+        <p class="eyebrow">Visual review</p>
+        <h3>Pending canon changes</h3>
+      </div>
+      {#each imageGenerationStore.visualChanges as event (event.event_id)}
+        <article class="visual-review-item" data-state={event.canon_status}>
+          <strong>{event.changed_trait.replaceAll('_', ' ')} → {event.new_value}</strong>
+          <span>Character {event.character_id} · {event.canon_status.replaceAll('_', ' ')}</span>
+          <p>{event.reason}</p>
+          <div class="gallery-actions">
+            {#if event.canon_status === 'proposed'}
+              <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'approve')}>Approve</button>
+              <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'reject')}>Reject</button>
+            {/if}
+            {#if event.rollback_available}
+              <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'rollback')}>Rollback</button>
+            {/if}
+          </div>
+        </article>
+      {/each}
+    </aside>
   {/if}
 </section>
 

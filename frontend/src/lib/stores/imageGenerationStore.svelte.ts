@@ -4,8 +4,10 @@ import {
   type ImageHistoryItem,
   type ImageJobEvent,
   type ImageJobRead,
-  type ImageQualityPreset
+  type ImageQualityPreset,
+  type VisualFeedbackSubmitRequest
 } from '$lib/api/imageService';
+import type { VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import type { ChatMessage } from '$lib/types/chat';
@@ -142,6 +144,9 @@ class ImageGenerationStore {
   jobs = $state<ImageGenerationJob[]>([]);
   gallery = $state<ImageGalleryItem[]>([]);
   galleryLoading = $state(false);
+  visualChanges = $state<VisualChangeEvent[]>([]);
+  visualChangesLoading = $state(false);
+  feedbackSubmitting = $state<Record<string, boolean>>({});
   error = $state<string | null>(null);
   announcement = $state('Images are ready when you ask.');
   autoGenerateOnAssistant = $state(settingsStore.getSnapshot().imageAutoGenerateOnAssistant);
@@ -275,6 +280,7 @@ class ImageGenerationStore {
       const response = await imageService.listHistory(conversationId, { characterId });
       this.gallery = response.items.slice(0, 80).map(galleryItemFromHistory);
       this.announcement = this.gallery.length ? `Loaded ${this.gallery.length} saved images.` : 'No saved images for this conversation yet.';
+      void this.loadVisualChanges(characterId);
     } catch (error) {
       this.error = normalizeError(error);
       this.announcement = this.error;
@@ -310,6 +316,83 @@ class ImageGenerationStore {
       this.error = normalizeError(error);
       this.announcement = this.error;
     }
+  }
+
+
+  async submitFeedback(item: ImageGalleryItem, action: VisualFeedbackAction, input: { traitName?: string; traitValue?: string; note?: string } = {}) {
+    if (!item.moment_capture_id || !item.character_id) {
+      this.error = 'This legacy image can be regenerated, saved, or deleted, but structured visual feedback needs a character-linked Moment Capture record.';
+      this.announcement = this.error;
+      return;
+    }
+    this.feedbackSubmitting = { ...this.feedbackSubmitting, [item.job_id]: true };
+    this.error = null;
+    try {
+      const request: VisualFeedbackSubmitRequest = {
+        character_id: item.character_id,
+        action,
+        trait_name: input.traitName || undefined,
+        trait_value: input.traitValue || undefined,
+        note: input.note || undefined,
+        source_image_ref: item.output_paths[0] ?? item.job_id,
+        metadata: { image_job_id: item.job_id, prompt_hash: item.prompt_hash }
+      };
+      const response = await imageService.submitMomentCaptureFeedback(item.moment_capture_id, request);
+      this.patchGalleryFromRecord(response.record);
+      if (response.visual_change_event) this.upsertVisualChange(response.visual_change_event);
+      this.announcement = response.visual_change_event
+        ? 'Feedback saved as a pending visual change for review.'
+        : 'Visual feedback saved to this gallery record.';
+      void this.loadGallery(item.conversation_id, item.character_id);
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    } finally {
+      const { [item.job_id]: _done, ...rest } = this.feedbackSubmitting;
+      this.feedbackSubmitting = rest;
+    }
+  }
+
+  async loadVisualChanges(characterId = this.currentCharacterFilter, status: string | null = 'proposed') {
+    this.visualChangesLoading = true;
+    try {
+      this.visualChanges = await imageService.listVisualChanges({ characterId, status });
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    } finally {
+      this.visualChangesLoading = false;
+    }
+  }
+
+  async reviewVisualChange(event: VisualChangeEvent, action: 'approve' | 'reject' | 'rollback') {
+    try {
+      const response = await imageService.reviewVisualChange(event.event_id, action, { characterId: event.character_id });
+      this.upsertVisualChange(response.event);
+      this.announcement = `Visual change ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'rolled back'}.`;
+      void this.loadGallery(this.currentConversationId, event.character_id);
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
+  }
+
+  private patchGalleryFromRecord(record: { image_job_id: string; feedback_state: string; review_state: string; rollback_id?: string | null; metadata?: Record<string, unknown> }) {
+    this.gallery = this.gallery.map((item) =>
+      item.job_id === record.image_job_id
+        ? {
+            ...item,
+            feedback_status: record.feedback_state,
+            review_status: record.review_state,
+            canon_status: record.review_state === 'canon_requested' ? 'proposed' : item.canon_status,
+            metadata: { ...(item.metadata ?? {}), moment_capture_record: record, feedback_summary: record.metadata?.feedback_summary }
+          }
+        : item
+    );
+  }
+
+  private upsertVisualChange(event: VisualChangeEvent) {
+    this.visualChanges = [event, ...this.visualChanges.filter((candidate) => candidate.event_id !== event.event_id)];
   }
 
   async cancel(jobId: string) {

@@ -5492,3 +5492,108 @@ textarea:disabled {
   background: rgba(255, 179, 138, 0.12);
   color: var(--accent-warm, #ffb38a);
 }
+
+.gallery-feedback,
+.trait-feedback-panel,
+.visual-review-panel,
+.visual-review-item {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.gallery-feedback {
+  padding: 0.62rem;
+  border: 1px solid rgba(240, 154, 159, 0.16);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.gallery-review-state,
+.gallery-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+  align-items: center;
+}
+
+.gallery-review-state span {
+  padding: 0.22rem 0.48rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  color: #ffdeda;
+  font-size: 0.72rem;
+  text-transform: capitalize;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gallery-review-state[data-state='canon_requested'],
+.visual-review-item[data-state='proposed'] {
+  border-color: rgba(255, 204, 128, 0.28);
+  box-shadow: 0 0 0 1px rgba(255, 204, 128, 0.08) inset;
+}
+
+.gallery-quick-actions button,
+.trait-feedback-panel button {
+  padding: 0.38rem 0.54rem;
+  color: #ffe4e3;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.trait-feedback-panel {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.trait-feedback-panel summary {
+  color: #ffe8e4;
+  cursor: pointer;
+}
+
+.trait-feedback-panel label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.trait-feedback-panel input,
+.trait-feedback-panel select {
+  width: 100%;
+  padding: 0.42rem 0.52rem;
+  color: #fff2ef;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.72rem;
+  background: rgba(10, 8, 14, 0.52);
+}
+
+.visual-review-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.visual-review-panel h3 {
+  margin: 0.1rem 0 0;
+  color: #fff2ef;
+}
+
+.visual-review-item {
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.visual-review-item strong {
+  color: #fff2ef;
+}
+
+.visual-review-item span,
+.visual-review-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}

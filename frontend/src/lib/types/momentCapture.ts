@@ -6,7 +6,7 @@ export type VisualChangeEventSchemaVersion = 'visual_change_event.v1';
 
 export type FeedbackState = 'pending' | 'looks_right' | 'wrong_appearance' | 'favorite' | 'rejected' | 'deleted';
 export type ReviewState = 'unreviewed' | 'accepted' | 'needs_changes' | 'canon_requested' | 'canonized' | 'rolled_back' | 'deleted';
-export type VisualFeedbackAction = 'looks_right' | 'wrong_appearance' | 'make_canon' | 'use_outfit_again' | 'scene_only' | 'never_use_trait' | 'favorite' | 'delete' | 'rollback';
+export type VisualFeedbackAction = 'looks_right' | 'wrong_appearance' | 'make_canon' | 'use_outfit_again' | 'just_this_scene' | 'reject_style_trait' | 'scene_only' | 'never_use_trait' | 'favorite' | 'delete' | 'rollback';
 export type VisualChangeCanonStatus = 'proposed' | 'approved' | 'canonized' | 'rolled_back' | 'rejected';
 export type ImageQualityPreset = 'preview_8gb' | 'balanced_8gb' | 'high_8gb';
 
