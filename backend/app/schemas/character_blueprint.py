@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.growth_policy import GrowthPolicy
+from app.schemas.visual_identity import VisualIdentityProfile
 from app.schemas.relationship_state import (
     DefaultIntimacyLevel,
     RelationshipPacing,
@@ -241,6 +242,9 @@ class CharacterBlueprint(BaseModel):
         default_factory=MetaConsentAndSafewordPolicy
     )
     growth_policy: GrowthPolicy = Field(default_factory=GrowthPolicy)
+    visual_identity: VisualIdentityProfile = Field(
+        default_factory=VisualIdentityProfile
+    )
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -258,6 +262,11 @@ class CharacterBlueprint(BaseModel):
         if not self.identity.adult_only_confirmed:
             raise ValueError(
                 "Reverie characters must be clearly adult before intimate roleplay."
+            )
+        visual = self.visual_identity
+        if visual.character_id is None or visual.character_id != self.character_id:
+            self.visual_identity = visual.model_copy(
+                update={"character_id": self.character_id}
             )
         return self
 

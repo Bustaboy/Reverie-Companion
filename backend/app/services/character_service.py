@@ -265,23 +265,26 @@ class CharacterPromptCompiler:
         return None
 
     def _visual_scene_hints(self, blueprint: CharacterBlueprint) -> list[str | None]:
-        visual = blueprint.metadata.get("visual_identity") or {}
+        profile = blueprint.visual_identity
+        lines: list[str | None] = [
+            self._optional_line("Visual canon", self.visual_summary(blueprint)),
+            self._optional_line(
+                "Identity anchors", self._join(profile.identity_anchors)
+            ),
+            self._optional_line("Current appearance", profile.current_appearance),
+        ]
+        evolving = [
+            f"{key}: {record.value}"
+            for key, record in list(profile.evolving_traits.items())[
+                : self.MAX_LIST_ITEMS
+            ]
+        ]
+        lines.append(self._optional_line("Evolving traits", self._join(evolving)))
+        lines.append(
+            self._optional_line("Rejected traits", self._join(profile.rejected_traits))
+        )
+
         scene = blueprint.metadata.get("scene_hints") or {}
-        lines: list[str | None] = []
-        if isinstance(visual, dict):
-            for key in ["appearance_anchors", "style_anchors", "negative_anchors"]:
-                value = visual.get(key)
-                if isinstance(value, list):
-                    lines.append(
-                        self._optional_line(
-                            key.replace("_", " ").title(),
-                            self._join([str(item) for item in value]),
-                        )
-                    )
-                elif isinstance(value, str):
-                    lines.append(
-                        self._optional_line(key.replace("_", " ").title(), value)
-                    )
         if isinstance(scene, dict):
             for key in ["setting", "mood", "current_appearance", "props"]:
                 value = scene.get(key)
@@ -291,9 +294,46 @@ class CharacterPromptCompiler:
                     lines.append(
                         self._optional_line(key.replace("_", " ").title(), value)
                     )
-        return lines or [
+        return [line for line in lines if line] or [
             "Use only established appearance or scene details when relevant; do not invent permanent visual canon."
         ]
+
+    def visual_summary(
+        self, blueprint: CharacterBlueprint, *, max_chars: int = 700
+    ) -> str:
+        """Return a compact prompt-safe visual canon summary."""
+
+        profile = blueprint.visual_identity
+        parts = [
+            f"adult policy: {profile.adult_only_policy.adult_baseline}",
+            (
+                f"anchors: {self._join(profile.identity_anchors)}"
+                if profile.identity_anchors
+                else ""
+            ),
+            (
+                f"current: {self._clip(profile.current_appearance, 180)}"
+                if profile.current_appearance
+                else ""
+            ),
+        ]
+        if profile.evolving_traits:
+            parts.append(
+                "evolving: "
+                + self._join(
+                    [
+                        f"{key}={record.value}"
+                        for key, record in profile.evolving_traits.items()
+                    ],
+                    limit=4,
+                    chars=80,
+                )
+            )
+        if profile.rejected_traits:
+            parts.append(
+                "avoid visual drift: " + self._join(profile.rejected_traits, limit=4)
+            )
+        return self._clip("; ".join(part for part in parts if part), max_chars)
 
     def _growth_guidance_block(
         self, growth_insights: list[dict[str, Any]]

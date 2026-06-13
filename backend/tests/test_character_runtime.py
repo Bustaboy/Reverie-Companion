@@ -12,6 +12,7 @@ from app.core.memory import MemoryManager
 from app.repositories.character_repo import CharacterRepository
 from app.schemas.growth_policy import GrowthPolicy
 from app.schemas.relationship_state import RelationshipPhase, RelationshipState
+from app.schemas.visual_identity import AdultOnlyVisualPolicy, VisualIdentityProfile
 from app.schemas.self_reflection_journal import SelfReflectionJournalEntry
 from app.schemas.character_blueprint import (
     AdultAgeRange,
@@ -139,6 +140,109 @@ class RelationshipGrowthJournalSchemaTests(unittest.TestCase):
         self.assertEqual(updated.trust_level, 0.8)
         self.assertEqual(loaded.affection_level, 0.75)
         self.assertEqual(loaded.dynamic_tags, ["devoted", "playful"])
+
+
+class VisualIdentityProfileTests(unittest.TestCase):
+    def test_identity_anchors_persist_across_loads_and_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "characters.sqlite3"
+            service = CharacterService(CharacterRepository(db_path))
+            blueprint = service.create(
+                CharacterCreate(character_id="aria", display_name="Aria")
+            )
+            visual = VisualIdentityProfile(
+                identity_anchors=[
+                    "clearly adult 18+ baseline",
+                    "amber eyes",
+                    "warm brown skin",
+                    "soft oval face with sharp cheekbones",
+                ],
+                current_appearance="black hair with violet undertone; silver choker",
+            )
+            service.save(blueprint.model_copy(update={"visual_identity": visual}))
+
+            restarted = CharacterService(CharacterRepository(db_path))
+            loaded = restarted.load_by_id("aria")
+            restarted.update("aria", CharacterUpdate(display_name="Aria Moon"))
+            updated = restarted.load_by_id("aria")
+
+        self.assertEqual(loaded.visual_identity.character_id, "aria")
+        self.assertIn("amber eyes", loaded.visual_identity.identity_anchors)
+        self.assertIn("warm brown skin", updated.visual_identity.identity_anchors)
+        self.assertEqual(updated.identity.display_name, "Aria Moon")
+
+    def test_evolving_traits_update_with_provenance_and_timestamp(self) -> None:
+        profile = VisualIdentityProfile(
+            character_id="aria",
+            identity_anchors=["clearly adult 18+ baseline", "amber eyes"],
+        )
+
+        updated = profile.with_evolving_trait(
+            "hair style",
+            "long loose waves after the masquerade",
+            provenance="user confirmed after scene scene_42",
+            updated_at="2026-06-13T12:00:00+00:00",
+        )
+
+        self.assertIn("hair_style", updated.evolving_traits)
+        self.assertEqual(
+            updated.evolving_traits["hair_style"].value,
+            "long loose waves after the masquerade",
+        )
+        self.assertEqual(
+            updated.evolving_traits["hair_style"].provenance,
+            "user confirmed after scene scene_42",
+        )
+        self.assertEqual(
+            updated.evolving_traits["hair_style"].updated_at,
+            "2026-06-13T12:00:00+00:00",
+        )
+
+    def test_adult_only_policy_validation(self) -> None:
+        self.assertTrue(
+            VisualIdentityProfile(
+                identity_anchors=["clearly adult 18+ baseline", "petite adult build"],
+                adult_only_policy=AdultOnlyVisualPolicy(
+                    confirmed_adult=True,
+                    adult_baseline="clearly adult early-20s presentation",
+                ),
+            ).adult_only_policy.confirmed_adult
+        )
+        with self.assertRaises(ValidationError):
+            AdultOnlyVisualPolicy(confirmed_adult=False)
+        with self.assertRaises(ValidationError):
+            AdultOnlyVisualPolicy(adult_baseline="youthful school age look")
+
+    def test_prompt_compiler_can_include_compact_visual_summary(self) -> None:
+        profile = VisualIdentityProfile(
+            character_id="aria",
+            identity_anchors=[
+                "clearly adult 18+ baseline",
+                "amber eyes",
+                "warm brown skin",
+                "soft oval face",
+            ],
+            rejected_traits=["blue eyes", "teenage presentation"],
+            current_appearance="black hair with violet undertone; silver choker",
+        ).with_evolving_trait(
+            "signature accessory",
+            "silver choker",
+            provenance="creator canon",
+        )
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+            visual_identity=profile,
+        )
+
+        compiler = CharacterPromptCompiler()
+        summary = compiler.visual_summary(blueprint)
+        prompt = compiler.compile(blueprint)
+
+        self.assertLessEqual(len(summary), 700)
+        self.assertIn("amber eyes", summary)
+        self.assertIn("silver choker", prompt)
+        self.assertIn("Rejected traits: blue eyes, teenage presentation", prompt)
 
 
 class CharacterServiceCrudTests(unittest.TestCase):
