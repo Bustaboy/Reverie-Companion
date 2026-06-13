@@ -1,4 +1,4 @@
-import type { VisualChangeCanonStatus, VisualChangeEvent, VisualChangeReviewRequest, VisualChangeReviewResponse, VisualFeedbackRequest, VisualFeedbackResponse } from '$lib/types/momentCapture';
+import type { MomentCaptureRecord, MomentCaptureRequest, VisualChangeCanonStatus, VisualChangeEvent, VisualChangeReviewRequest, VisualChangeReviewResponse, VisualFeedbackRequest, VisualFeedbackResponse } from '$lib/types/momentCapture';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
@@ -60,6 +60,13 @@ export interface ImageJobRead {
 export interface ImageGenerateResponse {
   request_id: string;
   job: ImageJobRead;
+}
+
+export interface MomentCaptureResponse {
+  request_id: string;
+  record: MomentCaptureRecord;
+  job: ImageJobRead;
+  prompt_bundle?: Record<string, unknown>;
 }
 
 export interface ImageHistoryItem {
@@ -274,6 +281,29 @@ export class ImageService {
     return body as ImageHistoryResponse;
   }
 
+
+  async createMomentCapture(request: MomentCaptureRequest, options: { signal?: AbortSignal } = {}): Promise<MomentCaptureResponse> {
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+    const cancelExternalAbort = this.forwardAbort(options.signal, controller);
+
+    try {
+      const response = await this.fetcher(`${this.baseUrl}/api/moment-capture`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+      const body = await this.parseJsonResponse<MomentCaptureResponse | BackendErrorBody>(response);
+      if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+      return body as MomentCaptureResponse;
+    } catch (error) {
+      throw this.toUserFriendlyError(error);
+    } finally {
+      globalThis.clearTimeout(timeout);
+      cancelExternalAbort();
+    }
+  }
 
   async submitMomentCaptureFeedback(captureId: string, request: VisualFeedbackRequest): Promise<VisualFeedbackResponse> {
     const response = await this.fetcher(`${this.baseUrl}/api/moment-capture/${encodeURIComponent(captureId)}/feedback`, {

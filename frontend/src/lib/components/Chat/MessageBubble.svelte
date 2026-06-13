@@ -8,9 +8,10 @@
 
   interface Props {
     message: ChatMessage;
+    contextMessages?: ChatMessage[];
   }
 
-  let { message }: Props = $props();
+  let { message, contextMessages = [message] }: Props = $props();
 
   const voiceLabel = $derived.by(() => {
     const voiceId = message.tts?.resolvedVoiceId;
@@ -31,6 +32,10 @@
 
   const playMessageAudio = () => {
     ttsStore.playMessage({ messageId: message.id, visibleText: message.content, tts: message.tts, source: 'message' });
+  };
+
+  const captureMoment = () => {
+    imageGenerationStore.captureFromMessage(message, contextMessages);
   };
 
   const generateImage = () => {
@@ -72,13 +77,24 @@
         <button
           type="button"
           class="message-image-button"
-          aria-label="Generate an image from this message"
-          title="Generate an image from this message"
+          aria-label="Capture this moment from this message"
+          title="Capture this moment"
+          disabled={imageBusy}
+          onclick={captureMoment}
+        >
+          <span aria-hidden="true">✦</span>
+          <span>{imageBusy ? 'Capturing' : 'Capture this moment'}</span>
+        </button>
+        <button
+          type="button"
+          class="message-image-button legacy-image-button"
+          aria-label="Generate a legacy image from this message"
+          title="Legacy generic image generation"
           disabled={imageBusy}
           onclick={generateImage}
         >
-          <span aria-hidden="true">✦</span>
-          <span>{imageBusy ? 'Composing' : 'Generate image'}</span>
+          <span aria-hidden="true">◇</span>
+          <span>Generate image</span>
         </button>
       {/if}
       {#if canPlayTTS}

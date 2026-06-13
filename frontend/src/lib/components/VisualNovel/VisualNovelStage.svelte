@@ -79,6 +79,10 @@
     visualNovelStore.markAssetFailed(src);
   };
 
+  const captureScene = () => {
+    imageGenerationStore.captureVisualNovelScene($visualNovelScene, latestAssistantLine);
+  };
+
   const visualizeScene = () => {
     imageGenerationStore.visualizeScene($visualNovelScene, latestAssistantLine);
   };
@@ -133,11 +137,20 @@
         <button
           type="button"
           class="ghost-button"
-          aria-label="Visualize the current scene with local image generation"
+          aria-label="Capture this scene as a Moment Capture"
+          disabled={visualNovelImageBusy}
+          onclick={captureScene}
+        >
+          {visualNovelImageBusy ? 'Capturing scene' : 'Capture this scene'}
+        </button>
+        <button
+          type="button"
+          class="ghost-button legacy-image-button"
+          aria-label="Visualize the current scene with legacy local image generation"
           disabled={visualNovelImageBusy}
           onclick={visualizeScene}
         >
-          {visualNovelImageBusy ? 'Composing scene' : 'Visualize scene'}
+          Visualize scene
         </button>
         <button type="button" class="ghost-button" aria-label="Return to chat mode" onclick={onReturnToChat}>Chat</button>
         <button

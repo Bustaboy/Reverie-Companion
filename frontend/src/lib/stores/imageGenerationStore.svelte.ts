@@ -6,11 +6,13 @@ import {
   type ImageJobRead,
   type ImageQualityPreset
 } from '$lib/api/imageService';
+import { get } from 'svelte/store';
+import { characterStore } from '$lib/stores/characterStore';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
-import type { VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
+import type { MomentCaptureRequest, SceneState, VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
 
 export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery' | 'moment_capture';
 
@@ -44,6 +46,94 @@ const PROMPT_SOFT_LIMIT = 900;
 const DEFAULT_CONVERSATION_ID = 'default';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+
+const stablePromptHash = (value: unknown): string => {
+  const text = JSON.stringify(value);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `ui${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
+
+const currentIso = () => new Date().toISOString();
+
+const normalizeAdultAgeRange = (value?: string): string => {
+  const allowed = new Set(['early_20s_adult', 'mid_20s_adult', 'late_20s_adult', 'adult_30s', 'adult_40s_plus', 'ageless_adult']);
+  return value && allowed.has(value) ? value : 'mid_20s_adult';
+};
+
+const selectedCharacterSnapshot = () => get(characterStore).selectedCharacter;
+
+const visualIdentitySnapshot = () => {
+  const character = selectedCharacterSnapshot();
+  const updatedAt = character?.updated_at ?? currentIso();
+  const anchors = [
+    character?.identity?.display_name,
+    character?.identity?.pronouns,
+    character?.identity?.species_or_type,
+    ...(character?.personality?.core_traits ?? [])
+  ].filter((value): value is string => Boolean(value && value.trim()));
+  return {
+    schema_version: 'visual_identity_profile.v1',
+    identity_anchors: anchors,
+    evolving_traits: [],
+    scene_mutable_traits: [],
+    rejected_traits: [],
+    current_appearance: anchors.length ? anchors.join('; ') : character?.identity?.display_name ?? 'Selected companion',
+    adult_only_policy: {
+      schema_version: 'adult_only_visual_policy.v1',
+      clearly_adult: true,
+      adult_age_range: normalizeAdultAgeRange(character?.identity?.adult_age_range),
+      adult_baseline_note: 'clearly adult presentation; no underage or deliberately childlike sexual presentation',
+      disallow_underage_or_childlike_sexualization: true
+    },
+    updated_at: updatedAt
+  };
+};
+
+const relationshipPhaseSnapshot = (): string =>
+  selectedCharacterSnapshot()?.relationship?.current_relationship_phase ??
+  selectedCharacterSnapshot()?.relationship?.relationship_dynamic ??
+  'newly_met';
+
+const sceneFromMessage = (message: ChatMessage, recentMessages: ChatMessage[]): SceneState => ({
+  schema_version: 'scene_state.v1',
+  mood: message.tts?.emotion?.scene ?? message.visualState?.growthCue ?? null,
+  emotional_tone: message.tts?.emotion?.tags?.join(', ') ?? null,
+  character_appearance: [selectedCharacterSnapshot()?.identity?.display_name ?? 'Reverie'].filter(Boolean),
+  pose: message.visualState?.pose ?? null,
+  outfit: null,
+  key_objects: message.memoryContext?.items?.map((item) => item.label).slice(0, 6) ?? [],
+  background_details: [message.visualState?.background, message.content.slice(0, 180)].filter((value): value is string => Boolean(value)),
+  continuity_notes: recentMessages.slice(-4).map((item) => `${item.role}: ${item.content.slice(0, 160)}`),
+  wrong_appearance: [],
+  metadata: {
+    source: 'chat',
+    role: message.role,
+    message_id: message.id,
+    recent_message_ids: recentMessages.slice(-6).map((item) => item.id),
+    visual_state: message.visualState,
+    memory_summary: message.memoryContext?.summary
+  }
+});
+
+const sceneFromVisualNovel = (scene: ResolvedVisualNovelScene, latestDialogue: string): SceneState => ({
+  schema_version: 'scene_state.v1',
+  location: scene.state.background,
+  mood: latestDialogue.slice(0, 180) || null,
+  emotional_tone: scene.expressionLabel,
+  character_appearance: scene.characterLayers.map((layer) => layer.label).slice(0, 12),
+  pose: scene.poseLabel,
+  outfit: scene.characterLayers.find((layer) => layer.slot === 'clothing')?.label ?? null,
+  key_objects: [],
+  background_details: [scene.background.alt, scene.state.background].filter(Boolean),
+  continuity_notes: [`${scene.expressionLabel} expression`, `${scene.poseLabel} pose`],
+  wrong_appearance: [],
+  metadata: { source: 'visual_novel', visual_state: scene.state, used_fallback: scene.usedFallback, latest_dialogue: latestDialogue }
+});
 
 const clipPrompt = (prompt: string): string => {
   const normalized = prompt.trim().replace(/\s+/g, ' ');
@@ -260,6 +350,37 @@ class ImageGenerationStore {
     if (message) this.generateFromMessage(message, 'chat-global');
   }
 
+  captureFromMessage(message: ChatMessage, messages: ChatMessage[] = [message], source: ImageGenerationSource = 'moment_capture') {
+    if (!message.content.trim()) return;
+    const characterId = get(characterStore).selectedCharacterId;
+    if (!characterId) {
+      this.error = 'Select a character before capturing a moment.';
+      this.announcement = this.error;
+      return;
+    }
+    const sourceTurnIndex = Math.max(0, messages.findIndex((candidate) => candidate.id === message.id));
+    void this.queueMomentCapture({
+      source,
+      sourceLabel: message.role === 'assistant' ? 'Captured chat reply' : 'Captured chat moment',
+      sourceMessageId: message.id,
+      conversationId: this.currentConversationId,
+      request: this.buildMomentCaptureRequest({
+        characterId,
+        conversationId: this.currentConversationId,
+        sessionId: this.currentConversationId,
+        sourceMessageId: message.id,
+        sourceTurnIndex,
+        sceneState: sceneFromMessage(message, messages),
+        metadata: { ui_source: 'chat', source_role: message.role }
+      })
+    });
+  }
+
+  captureLatestMoment(messages: ChatMessage[]) {
+    const message = [...messages].reverse().find((candidate) => candidate.content.trim() && candidate.status !== 'streaming');
+    if (message) this.captureFromMessage(message, messages);
+  }
+
   visualizeScene(scene: ResolvedVisualNovelScene, latestDialogue: string) {
     const dialogue = latestDialogue.trim();
     const prompt = clipPrompt(
@@ -271,6 +392,31 @@ class ImageGenerationStore {
       prompt,
       context: contextFromScene(scene, dialogue),
       qualityPreset: this.defaultPreset
+    });
+  }
+
+  captureVisualNovelScene(scene: ResolvedVisualNovelScene, latestDialogue: string) {
+    const characterId = get(characterStore).selectedCharacterId ?? scene.state.characterId;
+    if (!characterId) {
+      this.error = 'Select a character before capturing a scene.';
+      this.announcement = this.error;
+      return;
+    }
+    const sourceMessageId = `vn-${Date.now()}`;
+    void this.queueMomentCapture({
+      source: 'visual-novel',
+      sourceLabel: 'Captured visual novel scene',
+      sourceMessageId,
+      conversationId: this.currentConversationId,
+      request: this.buildMomentCaptureRequest({
+        characterId,
+        conversationId: this.currentConversationId,
+        sessionId: this.currentConversationId,
+        sourceMessageId,
+        sourceTurnIndex: 0,
+        sceneState: sceneFromVisualNovel(scene, latestDialogue.trim()),
+        metadata: { ui_source: 'visual_novel', latest_dialogue: latestDialogue.trim() }
+      })
     });
   }
 
@@ -462,6 +608,53 @@ class ImageGenerationStore {
 
   setDefaultPreset(preset: ImageQualityPreset) {
     settingsStore.setImageDefaultPreset(preset);
+  }
+
+  private buildMomentCaptureRequest(input: { characterId: string; conversationId: string; sessionId: string; sourceMessageId: string; sourceTurnIndex: number; sceneState: SceneState; metadata: Record<string, unknown> }): MomentCaptureRequest {
+    const visualIdentity = visualIdentitySnapshot();
+    return {
+      schema_version: 'moment_capture.v1',
+      character_id: input.characterId,
+      conversation_id: input.conversationId,
+      session_id: input.sessionId,
+      source_message_id: input.sourceMessageId,
+      source_turn_index: input.sourceTurnIndex,
+      scene_state: input.sceneState,
+      relationship_phase_snapshot: relationshipPhaseSnapshot(),
+      visual_identity_snapshot: visualIdentity,
+      visual_identity_version: String(visualIdentity.schema_version),
+      visual_identity_updated_at: String(visualIdentity.updated_at),
+      prompt_hash: stablePromptHash({ character_id: input.characterId, scene_state: input.sceneState, source_message_id: input.sourceMessageId }),
+      quality_preset: this.defaultPreset,
+      relevant_visual_memories: [],
+      created_at: currentIso(),
+      metadata: input.metadata
+    };
+  }
+
+  private async queueMomentCapture(input: { source: ImageGenerationSource; sourceLabel: string; sourceMessageId: string; conversationId: string; request: MomentCaptureRequest }) {
+    this.error = null;
+    this.announcement = ttsStore.isSpeaking ? 'Queued Moment Capture. Voice has priority, so rendering will wait safely.' : 'Queued Moment Capture.';
+    try {
+      const response = await imageService.createMomentCapture(input.request);
+      const prompt = response.job.prompt || input.request.scene_state.continuity_notes.join(' ');
+      const job = jobFromRead(response.job, {
+        source: input.source,
+        sourceMessageId: input.sourceMessageId,
+        sourceLabel: input.sourceLabel,
+        prompt,
+        conversationId: input.conversationId,
+        characterId: input.request.character_id,
+        context: { moment_capture: { capture_id: response.record.capture_id, scene_state: input.request.scene_state } },
+        qualityPreset: input.request.quality_preset
+      });
+      this.upsertJob(job);
+      this.watchJob(job.job_id);
+      void this.loadGallery(input.conversationId, input.request.character_id);
+    } catch (error) {
+      this.error = normalizeError(error);
+      this.announcement = this.error;
+    }
   }
 
   private async queueImage(input: QueueImageInput) {

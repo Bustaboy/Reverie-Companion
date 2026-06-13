@@ -69,7 +69,7 @@
     {/if}
 
     {#each messages as message (message.id)}
-      <MessageBubble {message} />
+      <MessageBubble {message} contextMessages={messages} />
     {/each}
 
     {#if generationState === 'thinking'}
