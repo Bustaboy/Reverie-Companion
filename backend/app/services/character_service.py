@@ -19,6 +19,7 @@ from app.schemas.character_blueprint import (
     utc_now_iso,
 )
 from app.schemas.relationship_state import RelationshipState
+from app.schemas.visual_identity import VisualIdentityProfile
 
 
 class CharacterNotFoundError(KeyError):
@@ -82,6 +83,7 @@ class CharacterPromptCompiler:
         *,
         growth_insights: list[dict[str, Any]] | None = None,
         journal_entries: list[Any] | None = None,
+        include_visual_summary: bool = False,
     ) -> str:
         """Return a legacy single-string prompt for existing chat integration."""
 
@@ -89,6 +91,7 @@ class CharacterPromptCompiler:
             blueprint,
             growth_insights=growth_insights,
             journal_entries=journal_entries,
+            include_visual_summary=include_visual_summary,
         ).render()
 
     def compile_bundle(
@@ -97,6 +100,7 @@ class CharacterPromptCompiler:
         *,
         growth_insights: list[dict[str, Any]] | None = None,
         journal_entries: list[Any] | None = None,
+        include_visual_summary: bool = False,
     ) -> CharacterPromptBundle:
         identity = blueprint.identity
         relationship = blueprint.relationship
@@ -235,7 +239,12 @@ class CharacterPromptCompiler:
                     ),
                 ],
             ),
-            self._section("Visual / scene hints", self._visual_scene_hints(blueprint)),
+            self._section(
+                "Visual / scene hints",
+                self._visual_scene_hints(
+                    blueprint, include_visual_summary=include_visual_summary
+                ),
+            ),
             "</character_runtime_context>",
         ]
 
@@ -257,6 +266,8 @@ class CharacterPromptCompiler:
         return f"{label}: {clipped}." if clipped else None
 
     def _identity_anchors(self, blueprint: CharacterBlueprint) -> str | None:
+        if blueprint.visual_identity.identity_anchors:
+            return self._join(blueprint.visual_identity.identity_anchors)
         anchors = blueprint.metadata.get("identity_anchors")
         if isinstance(anchors, list):
             return self._join([str(anchor) for anchor in anchors])
@@ -264,10 +275,23 @@ class CharacterPromptCompiler:
             return self._clip(anchors)
         return None
 
-    def _visual_scene_hints(self, blueprint: CharacterBlueprint) -> list[str | None]:
+    def visual_summary_lines(
+        self, blueprint: CharacterBlueprint, *, include_scene_mutable: bool = False
+    ) -> list[str]:
+        return blueprint.visual_identity.compact_prompt_summary(
+            include_scene_mutable=include_scene_mutable
+        )
+
+    def _visual_scene_hints(
+        self, blueprint: CharacterBlueprint, *, include_visual_summary: bool = False
+    ) -> list[str | None]:
         visual = blueprint.metadata.get("visual_identity") or {}
         scene = blueprint.metadata.get("scene_hints") or {}
         lines: list[str | None] = []
+        if include_visual_summary:
+            lines.extend(
+                self.visual_summary_lines(blueprint, include_scene_mutable=True)
+            )
         if isinstance(visual, dict):
             for key in ["appearance_anchors", "style_anchors", "negative_anchors"]:
                 value = visual.get(key)
@@ -492,14 +516,49 @@ class CharacterService:
     def get_growth_policy(self, character_id: str):
         return self.load_by_id(character_id).growth_policy
 
+    def get_visual_identity(self, character_id: str) -> VisualIdentityProfile:
+        return self.load_by_id(character_id).visual_identity
+
+    def update_visual_identity(
+        self, character_id: str, patch: dict[str, object]
+    ) -> VisualIdentityProfile:
+        blueprint = self.load_by_id(character_id)
+        current = blueprint.visual_identity
+        if "evolving_trait" in patch and isinstance(patch["evolving_trait"], dict):
+            trait = patch["evolving_trait"]
+            current = current.with_evolving_trait(
+                str(trait.get("name", "")),
+                str(trait.get("value", "")),
+                provenance=str(trait.get("provenance", "runtime_update")),
+                updated_at=(
+                    trait.get("updated_at")
+                    if isinstance(trait.get("updated_at"), str)
+                    else None
+                ),
+            )
+            patch = {
+                key: value for key, value in patch.items() if key != "evolving_trait"
+            }
+        updated_visual = VisualIdentityProfile.model_validate(
+            current.model_copy(update={**patch, "updated_at": utc_now_iso()})
+        )
+        self.save(blueprint.model_copy(update={"visual_identity": updated_visual}))
+        return updated_visual
+
     def delete(self, character_id: str) -> bool:
         return self._repository.delete(character_id)
 
     def compile_prompt(
-        self, character_id: str, *, growth_insights: list[dict[str, Any]] | None = None
+        self,
+        character_id: str,
+        *,
+        growth_insights: list[dict[str, Any]] | None = None,
+        include_visual_summary: bool = False,
     ) -> str:
         return self._compiler.compile(
-            self.load_by_id(character_id), growth_insights=growth_insights
+            self.load_by_id(character_id),
+            growth_insights=growth_insights,
+            include_visual_summary=include_visual_summary,
         )
 
     def scoped_memory_hooks(self, character_id: str | None) -> ScopedMemoryHooks:
