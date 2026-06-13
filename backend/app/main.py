@@ -20,6 +20,7 @@ from app.api.routes.growth import router as growth_router
 from app.api.routes.images import router as images_router
 from app.api.routes.journal import router as journal_router
 from app.api.routes.memory import router as memory_router
+from app.api.routes.moment_capture import router as moment_capture_router
 from app.api.routes.resources import router as resources_router
 from app.api.routes.tts import router as tts_router
 from app.api.routes.voices import router as voices_router
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(extensions_router)
     app.include_router(journal_router)
     app.include_router(memory_router)
+    app.include_router(moment_capture_router)
     app.include_router(growth_router)
     app.include_router(images_router)
     app.include_router(resources_router)
