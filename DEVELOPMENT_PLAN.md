@@ -887,6 +887,18 @@ Review rubric:
 ---
 
 #### M5-P02 — SceneState and MomentCapture data contracts
+**Status:** ✅ Completed (PR #140 merged)
+
+**Delivered:**
+- Pydantic models: `SceneState`, `MomentCaptureRequest`, `MomentCaptureRecord`, `VisualFeedbackAction`, `VisualChangeEvent`, and `VisualMemoryArtifact`
+- Supporting enums: `FeedbackState`, `ReviewState`, `VisualFeedbackAction`, and `VisualChangeCanonStatus`
+- Rich traceability metadata including `character_id`, `conversation_id`, `source_message_id`, `prompt_hash`, `feedback_state`, `review_state`, `rollback_id`, and related fields
+- Review state transition validation with explicit allowed transitions
+- Legacy image history normalization (`normalize_image_history`)
+- TypeScript mirror types in `frontend/src/lib/types/momentCapture.ts`
+- Clear documentation on deletion behavior, rollback semantics, and handling of linked `visual_memory_artifacts`
+
+**Next dependent tasks:** M5-P03, M5-P04, M5-P05, M5-P07
 
 **Goal**: Define typed request/record/event models for Moment Capture and visual feedback.
 
