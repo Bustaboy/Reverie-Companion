@@ -1,8 +1,16 @@
 """Moment Capture orchestration service.
 
-This service coordinates character loading, visual prompt compilation, queued image
-submission, and durable capture-record persistence. It deliberately does not own
-image generation, block on image completion, or mutate visual canon.
+High-level flow:
+
+1. Load the explicitly selected character through ``CharacterService``.
+2. Build a ``VisualPromptBundle`` through ``VisualPromptCompiler`` using the
+   character visual identity plus scene/dialogue capture context.
+3. Submit an ``ImageGenerateRequest`` to ``ImageGenerationService`` as a queue-only
+   operation; this service never calls image backends or waits for completion.
+4. Create and persist a ``MomentCaptureRecord`` linked to the queued image job.
+
+This service coordinates those boundaries only. It deliberately does not own image
+generation, block on image completion, or mutate visual canon.
 """
 
 from __future__ import annotations

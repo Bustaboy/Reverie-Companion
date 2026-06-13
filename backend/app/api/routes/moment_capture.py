@@ -18,6 +18,12 @@ from app.services.image_generation_service import (
 from app.services.moment_capture_service import MomentCaptureResponse, MomentCaptureService
 
 logger = logging.getLogger(__name__)
+
+# Keep Moment Capture at a top-level companion-native route instead of nesting it
+# under /api/images. Although the orchestration queues an image job, this API is
+# a character/session capture workflow that also creates durable capture records
+# for gallery, memory, and future review flows. Generic image controls remain
+# grouped under /api/images.
 router = APIRouter(prefix="/api/moment-capture", tags=["moment-capture"])
 
 
