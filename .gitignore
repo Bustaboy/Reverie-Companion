@@ -2,8 +2,79 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Python virtual environments and local tooling
+.venv/
+venv/
+env/
+ENV/
+.tmp_pytest/
+.tmp*/
+pip-wheel-metadata/
+*.egg-info/
+
+# Environment and machine-local settings
+.env
+.env.*
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Codex/agent workspace state
+.codex/
+.agents/
 
 # Local-first runtime data stores
 backend/data/
-# Local runtime stores created by default app settings
 /data/
+backend/extensions/
+backend/models/
+/models/
+
+# Local database and vector-store artifacts
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.lance
+*.lance/
+*.lancedb/
+
+# Logs and local diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+uvicorn*.log
+
+# Frontend dependencies, caches, and build output
+node_modules/
+.svelte-kit/
+.vite/
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/.vite/
+frontend/build/
+frontend/dist/
+coverage/
+frontend/coverage/
+
+# Rust/Tauri build output
+target/
+frontend/src-tauri/target/

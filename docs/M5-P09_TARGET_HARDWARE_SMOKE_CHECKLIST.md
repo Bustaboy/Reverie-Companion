@@ -2,6 +2,8 @@
 
 **Status:** Pending for M8 productization unless run on actual RTX 4070 8GB mobile or equivalent hardware. This repository environment does not expose the target GPU, TTS stack, ComfyUI stack, or packaged Tauri runtime, so these checks are not marked as passed here.
 
+**M5-P11 closure note (June 13, 2026):** deterministic backend/frontend verification passed for capture metadata, feedback/review flows, visual memory scoping, retry/cancel metadata preservation, low/unknown VRAM fallback, and non-blocking queue contracts. This checklist remains **Pending M8-P09** for real packaged target-hardware execution with local TTS and ComfyUI available.
+
 ## Target machine
 
 - GPU: RTX 4070 laptop GPU, 8GB VRAM, or equivalent 8GB NVIDIA mobile GPU.

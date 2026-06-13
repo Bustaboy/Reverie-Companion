@@ -1,9 +1,9 @@
 # Reverie — Source of Truth
 
-**Version:** 1.1
-**Date:** June 12, 2026
+**Version:** 1.2
+**Date:** June 13, 2026
 **Owner:** Vision Entertainment / Grok (Vision)
-**Status:** Milestone 3 complete — immersion and production foundations closed.
+**Status:** Milestone 5 complete — Moment Capture & Visual Continuity closed.
 
 ---
 
@@ -26,16 +26,18 @@ Reverie is not a SillyTavern skin and does not depend on SillyTavern as a backen
 
 ---
 
-## 2. Milestone 3 Architecture Overview
+## 2. Architecture Overview Through Milestone 5
 
-Milestone 3 completes Reverie's first production-grade immersion stack. It adds six major pillars around the Milestone 1/2 chat, memory, and growth foundation:
+Milestones 3–5 complete Reverie's first production-grade immersion, character runtime, and visual-continuity stack. They add these major pillars around the Milestone 1/2 chat, memory, and growth foundation:
 
 1. **Visual Novel Foundation:** lightweight sprite/expression mode with reactive emotion state and full-immersive presentation.
 2. **Emotional TTS:** local voice profiles, context-aware routing, mood/prosody enrichment, streaming playback, and per-character tuning.
-3. **In-Chat Image Generation:** local ComfyUI-oriented job orchestration, prompt enrichment, chat/VN display hooks, and persistent gallery history.
-4. **Growth Visibility:** Growth Dashboard, Diary Journal, Memory Browser, Personal LoRA review, and Character Encyclopedia surfaces.
-5. **Extensibility:** typed `extension.v1` manifests, declarative settings sections, bounded event history, and backend/frontend contracts.
-6. **Settings & Release Polish:** searchable Settings & Control Hub, 8GB performance presets, backup/import/reset controls, onboarding, and final documentation.
+3. **Character Runtime:** versioned `CharacterBlueprint` persistence, selected-character chat, relationship state, visual identity, roleplay-first policy, and character-scoped memory/reflection hooks.
+4. **Moment Capture & Visual Continuity:** character-linked capture from chat/VN context, `VisualPromptCompiler`, gallery-as-memory metadata, visual feedback, reviewable `VisualChangeEvent` canon updates, rollback, visual memory writeback, and deterministic evals.
+5. **In-Chat Image Generation:** local ComfyUI-oriented job orchestration, prompt enrichment, chat/VN display hooks, and persistent gallery history.
+6. **Growth Visibility:** Growth Dashboard, Diary Journal, Memory Browser, Personal LoRA review, and Character Encyclopedia surfaces.
+7. **Extensibility:** typed `extension.v1` manifests, declarative settings sections, bounded event history, and backend/frontend contracts.
+8. **Settings & Release Polish:** searchable Settings & Control Hub, 8GB performance presets, backup/import/reset controls, onboarding, and documentation.
 
 ### High-level runtime flow
 
@@ -74,6 +76,7 @@ Chat request
   → Ollama/local LLM response stream
   → final assistant message
   → emotion inference + optional media/growth side effects
+  → optional Moment Capture records selected character, scene, prompt hash, image job, feedback/review state, and visual memory writeback
 ```
 
 **Safety mechanisms:**
@@ -129,7 +132,7 @@ The TTS system makes replies speakable while preserving chat responsiveness. It 
 - Users can disable TTS, autoplay, or mood shaping.
 - Per-character mood settings are visible rather than silently inferred forever.
 
-### 3.4 In-Chat Image Generation
+### 3.4 In-Chat Image Generation and Moment Capture
 
 Image generation is an optional local media layer tied to chat and VN context. It enriches scene prompts with character, memory, mood, and conversation metadata, then queues generation through an 8GB-aware service.
 
@@ -139,6 +142,10 @@ Image generation is an optional local media layer tied to chat and VN context. I
 - Image generation service coordinates jobs, status, cancellation, history, and gallery metadata.
 - Frontend gallery/job cards show progress, completed assets, retry/reuse actions, and local history.
 - Chat and VN can display generated images without making image generation mandatory.
+- Moment Capture wraps image generation in a character/session workflow: selected `character_id`, scene state, visual identity snapshot, relationship phase, source message, prompt hash, job status, feedback state, review state, and saved asset metadata stay linked.
+- Visual feedback actions can create reviewable `VisualChangeEvent`s. Approved changes update `VisualIdentityProfile` with provenance and rollback metadata; rejected/rolled-back changes stay out of positive prompts.
+- Looks-right/favorite-style feedback can create character-scoped visual memory artifacts. Generated visual feedback is not training data unless future explicit opt-in flows are built.
+- The visual consistency eval harness checks identity anchors, rejected traits, scene mutability, distinct-character prompts, feedback/canon review, visual memory scoping, and 8GB queue behavior without calling external image services.
 
 **8GB strategy:**
 
@@ -147,6 +154,7 @@ Image generation is an optional local media layer tied to chat and VN context. I
 - ComfyUI/Flux GGUF workflows are expected to run with low-VRAM/offload settings.
 - The resource coordinator can pause or preempt image work when TTS or chat needs priority.
 - Automatic downgrade explanations are user-facing rather than silent.
+- Capture jobs preserve metadata across retry, cancellation, waiting, downgrade, and safe failure states.
 
 **Futa-Vision readiness:**
 
@@ -338,25 +346,52 @@ Milestone 3 is now fully complete as of June 12, 2026.
 
 **Milestone 3 release posture:** Alpha-foundation ready. Reverie now has a coherent local companion loop where the character can converse, remember, reflect, speak, appear visually, generate scene imagery, expose growth state, protect 8GB hardware, and offer stable extension seams for future work.
 
+### Milestone 4 — Character Runtime & Capability Alignment: Complete
+
+Milestone 4 delivered the runtime substrate required before creator choices can honestly affect the app:
+
+- Versioned local `CharacterBlueprint` storage and APIs.
+- Selected-character chat with prompt compiler grounding.
+- Character-scoped memory/reflection/growth seams.
+- Relationship state, visual identity, growth policy, and roleplay-first character integrity schemas.
+- Minimal frontend character selector and quick-create shell.
+
+### Milestone 5 — Moment Capture & Visual Continuity: Complete
+
+Milestone 5 delivered character-aware visual presence:
+
+- `VisualPromptCompiler` and deterministic visual consistency evals.
+- Moment Capture API/service using selected character, scene state, relationship phase, prompt hash, and existing image queue/resource coordinator.
+- Character-linked gallery metadata and deletion-aware history.
+- Quick/detailed visual feedback actions.
+- Reviewable `VisualChangeEvent` approve/reject/rollback flow.
+- Character-scoped visual memory writeback with no automatic training eligibility.
+- 8GB-safe capture scheduling with TTS priority, queue status, cancellation, retry metadata preservation, preview downgrade, and safe failure payloads.
+- Capture asset metadata compatible with later M6 character portability and M8 backup/export work.
+
+Real target-hardware smoke on RTX 4070 8GB mobile or equivalent remains Pending M8-P09 and must use the recorded M5 checklist.
+
 ---
 
 ## 8. Future Milestones
 
-### Milestone 4 — Alpha Depth
+### Milestone 6 — Basic Character Creator Foundation
 
-- Guided character creation and richer character card import/export.
-- More advanced lorebook/world info tooling.
-- Better long-session recall testing and growth quality evaluation.
-- Stronger adapter training UX and rollback flows.
-- More complete end-to-end packaged setup.
+Build a practical creator that exposes only fields Reverie can already store, consume, preview, validate, and preserve.
 
-### Milestone 5 — Futa-Vision Integration
+### Milestone 7 — Companion Genesis Immersive Creator
 
-- Chat/VN scene metadata triggers reactive video or clip generation.
-- Video generation jobs share resource coordination with image/TTS/training.
-- Character physical continuity, pose state, and scene physics metadata become first-class.
+Wrap the proven M6 creator in the immersive Companion Genesis experience.
 
-### Milestone 6 — Beta / Launch Preparation
+### Milestone 8 — Alpha Hardening & Local Productization
+
+Persistent sessions, setup wizard, backup/export/import, packaged Tauri validation, performance dashboard, long-session evals, and real target-hardware smoke.
+
+### Milestone 9 — Beta Deep Growth & Real Personalization
+
+Real Personal LoRA/adapter training, relationship evolution, lorebook/canon store, proactive initiative, advanced roleplay controls, and deeper visual evolution.
+
+### Milestone 10 — Launch & Monetization Foundations
 
 - Tiered model packaging, contribution flows, broader QA, installer polish, privacy reviews, and public beta readiness.
 
