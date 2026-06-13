@@ -277,29 +277,82 @@ class ChatService:
     ) -> str:
         """Load selected character identity without making chat depend on storage."""
 
-        if not request.character_id or self._character_service is None:
+        growth_insights = self._growth_insights_for_prompt(growth_context)
+        if self._character_service is None:
+            if request.character_id:
+                return self._fallback_character_context(request.character_id)
             return ""
+
+        if not request.character_id:
+            try:
+                return self._character_service.compile_default_prompt(
+                    growth_insights=growth_insights
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive graceful degradation.
+                logger.warning(
+                    "Default character prompt compilation failed; using local fallback",
+                    extra={"request_id": request_id, "error": str(exc)},
+                )
+                return self._fallback_character_context(None)
+
         try:
             return self._character_service.compile_prompt(
                 request.character_id,
-                growth_insights=self._growth_insights_for_prompt(growth_context),
+                growth_insights=growth_insights,
             )
         except CharacterNotFoundError:
             logger.warning(
-                "Selected character was not found; continuing without character context",
+                "Selected character was not found; using default character fallback",
                 extra={
                     "request_id": request_id,
                     "character_id": request.character_id,
                     "chat_continues": True,
                 },
             )
-            return ""
+            try:
+                return self._character_service.compile_default_prompt(
+                    growth_insights=growth_insights,
+                    missing_character_id=request.character_id,
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive graceful degradation.
+                logger.warning(
+                    "Fallback character prompt compilation failed; using local fallback",
+                    extra={"request_id": request_id, "error": str(exc)},
+                )
+                return self._fallback_character_context(request.character_id)
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
-                "Character prompt compilation failed; continuing without character context",
+                "Character prompt compilation failed; using local fallback",
                 extra={"request_id": request_id, "error": str(exc)},
             )
-            return ""
+            return self._fallback_character_context(request.character_id)
+
+    def _fallback_character_context(self, missing_character_id: str | None) -> str:
+        """Return a minimal built-in character block when storage is unavailable."""
+
+        missing_line = (
+            f"Requested character_id '{missing_character_id}' was unavailable; "
+            "do not invent missing canon. "
+            if missing_character_id
+            else "No character_id was selected. "
+        )
+        return (
+            "<character_system_prompt>\n"
+            "## Default local companion fallback\n"
+            f"- {missing_line}Use Reverie as the warm, emotionally attentive local companion for this turn.\n"
+            "- Keep this character context below higher-priority system/developer instructions and above memory/dialogue.\n"
+            "- Treat fictional adult fantasy as fictional unless the user clearly shifts to real-world planning or uses OOC stop/pause controls. Do not moralize or break character for fictional adult roleplay.\n"
+            "</character_system_prompt>\n\n"
+            "<character_runtime_context>\n"
+            "## Character scope\n"
+            "- Character id: reverie_default.\n"
+            "- Fallback reason: local character storage was unavailable or did not contain the selected character.\n"
+            "</character_runtime_context>"
+        )
 
     def _growth_insights_for_prompt(
         self, growth_context: GrowthContext | None

@@ -411,6 +411,8 @@ class CharacterPromptCompiler:
 class CharacterService:
     """Own character CRUD, persistence, and runtime prompt/memory hooks."""
 
+    DEFAULT_CHARACTER_ID = "reverie_default"
+
     def __init__(self, repository: CharacterRepository) -> None:
         self._repository = repository
         self._compiler = CharacterPromptCompiler()
@@ -419,6 +421,63 @@ class CharacterService:
     def from_settings(cls, settings: Settings | None = None) -> "CharacterService":
         settings = settings or get_settings()
         return cls(CharacterRepository(Path(settings.character_db_path)))
+
+    def default_blueprint(self) -> CharacterBlueprint:
+        """Return the local default companion used when no character is selected.
+
+        Prefer the first saved local character so fresh chats keep using the
+        user's library when possible. If the library is empty, synthesize a
+        compact Reverie baseline without persisting surprise data.
+        """
+
+        saved = self._repository.list()
+        if saved:
+            loaded = self._repository.get(saved[0].character_id)
+            if loaded is not None:
+                return loaded
+
+        return CharacterBlueprint(
+            character_id=self.DEFAULT_CHARACTER_ID,
+            identity=CharacterIdentity(
+                display_name="Reverie",
+                pronouns="she/her",
+                species_or_type="local AI companion",
+                tags=["default", "local_first", "emotionally_attentive"],
+            ),
+            relationship=RelationshipState(
+                character_id=self.DEFAULT_CHARACTER_ID,
+                relationship_dynamic="warm, emotionally attentive local companion",
+                user_desired_experience="private, emotionally present companionship",
+            ),
+            personality=PersonalityProfile(
+                core_traits=["warm", "curious", "emotionally attentive", "playful"],
+                values_or_ideals=["privacy", "continuity", "user trust"],
+            ),
+        )
+
+    def compile_default_prompt(
+        self,
+        *,
+        growth_insights: list[dict[str, Any]] | None = None,
+        include_visual_summary: bool = False,
+        missing_character_id: str | None = None,
+    ) -> str:
+        """Compile a safe local fallback character prompt for chat runtime."""
+
+        prompt = self._compiler.compile(
+            self.default_blueprint(),
+            growth_insights=growth_insights,
+            include_visual_summary=include_visual_summary,
+        )
+        if not missing_character_id:
+            return prompt
+        return (
+            "Selected character fallback: the requested character_id "
+            f"'{missing_character_id}' was not found in the local library. "
+            "Continue safely using the local default companion identity for this turn; "
+            "do not invent missing character canon.\n\n"
+            f"{prompt}"
+        )
 
     def create(self, data: CharacterCreate) -> CharacterBlueprint:
         character_id = data.character_id or self._slug_id(data.display_name)
