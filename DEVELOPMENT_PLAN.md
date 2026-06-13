@@ -1368,8 +1368,21 @@ Definition of Done:
 ---
 
 #### M5-P09 — 8GB media scheduling and failure UX hardening
+**Status:** ✅ Completed (PR #162 merged)
 
-**Goal**: Make Moment Capture reliable under local laptop constraints.
+**Delivered:**
+- Capture-specific resource status messaging (queued, waiting for VRAM, paused for TTS, downgraded to preview, cancelled, failed, retryable)
+- Clear UI labels and announcements for capture job states on constrained hardware
+- Confirmed TTS priority: TTS correctly preempts/pauses image/capture jobs
+- Confirmed image generation never blocks active chat
+- Retry and cancel flows preserve full capture metadata (`capture_id`, `character_id`, `session_id`, `prompt_hash`, etc.)
+- Sanitized failure payloads (`_safe_failure_details`) that avoid leaking private prompts while retaining useful debug context
+- Exportable target-hardware smoke checklist (`docs/M5-P09_TARGET_HARDWARE_SMOKE_CHECKLIST.md`) for RTX 4070 8GB mobile, marked as **Pending M8** due to hardware availability in CI
+- Strong test coverage for fallback logic, metadata preservation, and resource events carrying `capture_id`/`character_id`
+
+**Next dependent tasks:** M5-P10, M5-P11
+
+**Goal**: Make Moment Capture reliable and understandable even when running on constrained local hardware (especially RTX 4070 8GB mobile class).
 
 Context files to read:
 
