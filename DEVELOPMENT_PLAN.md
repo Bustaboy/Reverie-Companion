@@ -1448,49 +1448,46 @@ Definition of Done:
 ---
 
 #### M5-P10 — Character asset manifest and capture export compatibility
+**Status:** ✅ Completed (PR #165 merged)
 
-**Goal**: Make captured images usable by future creator/gallery/export flows.
+**Delivered:**
+- Extended character asset manifest entries for captures with stable metadata (`asset_id`, `capture_id`, `character_id`, `source_message_id`, `feedback_state`, `canon_state`, `path`, `created_at`, etc.)
+- Explicit `CaptureAssetExportV1` versioned export shape (`CAPTURE_ASSET_EXPORT_SCHEMA_VERSION = 1`) for future M6/M8 compatibility
+- Safe, non-breaking integration with existing `save_to_character_assets` flow
+- Improved deduplication using stable `asset_id`
+- Only copy files when user explicitly saves to character assets (avoids unnecessary large file duplication)
+- Strict relative/safe path handling
+- Clear documentation in code distinguishing M5 capture metadata compatibility from full M6 character import/export and M8 backup flows
+- Comprehensive tests for manifest population, deduplication, path safety, and backward compatibility
+
+**Next dependent tasks:** M5-P11
+
+**Goal**: Make captured images properly usable by future creator/gallery/export flows (M6 and M8) by ensuring capture asset metadata is stable, complete, and forward-compatible.
 
 Context files to read:
 
 - `backend/app/services/image_generation_service.py`
 - `backend/app/schemas/character_blueprint.py`
+- M5-P04 gallery metadata implementation
 - `CHARACTER_CREATOR_CAPABILITY_MATRIX.md`
-- M5-P04 gallery metadata
 
 Must implement:
 
-- Character asset manifest entries for captures include:
-  - `asset_id`
-  - `capture_id`
-  - `character_id`
-  - `source_message_id`
-  - `feedback_state`
-  - `canon_state`
-  - `path`
-  - `created_at`
-- Ensure existing `save_to_character_assets` behavior remains compatible.
-- Add export-friendly metadata shape for future M6 character import/export and M8 full backup/import/export.
-- Document that M5 only provides capture/asset metadata compatibility; full character import/export is owned by M6-P09 and full backup/export/import by M8-P04.
-- Avoid copying large files unless user explicitly saves to assets.
-- Keep relative paths safe and local.
+- Extend character asset manifest entries for captures with required fields
+- Ensure `save_to_character_assets` remains fully compatible
+- Add export-friendly metadata shape
+- Document M5 vs M6/M8 ownership
+- Safe relative paths and no unnecessary file copying
 
 Must not implement:
 
-- Full character export UI.
-- Full asset manager.
-- Remote upload/sync.
-
-Tests required:
-
-- Save capture to character assets.
-- Manifest is stable and deduplicated.
-- Unsafe paths rejected.
-- Existing image history still loads.
+- Full character export UI or flows
+- Full asset manager / browser
+- Remote/cloud functionality
 
 Definition of Done:
 
-- M6 creator import/export and M8 full backup/import/export work can reuse capture asset metadata without migrating again.
+- M6 creator import/export and M8 full backup/import/export work can reuse capture asset metadata from M5 without needing to migrate or restructure it again.
 
 ---
 
