@@ -1428,6 +1428,19 @@ Manual validation:
   - gallery metadata remains intact
   - no chat blocking
 
+Target-hardware smoke checklist template (RTX 4070 8GB mobile or equivalent):
+
+| Check | Expected result | M5-P09 status | Evidence |
+|---|---|---|---|
+| Chat streaming while idle | Chat streams normally with no media lock held. | Pending until physical target hardware is available; carry to M8 validation. | Not run in this container. |
+| TTS playback | TTS starts promptly and keeps priority over media work. | Pending until physical target hardware is available; carry to M8 validation. | Not run in this container. |
+| Capture queued while TTS is active | Capture/image job reports paused for TTS and resumes after speech. | Pending until physical target hardware is available; carry to M8 validation. | Not run in this container. |
+| Low/unknown VRAM capture | Capture downgrades to preview or waits for VRAM with visible messaging. | Pending until physical target hardware is available; carry to M8 validation. | Not run in this container. |
+| Cancel capture | Cancellation preserves `capture_id`, `character_id`, session, prompt hash, and safe debug context. | Pending until physical target hardware is available; carry to M8 validation. | Covered by automated service tests only. |
+| Retry capture | Retry preserves full capture context and remains visible to the user. | Pending until physical target hardware is available; carry to M8 validation. | Covered by automated/store-level behavior only. |
+| Gallery metadata intact | Completed image remains evidence with metadata, not automatic truth. | Pending until physical target hardware is available; carry to M8 validation. | Covered by automated service tests only. |
+| Chat never blocked | Chat remains available while media is queued/waiting/running. | Pending until physical target hardware is available; carry to M8 validation. | Architecture uses the separate image queue; target smoke still pending. |
+
 Definition of Done:
 
 - Moment Capture feels safe and understandable even when local hardware says “no,” and target-hardware validation is either completed or explicitly tracked as pending for M8.

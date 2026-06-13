@@ -12,7 +12,7 @@ import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
 import type { VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
 
-export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery';
+export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery' | 'moment_capture';
 
 export interface ImageGenerationJob extends ImageJobRead {
   source: ImageGenerationSource;
@@ -94,6 +94,7 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   character_id: event.character_id,
   session_id: event.session_id,
   moment_capture_id: event.moment_capture_id,
+  capture_id: event.capture_id,
   scene_summary: event.scene_summary,
   prompt_hash: event.prompt_hash,
   feedback_status: event.feedback_status,
@@ -101,6 +102,9 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   canon_status: event.canon_status,
   pressure: event.pressure,
   warning: event.warning,
+  user_status_label: event.user_status_label,
+  retryable: event.retryable,
+  debug_context: event.debug_context,
   imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
 });
 
@@ -181,18 +185,19 @@ class ImageGenerationStore {
   get statusLabel() {
     const active = this.activeJobs[0];
     if (!active) return this.error ? 'Image generation needs attention' : 'Images ready';
-    if (ttsStore.isSpeaking || ttsStore.presenceState === 'preparing') return 'Images paused for voice';
-    if (active.status === 'paused') return 'Image generation paused';
-    if (active.status === 'waiting_for_resources') return 'Checking VRAM for image generation';
+    if (active.user_status_label) return active.user_status_label;
+    if (ttsStore.isSpeaking || ttsStore.presenceState === 'preparing') return active.moment_capture_id ? 'Moment Capture paused for TTS' : 'Images paused for voice';
+    if (active.status === 'paused') return active.moment_capture_id ? 'Moment Capture paused' : 'Image generation paused';
+    if (active.status === 'waiting_for_resources') return active.moment_capture_id ? 'Moment Capture waiting for VRAM' : 'Checking VRAM for image generation';
     if (active.status === 'running') return 'Composing image';
     return 'Image queued';
   }
 
   get resourceAwarenessLabel() {
-    if (ttsStore.isSpeaking || ttsStore.presenceState === 'preparing') {
-      return 'Voice has priority; image work will resume automatically.';
-    }
     const active = this.activeJobs[0];
+    if (ttsStore.isSpeaking || ttsStore.presenceState === 'preparing') {
+      return active?.moment_capture_id ? 'TTS has priority; capture rendering will resume with the same capture metadata.' : 'Voice has priority; image work will resume automatically.';
+    }
     if (!active) return 'Image generation stays idle until you ask.';
     if (active.vram_free_mb !== null && active.vram_free_mb !== undefined && active.vram_required_mb) {
       return `${active.vram_free_mb} MiB VRAM free · ${active.vram_required_mb} MiB target.`;
@@ -246,12 +251,13 @@ class ImageGenerationStore {
   }
 
   regenerate(jobOrItem: ImageGenerationJob | ImageGalleryItem) {
+    const retryContext = this.retryContextFromJobOrItem(jobOrItem, 'regenerate');
     void this.queueImage({
-      source: 'gallery',
-      sourceLabel: 'Regenerated image',
+      source: retryContext.moment_capture ? 'moment_capture' : 'gallery',
+      sourceLabel: retryContext.moment_capture ? 'Moment Capture retry' : 'Regenerated image',
       sourceMessageId: 'sourceMessageId' in jobOrItem ? jobOrItem.sourceMessageId : jobOrItem.source_message_id ?? undefined,
       prompt: 'displayPrompt' in jobOrItem ? jobOrItem.displayPrompt : jobOrItem.prompt,
-      context: { source: 'regenerate', original_job_id: jobOrItem.job_id },
+      context: retryContext,
       qualityPreset: jobOrItem.requested_preset ?? this.defaultPreset,
       conversationId: jobOrItem.conversation_id ?? this.currentConversationId
     });
@@ -429,6 +435,36 @@ class ImageGenerationStore {
     settingsStore.setImageDefaultPreset(preset);
   }
 
+  private contextForRequest(input: QueueImageInput): Record<string, unknown> | undefined {
+    const context = { ...(input.context ?? {}) };
+    if (input.characterId) {
+      context.character = { ...((context.character as Record<string, unknown> | undefined) ?? {}), id: input.characterId };
+    }
+    return Object.keys(context).length ? context : undefined;
+  }
+
+  private retryContextFromJobOrItem(jobOrItem: ImageGenerationJob | ImageGalleryItem, retryAction: string): Record<string, unknown> {
+    const metadata = ('metadata' in jobOrItem ? jobOrItem.metadata : undefined) ?? {};
+    const sceneState = (metadata.scene_state as Record<string, unknown> | undefined) ?? undefined;
+    const characterId = jobOrItem.character_id ?? (metadata.character_id as string | undefined);
+    const captureId = jobOrItem.moment_capture_id ?? (metadata.moment_capture_id as string | undefined) ?? (metadata.capture_id as string | undefined);
+    return {
+      source: retryAction,
+      original_job_id: jobOrItem.job_id,
+      character: characterId ? { id: characterId } : undefined,
+      moment_capture: captureId
+        ? {
+            capture_id: captureId,
+            character_id: characterId,
+            session_id: jobOrItem.session_id ?? (metadata.session_id as string | undefined),
+            prompt_hash: jobOrItem.prompt_hash ?? (metadata.prompt_hash as string | undefined),
+            capture_intent: 'prompt_summary' in jobOrItem ? jobOrItem.prompt_summary : jobOrItem.displayPrompt,
+            scene_state: sceneState
+          }
+        : undefined
+    };
+  }
+
   private async queueImage(input: QueueImageInput) {
     const prompt = clipPrompt(input.prompt);
     if (!prompt) return;
@@ -444,7 +480,7 @@ class ImageGenerationStore {
         source: input.source,
         source_message_id: input.sourceMessageId,
         prompt,
-        context: input.characterId ? { ...(input.context ?? {}), character: { ...((input.context?.character as Record<string, unknown> | undefined) ?? {}), id: input.characterId } } : input.context,
+        context: this.contextForRequest(input),
         quality_preset: input.qualityPreset ?? this.defaultPreset
       });
       const job = jobFromRead(response.job, { ...input, prompt });

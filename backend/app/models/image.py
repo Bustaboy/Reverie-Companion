@@ -79,12 +79,16 @@ class ImageJobRead(BaseModel):
     vram_required_mb: int | None = None
     pressure: str = "unknown"
     warning: str | None = None
+    user_status_label: str | None = None
+    retryable: bool = False
+    debug_context: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
     character_id: str | None = None
     session_id: str | None = None
     moment_capture_id: str | None = None
+    capture_id: str | None = None
     scene_summary: str | None = None
     prompt_hash: str | None = None
     feedback_status: str = "pending"
@@ -115,12 +119,16 @@ class ImageJobEvent(BaseModel):
     vram_required_mb: int | None = None
     pressure: str = "unknown"
     warning: str | None = None
+    user_status_label: str | None = None
+    retryable: bool = False
+    debug_context: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
     character_id: str | None = None
     session_id: str | None = None
     moment_capture_id: str | None = None
+    capture_id: str | None = None
     scene_summary: str | None = None
     prompt_hash: str | None = None
     feedback_status: str = "pending"
@@ -139,6 +147,7 @@ class ImageHistoryItem(BaseModel):
     character_id: str | None = None
     session_id: str | None = None
     moment_capture_id: str | None = None
+    capture_id: str | None = None
     scene_summary: str | None = None
     prompt_hash: str | None = None
     feedback_status: str = "pending"

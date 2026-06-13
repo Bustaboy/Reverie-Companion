@@ -443,6 +443,7 @@ def test_image_history_metadata_v2_and_filters(tmp_path) -> None:
         latest_event = service._jobs[job.job_id].events[-1]
         assert latest_event.character_id == "char-mira"
         assert latest_event.moment_capture_id == "mc_123"
+        assert latest_event.capture_id == "mc_123"
         assert latest_event.scene_summary == "balcony · night · tender · holding hands"
         assert latest_event.feedback_status == "pending"
         assert latest_event.review_status == "unreviewed"
@@ -499,5 +500,69 @@ def test_image_history_delete_tombstones_metadata_and_hides_from_default_list(
             reloaded.list_history("conv-a", include_deleted=True).items[0].is_deleted
             is True
         )
+
+    asyncio.run(run_test())
+
+
+def test_moment_capture_cancel_and_failure_payload_preserve_safe_metadata(
+    tmp_path,
+) -> None:
+    class FailingAdapter(FakeAdapter):
+        async def generate(self, job, preset):
+            raise ImageGenerationError(
+                "Local ComfyUI is not reachable. Start ComfyUI with --lowvram and retry.",
+                code="image_comfy_unreachable",
+                retryable=True,
+                details={
+                    "url": "http://127.0.0.1:8188",
+                    "prompt": "private prompt text",
+                },
+            )
+
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        service = make_service(tmp_path, coordinator, FailingAdapter())
+        request = ImageGenerateRequest(
+            conversation_id="conv-safe",
+            source="moment_capture",
+            source_message_id="msg-7",
+            prompt="private romantic prompt should not enter debug details",
+            context={
+                "moment_capture": {
+                    "capture_id": "mc_retry",
+                    "character_id": "char-safe",
+                    "session_id": "sess-safe",
+                    "prompt_hash": "hash-safe",
+                    "capture_intent": "safe summary",
+                    "scene_state": {"location": "studio", "mood": "warm"},
+                }
+            },
+        )
+        failed = await service.submit(request)
+        while service.get_job(failed.job_id).status not in {
+            ImageJobStatus.failed,
+            ImageJobStatus.cancelled,
+        }:
+            await asyncio.sleep(0.01)
+        read = service.get_job(failed.job_id)
+        assert read.status == ImageJobStatus.failed
+        assert read.retryable is True
+        assert read.user_status_label == "Moment Capture failed · retry available"
+        assert read.capture_id == "mc_retry"
+        assert read.debug_context["capture_id"] == "mc_retry"
+        assert read.debug_context["character_id"] == "char-safe"
+        assert read.error is not None
+        assert read.error["details"]["capture_id"] == "mc_retry"
+        assert read.error["details"]["character_id"] == "char-safe"
+        assert "prompt" not in read.error["details"]
+        assert "private romantic" not in json.dumps(read.error["details"])
+
+        queued = await service.submit(request)
+        cancelled = await service.cancel(queued.job_id)
+        assert cancelled.status == ImageJobStatus.cancelled
+        assert cancelled.moment_capture_id == "mc_retry"
+        assert cancelled.character_id == "char-safe"
+        assert cancelled.debug_context["capture_id"] == "mc_retry"
+        assert cancelled.user_status_label == "Moment Capture cancelled"
 
     asyncio.run(run_test())

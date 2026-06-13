@@ -172,6 +172,9 @@ class ImageJob:
     vram_required_mb: int | None = None
     pressure: str = "unknown"
     warning: str | None = None
+    user_status_label: str | None = None
+    retryable: bool = False
+    debug_context: dict[str, Any] = field(default_factory=dict)
     sequence: int = 0
     cancel_requested: bool = False
     comfy_prompt_id: str | None = None
@@ -200,12 +203,16 @@ class ImageJob:
             vram_required_mb=self.vram_required_mb,
             pressure=self.pressure,
             warning=self.warning,
+            user_status_label=self.user_status_label,
+            retryable=self.retryable,
+            debug_context=dict(self.debug_context),
             conversation_id=self.conversation_id,
             source=self.source,
             source_message_id=self.source_message_id,
             character_id=self.character_id,
             session_id=self.session_id,
             moment_capture_id=self.moment_capture_id,
+            capture_id=self.moment_capture_id,
             scene_summary=self.scene_summary,
             prompt_hash=self.prompt_hash,
             feedback_status=self.feedback_status,
@@ -279,7 +286,9 @@ class ComfyUIFluxAdapter:
 
     def _open_json(self, request: urllib.request.Request) -> dict[str, Any]:
         try:
-            with urllib.request.urlopen(request, timeout=10.0) as response:  # noqa: S310 - local ComfyUI URL from settings.
+            with urllib.request.urlopen(
+                request, timeout=10.0
+            ) as response:  # noqa: S310 - local ComfyUI URL from settings.
                 return json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.URLError as exc:
             raise ImageGenerationError(
@@ -416,7 +425,13 @@ class ImageGenerationService:
         )
         self._jobs[job_id] = job
         self._emit(
-            job, event="job.queued", message="Image job queued behind chat and TTS."
+            job,
+            event="job.queued",
+            message=(
+                "Moment Capture queued behind chat and TTS."
+                if job.source == "moment_capture"
+                else "Image job queued behind chat and TTS."
+            ),
         )
         await self._queue.put(job_id)
         return job.to_read()
@@ -606,7 +621,11 @@ class ImageGenerationService:
                 status=ImageJobStatus.cancelled,
                 phase="cancelled",
                 progress=job.progress,
-                message="Image job cancelled.",
+                message=(
+                    "Moment Capture cancelled. Capture context was kept for retry/debugging."
+                    if job.source == "moment_capture"
+                    else "Image job cancelled."
+                ),
             )
         return job.to_read()
 
@@ -1038,7 +1057,7 @@ class ImageGenerationService:
             error={
                 "code": code,
                 "message": message,
-                "details": details or {},
+                "details": self._safe_failure_details(job, details or {}),
                 "retryable": retryable,
             },
         )
@@ -1069,6 +1088,9 @@ class ImageGenerationService:
             job.output_paths = output_paths
         if error is not None:
             job.error = error
+            job.retryable = bool(error.get("retryable"))
+        job.user_status_label = self._user_status_label(job)
+        job.debug_context = self._safe_debug_context(job)
         if job.warning and not error:
             logger.info(
                 "Image job running under resource pressure",
@@ -1080,8 +1102,79 @@ class ImageGenerationService:
             )
         self._emit(job, event=f"job.{job.status.value}", message=job.message)
 
+    def _user_status_label(self, job: ImageJob) -> str:
+        subject = (
+            "Moment Capture"
+            if job.source == "moment_capture" or job.moment_capture_id
+            else "Image generation"
+        )
+        if job.status == ImageJobStatus.queued:
+            return f"{subject} queued"
+        if job.status == ImageJobStatus.cancelled:
+            return f"{subject} cancelled"
+        if job.status == ImageJobStatus.failed:
+            return f"{subject} failed" + (" · retry available" if job.retryable else "")
+        if job.resource_mode == "paused_for_tts" or job.phase in {
+            "tts_priority",
+            "tts_preempted",
+        }:
+            return f"{subject} paused for TTS"
+        if job.resource_mode == "waiting_for_vram" or job.phase == "low_vram":
+            return f"{subject} waiting for VRAM"
+        if (
+            job.fallback_used
+            or job.active_preset == ImageQualityPreset.preview_8gb
+            and job.requested_preset != ImageQualityPreset.preview_8gb
+        ):
+            return f"{subject} downgraded to preview"
+        if job.status == ImageJobStatus.running:
+            return f"{subject} rendering"
+        if job.status == ImageJobStatus.completed:
+            return f"{subject} ready"
+        return f"{subject} checking resources"
+
+    def _safe_debug_context(self, job: ImageJob) -> dict[str, Any]:
+        return {
+            "job_id": job.job_id,
+            "conversation_id": job.conversation_id,
+            "source": job.source,
+            "source_message_id": job.source_message_id,
+            "character_id": job.character_id,
+            "session_id": job.session_id,
+            "capture_id": job.moment_capture_id,
+            "moment_capture_id": job.moment_capture_id,
+            "scene_summary": job.scene_summary,
+            "prompt_hash": job.prompt_hash,
+            "requested_preset": job.requested_preset.value,
+            "active_preset": job.active_preset.value,
+            "phase": job.phase,
+            "resource_mode": job.resource_mode,
+            "pressure": job.pressure,
+            "vram_free_mb": job.vram_free_mb,
+            "vram_required_mb": job.vram_required_mb,
+            "fallback_used": job.fallback_used,
+        }
+
+    def _safe_failure_details(
+        self, job: ImageJob, details: dict[str, object]
+    ) -> dict[str, object]:
+        safe_keys = {
+            "prompt_id",
+            "backend",
+            "url",
+            "history_path",
+            "manifest_path",
+            "job_id",
+            "output_index",
+        }
+        safe = {key: value for key, value in details.items() if key in safe_keys}
+        safe.update(self._safe_debug_context(job))
+        return safe
+
     def _emit(self, job: ImageJob, *, event: str, message: str) -> None:
         job.updated_at = datetime.now(timezone.utc)
+        job.user_status_label = self._user_status_label(job)
+        job.debug_context = self._safe_debug_context(job)
         job.sequence += 1
         payload = ImageJobEvent(
             event=event,
@@ -1103,12 +1196,16 @@ class ImageGenerationService:
             character_id=job.character_id,
             session_id=job.session_id,
             moment_capture_id=job.moment_capture_id,
+            capture_id=job.moment_capture_id,
             scene_summary=job.scene_summary,
             prompt_hash=job.prompt_hash,
             feedback_status=job.feedback_status,
             review_status=job.review_status,
             canon_status=job.canon_status,
             saved_to_assets=job.saved_to_assets,
+            user_status_label=job.user_status_label,
+            retryable=job.retryable,
+            debug_context=dict(job.debug_context),
         )
         job.events.append(payload)
         for watcher in list(job.watchers):

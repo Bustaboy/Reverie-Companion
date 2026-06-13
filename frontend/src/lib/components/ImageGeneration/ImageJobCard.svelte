@@ -26,9 +26,10 @@
   const completedWithoutPreview = $derived(job.status === 'completed' && (!job.imageUrls[0] || previewFailed));
 
   const statusLabel = $derived.by(() => {
+    if (job.user_status_label) return job.user_status_label;
     if (completedWithoutPreview) return 'Image metadata saved · output unavailable';
     if (job.status === 'completed') return job.fallback_used ? 'Image ready · lighter 8GB preset used' : 'Image ready';
-    if (job.status === 'failed') return job.error?.message ?? 'Image generation failed — chat and voice were not interrupted';
+    if (job.status === 'failed') return job.error?.retryable || job.retryable ? 'Image generation failed · retry available' : job.error?.message ?? 'Image generation failed — chat and voice were not interrupted';
     if (job.status === 'cancelled') return 'Image generation cancelled';
     if (isPausedForTTS) return 'Paused for voice playback';
     if (isLowVram) return 'Waiting for VRAM headroom';
@@ -77,9 +78,9 @@
     </div>
 
     {#if isActive && onCancel}
-      <button type="button" class="image-job-action" onclick={() => onCancel?.(job)}>Cancel</button>
+      <button type="button" class="image-job-action" onclick={() => onCancel?.(job)}>{job.moment_capture_id ? 'Cancel capture' : 'Cancel'}</button>
     {:else if job.status === 'failed' && onRetry}
-      <button type="button" class="image-job-action" onclick={() => onRetry?.(job)}>Try again</button>
+      <button type="button" class="image-job-action" onclick={() => onRetry?.(job)}>{job.moment_capture_id ? 'Retry capture' : 'Try again'}</button>
     {:else if job.status === 'completed'}
       <div class="image-job-actions">
         {#if onRetry}<button type="button" class="image-job-action" onclick={() => onRetry?.(job)}>Regenerate</button>{/if}
@@ -100,7 +101,7 @@
   {/if}
 
   {#if job.status === 'failed'}
-    <p class="image-job-error">{job.error?.message ?? 'Image generation failed. Chat and voice were not interrupted.'}</p>
+    <p class="image-job-error">{job.error?.message ?? 'Image generation failed. Chat and voice were not interrupted.'}{job.error?.retryable || job.retryable ? ' Retry will keep the same capture metadata.' : ''}</p>
   {:else if job.status !== 'cancelled'}
     <small class="image-job-note">{resourceNote}</small>
   {/if}
