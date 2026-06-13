@@ -29,7 +29,7 @@ The app prioritizes:
 
 ## Current Capabilities
 
-Milestones 1–4 are complete. Reverie currently includes:
+Milestones 1–5 are complete. Reverie currently includes:
 
 - FastAPI backend with Ollama chat, streaming SSE responses, and health diagnostics.
 - Local memory foundation using Ollama embeddings plus embedded LanceDB, with optional mem0 write-through.
@@ -38,13 +38,15 @@ Milestones 1–4 are complete. Reverie currently includes:
 - Unified Settings & Control Hub for memory, reflection, TTS, image generation, performance presets, extensions, backup/import/reset, and Milestone 3 release notes.
 - Training UI for Personal LoRA review: collection opt-in, training opt-in, pending candidate approval/rejection/deletion, and safe starter training jobs.
 - Visual Novel mode, emotional TTS playback, local image generation gallery, Growth Dashboard, Memory Browser, and Character Encyclopedia foundations.
+- Moment Capture & Visual Continuity: selected-character capture requests from chat/VN context, `VisualPromptCompiler` prompt bundles, character-linked gallery metadata, quick/detailed visual feedback, reviewable `VisualChangeEvent` canon proposals, approve/reject/rollback controls, character-scoped visual memory writeback, and deterministic visual consistency evals.
+- 8GB-aware capture scheduling: Moment Capture jobs remain queued/cancellable, preserve capture metadata across retry/cancel/failure, pause for TTS priority, downgrade safely under low/unknown VRAM, and keep chat non-blocking.
 - Tauri + Svelte desktop shell with warm dark styling, local backend integration, and first-run Milestone 3 onboarding.
 
 ---
 
 ## Current Development Focus
 
-Reverie has closed **Milestone 4 — Character Runtime & Capability Alignment**. The app now has the runtime substrate that lets future creator choices affect prompt assembly, selected-character chat, local persistence, character-scoped memory/reflection, relationship state, visual identity summaries, and roleplay-first integrity controls.
+Reverie has closed **Milestone 5 — Moment Capture & Visual Continuity**. The app now has character-aware, memory-linked visual presence with reviewable canon updates, gallery feedback, visual memory writeback, and 8GB-safe capture scheduling.
 
 The full immersive character creator is still intentionally **not** being built before the runtime can honor its choices. The guiding strategy remains:
 
@@ -53,9 +55,7 @@ Build the powers first.
 Then build the ritual that lets users command those powers.
 ```
 
-The current focus moves to **Milestone 5 — Moment Capture & Visual Continuity**, which elevates image generation into character-linked embodied memory.
-
-Milestone 6 adds the practical creator foundation.
+The current focus moves to **Milestone 6 — Basic Character Creator Foundation**, which exposes only fields the runtime can already store, consume, preview, validate, and preserve.
 
 Milestone 7 builds the immersive **Companion Genesis** creator experience.
 
@@ -129,7 +129,8 @@ Key skill prompts for Grok/Codex:
 - ✅ **Milestone 2 — Memory & Self-Learning**: memory context, reflection journal, growth orchestration, Journal/Settings/Training UI, growth notifications, and Personal LoRA foundation.
 - ✅ **Milestone 3 — Immersion & Production Foundations**: Visual Novel foundation, emotional TTS, local image generation, growth visibility, extensibility, 8GB resource guardrails, Settings Hub, onboarding, and release documentation.
 - ✅ **Milestone 4 — Character Runtime & Capability Alignment**: CharacterBlueprint runtime, selected-character chat, character-scoped memory/reflection, relationship/growth/visual identity schemas, roleplay-first policy, and minimal frontend shell.
-- 🚧 **Milestone 5 — Moment Capture & Visual Continuity**: current focus.
+- ✅ **Milestone 5 — Moment Capture & Visual Continuity**: VisualPromptCompiler, Moment Capture API/service, character-linked gallery metadata, visual feedback, reviewable VisualChangeEvent canon updates, visual memory writeback, 8GB capture scheduling, capture asset metadata, and eval harness.
+- 🚧 **Milestone 6 — Basic Character Creator Foundation**: current focus.
 
 ---
 

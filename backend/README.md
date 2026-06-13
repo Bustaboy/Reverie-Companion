@@ -8,11 +8,13 @@ The backend is intentionally modular so chat, memory, reflection, journaling, Pe
 
 - **Chat service**: non-streaming and SSE streaming chat through Ollama with bounded character, memory, and reflection context injection.
 - **Character runtime**: versioned `CharacterBlueprint` schemas, SQLite persistence, CRUD routes, compact prompt compilation, and character-scoped memory hooks.
+- **Moment Capture & visual continuity**: character-linked capture orchestration through `MomentCaptureService`, bounded `VisualPromptCompiler` prompt bundles, durable `MomentCaptureRecord` metadata, feedback actions, reviewable `VisualChangeEvent` canon proposals, rollback support, and character-scoped visual memory writeback.
+- **Image generation and gallery metadata**: local image jobs retain conversation, character, source message, capture, prompt hash, feedback, review/canon, resource, and saved-asset metadata with tombstone-aware deletion and character/conversation filtering.
 - **Long-term memory**: `app.core.memory.MemoryManager` stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local Ollama embeddings, and can write through mem0 when available.
 - **Reflection journal**: `app.core.reflection.ReflectionManager` writes local, inspectable journal entries from bounded conversation windows and can promote high-confidence insights into memory.
 - **Growth orchestration**: `app.core.growth.GrowthOrchestrator` coordinates memory retrieval, journal context, rare growth notifications, background reflection scheduling, and optional Personal LoRA candidate collection.
 - **Personal LoRA foundation**: `app.core.lora.PersonalLoRATrainer` persists reviewable examples, explicit opt-in settings, approved-only training jobs, and rollback-friendly adapter manifests. The current job runner is a conservative foundation, not a heavyweight fine-tuner yet.
-- **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, or Personal LoRA review state.
+- **Local-first controls**: no hosted services are required for chat, memory, reflection, journal reads, Moment Capture metadata, visual review state, or Personal LoRA review state.
 
 ## Growth Loop Overview
 
@@ -34,6 +36,7 @@ This keeps the active token path free of training, unbounded scans, and hidden c
 - Capped memory text, retrieval count, journal entries, and context character budgets.
 - Reflection is throttled background work, not active response-path work.
 - Personal LoRA collection/training defaults to opt-out, rank 8, batch size 1, short sequence lengths, and one background job at a time.
+- Moment Capture uses the existing image queue/resource coordinator, preserves retry/cancel metadata, pauses for TTS priority, downgrades to preview under low/unknown VRAM, and keeps chat non-blocking.
 - No resident reranker, hosted telemetry, or mandatory external service.
 
 ## Key Settings
@@ -175,6 +178,17 @@ For a non-streaming response, set `"stream": false`. Include `"character_id": ".
 - `DELETE /api/characters/{character_id}`: removes a local blueprint.
 
 The M4 migration stub lives at `app/migrations/versions/0001_character_blueprints.sql`; the repository also creates the same lightweight SQLite table/indexes on first use for local-first development.
+
+### Moment Capture
+
+- `POST /api/moment-capture`: queues a selected-character capture through the existing image generation service and returns the durable capture/job metadata.
+- `POST /api/moment-capture/{capture_id}/feedback`: records visual feedback such as `looks_right`, `wrong_appearance`, `make_canon`, `use_outfit_again`, `just_this_scene`, or `reject_style_trait`.
+- `GET /api/moment-capture/visual-changes`: lists reviewable visual canon proposals.
+- `POST /api/moment-capture/visual-changes/{event_id}/approve`
+- `POST /api/moment-capture/visual-changes/{event_id}/reject`
+- `POST /api/moment-capture/visual-changes/{event_id}/rollback`
+
+Canon-affecting feedback stays pending until reviewed. Approved changes update `VisualIdentityProfile` with provenance and rollback metadata; rejected or rolled-back changes do not enter future positive prompt guidance. Visual memory writeback is character-scoped and not training-eligible by default.
 
 ### `GET /journal/entries`
 

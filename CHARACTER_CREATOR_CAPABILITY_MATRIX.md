@@ -1,8 +1,8 @@
 # Reverie — CHARACTER_CREATOR_CAPABILITY_MATRIX
 
-**Date:** 2026-06-12  
-**Version:** 2.3  
-**Context:** Post-Milestone 3 planning aligned with roleplay-first CharacterIntegrityPolicy, Moment Capture, Companion Genesis UX, and character-quality eval workflow.  
+**Date:** 2026-06-13
+**Version:** 2.4
+**Context:** Post-Milestone 5 closure aligned with roleplay-first CharacterIntegrityPolicy, delivered Moment Capture, Companion Genesis UX, and character-quality eval workflow.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, should store it internally first, or should defer it until the runtime has real support.
 
 ---
@@ -662,16 +662,31 @@ Delivered:
 
 Exposed only a minimal runtime shell/simple editor, not full Genesis. Full Moment Capture/visual feedback and immersive creator work remain future milestones.
 
-## M5: Moment Capture & Visual Continuity
+## M5: Moment Capture & Visual Continuity — Complete
 
-Build:
+Delivered:
 
 1. image prompt compiler using visual identity + scene + memory
-2. first portrait validation
-3. rejected visual traits
-4. gallery metadata
-5. make image canon / just this scene / wrong appearance
-6. visual memory writeback
+2. rejected visual traits and negative anti-drift guidance
+3. character-linked gallery metadata
+4. make image canon / just this scene / wrong appearance / outfit reuse / rejected trait feedback
+5. reviewable `VisualChangeEvent` approve/reject/rollback flow
+6. character-scoped visual memory writeback
+7. deterministic visual consistency eval harness
+8. capture asset metadata compatible with future M6/M8 portability work
+
+### M5 closure capability entries
+
+| Capability / field | User value | Runtime consumers | Current support | Needed capability | Wizard exposure | Preview / validation |
+|---|---:|---|---|---|---|---|
+| `moment_capture` | Critical | Chat, VN, image, gallery, memory | NOW | Delivered M5 API/service using selected `character_id` and scene state | M6 Basic Creator can reuse for first portrait validation | `backend/tests/test_moment_capture_service.py`, M5 eval harness |
+| `visual_prompt_compiler` | Critical | Image, gallery, evals | NOW | Delivered `VisualPromptCompiler` / `VisualPromptBundle` | Internal/runtime; creator preview consumer | `backend/tests/test_visual_prompt_compiler.py`, `backend/tests/test_visual_consistency_evals.py` |
+| `visual_change_events` | High | Image, memory, chat, gallery | NOW | Delivered reviewable `VisualChangeEvent` service/API with approve/reject/rollback | M6/M7 can surface as visual canon review | M5 service tests + frontend visual feedback tests |
+| `visual_feedback_actions` | High | Gallery, visual identity, memory | NOW | Delivered quick and detailed feedback actions | M6/M7 first portrait and gallery validation | `frontend/src/lib/api/imageService.visualFeedback.test.ts`, M5 eval harness |
+| `visual_memory_artifacts` | High | Memory, prompt continuity, gallery | NOW | Delivered character-private visual memory writeback with training disabled | M6/M7 can expose visual favorites/history | `backend/tests/test_memory_api.py`, M5 eval harness |
+| `capture_gallery_metadata` | High | Gallery, export, backup, creator | NOW | Delivered character/conversation/source/capture metadata and tombstone delete behavior | M6/M8 import/export and backup consumers | `backend/tests/test_image_generation_service.py` |
+| `capture_asset_export_metadata` | Medium | Character assets, export, backup | NOW | Delivered M5 capture asset manifest schema v1 | M6 basic character import/export; M8 backup/export | image generation service tests |
+| `target_hardware_8gb_validation` | Critical | Resource coordinator, TTS, image, packaged app | NEEDS VERIFICATION | M5 checklist recorded; real RTX 4070 8GB mobile packaged smoke not run in this repo environment | M8-P09 productization gate | `docs/M5-P09_TARGET_HARDWARE_SMOKE_CHECKLIST.md` remains Pending M8 |
 
 ## M6: Basic Character Creator
 

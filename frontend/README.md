@@ -1,6 +1,6 @@
 # Reverie Frontend
 
-Tauri 2 + SvelteKit frontend for Reverie, an offline AI companion desktop app with warm chat, private journal review, memory/reflection settings, growth notifications, and Personal LoRA training controls.
+Tauri 2 + SvelteKit frontend for Reverie, an offline AI companion desktop app with warm chat, selected-character runtime, Moment Capture, private journal review, memory/reflection settings, growth notifications, visual review controls, and Personal LoRA training controls.
 
 ## Prerequisites
 
@@ -30,6 +30,10 @@ npm install
 ## Current UI Capabilities
 
 - **Chat**: local backend chat integration, streaming response state, Markdown rendering, connection errors, and rare growth-notification cards.
+- **Characters**: selected-character store, selector, quick creation flow, and chat request integration.
+- **Moment Capture / Images**: capture-aware image generation controls, queued job cards, retry/cancel flows, gallery history, character/source/capture metadata, and resource-status copy for waiting, TTS pause, downgrade, failure, and completion states.
+- **Visual feedback and review**: quick actions (`Looks Right`, `Wrong Appearance`, `Make Canon`, `Use Outfit Again`, `Just This Scene`, `Reject Style Trait`), detailed trait feedback, pending visual change review cards, and approve/reject/rollback actions.
+- **Visual Novel**: lightweight VN stage, expression/pose state, immersive presentation, and image/capture hooks that share the same resource-aware image queue.
 - **Journal**: private self-reflection entries with confidence, emotional intensity, promotion status, themes, insights, privacy tags, and training eligibility.
 - **Settings**: local controls for long-term memory, self-reflection, reflection frequency/sensitivity, growth notifications, and 8GB-aware context budget presets.
 - **Training**: Personal LoRA review panel with collection opt-in, training opt-in, pending candidate approval/rejection/deletion, job status, and safe start controls.
@@ -46,7 +50,7 @@ frontend/
 │   ├── app.css                 # Premium warm dark theme and responsive panel styles
 │   ├── app.html                # SvelteKit HTML shell
 │   ├── lib/
-│   │   ├── api/                # Chat, journal, and growth API clients
+│   │   ├── api/                # Chat, character, journal, growth, image, and capture API clients
 │   │   ├── chat/               # Local seed/fallback message helpers
 │   │   ├── components/
 │   │   │   ├── Chat/           # Chat window, messages, markdown, composer, notices
@@ -55,7 +59,7 @@ frontend/
 │   │   │   ├── Layout/         # App shell and sidebar
 │   │   │   └── Settings/       # Memory/reflection controls
 │   │   ├── config/             # App navigation metadata
-│   │   ├── stores/             # Chat, journal, settings, and growth stores
+│   │   ├── stores/             # Chat, character, image/capture, resource, journal, settings, and growth stores
 │   │   ├── types/              # Shared TypeScript types
 │   │   └── utils/              # UI-safe formatting and markdown helpers
 │   └── routes/                 # SvelteKit routes
@@ -71,11 +75,12 @@ frontend/
 The frontend is intentionally component-driven and trust-oriented:
 
 - `src/lib/api/` isolates backend shape, timeouts, and user-friendly local-service errors.
-- `src/lib/stores/` keeps async loading state, selected journal entries, growth actions, and local settings out of markup.
-- `src/lib/components/Chat/` owns the active companion surface and only displays growth notifications provided by the backend/store.
+- `src/lib/stores/` keeps async loading state, selected character, image/capture jobs, visual change review, selected journal entries, growth actions, and local settings out of markup.
+- `src/lib/components/Chat/` owns the active companion surface and keeps chat responsive while media jobs run through the image/capture store.
+- `src/lib/components/ImageGeneration/` owns gallery history, Moment Capture metadata display, feedback actions, review cards, and retry/cancel controls.
 - `src/lib/components/Journal/` makes reflection artifacts inspectable without turning them into automatic canon.
 - `src/lib/components/Growth/` keeps Personal LoRA collection and training separate: examples must be collected, reviewed, approved, and training-opted-in before any job can use them.
-- `src/lib/components/Settings/` exposes calm MVP controls; advanced scheduler and backend synchronization can be added without changing the visual model.
+- `src/lib/components/Settings/` exposes calm controls; backend synchronization remains M8 scope.
 
 ## Environment
 
@@ -87,7 +92,7 @@ VITE_REVERIE_API_BASE_URL=http://localhost:8000 npm run dev
 
 ## Future Extension Points
 
-- Add full character gallery and character-card import/edit flows.
+- Add full character gallery and character-card import/edit/export flows in M6/M8.
 - Add memory browser edit/delete controls using the same local-first panel pattern.
 - Synchronize Settings UI with backend `.env`/runtime controls once the settings API is introduced.
-- Add Visual Novel mode as a sibling layout surface under `src/lib/components/VisualNovel/`.
+- Run packaged target-hardware smoke on RTX 4070 8GB mobile or equivalent with TTS and ComfyUI available in M8-P09.

@@ -3,7 +3,7 @@
 **Version**: 2.5  
 **Date**: June 13, 2026  
 **Brand**: Reverie  
-**Status**: Post-Milestone 4 planning reset with M5-P00 gap closure. Milestones 1–4 are closed. M2–M4 have been reconciled in the Closure Ledger below. Milestone 5 is now the active implementation track, with ledger-blocking carryovers explicitly assigned to M5 and deferred items placed in later milestones.
+**Status**: Milestones 1–5 are closed. Milestone 5 delivered Moment Capture & Visual Continuity, reconciled all M5-scoped carryovers, and leaves only real target-hardware/package validation for M8 productization.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -549,7 +549,7 @@ For each M2–M4 capability, this ledger tracks:
 | Area | Delivered capability | Runtime proof | User surface | Carryover | Status | Target milestone | M5 dependency |
 |---|---|---|---|---|---|---|---|
 | Long-term memory | Local LanceDB memory with Ollama embeddings and optional mem0 write-through | `MemoryManager`, chat memory context | Memory Browser, Settings | Long-session recall/growth evals still needed | Deferred | M8 | Moment Capture must write image-linked memories with provenance |
-| Reflection journal | Local inspectable journal entries from bounded conversation evidence | `ReflectionManager`, journal routes | Journal panel | Richer review/rollback UX later | M5-scoped for visual changes; broader polish deferred | M5/M8 | Visual feedback can create journal/visual reflection artifacts |
+| Reflection journal | Local inspectable journal entries from bounded conversation evidence | `ReflectionManager`, journal routes | Journal panel | Richer review/rollback UX later | Visual-change review path closed in M5; broader polish deferred | M8 | Visual feedback can create journal/visual reflection artifacts |
 | Growth orchestration | Memory + reflection + growth notices + LoRA candidate collection coordinated off hot path | `GrowthOrchestrator`, `ChatService` | Growth notifications, Growth Dashboard | Growth is heuristic/foundation-level | Deferred | M8/M9 | Visual change signals must use same evidence/approval pattern |
 | Personal LoRA foundation | Local review queue, explicit opt-ins, dry-run adapter job manifests | `PersonalLoRATrainer` | Training panel | Real trainer backend deferred | Deferred | M9 | Image feedback must not enter training without approval |
 | Trust controls | Local-first storage, review states, deletion-aware routes | Memory/journal/training services | Settings, Journal, Memory, Training | Trust dashboard polish later | Deferred | M8 | Moment Capture must expose source/feedback/deletion controls |
@@ -562,12 +562,12 @@ M2 is closed as a **foundation**, not as a mature autonomous growth system. Do n
 |---|---|---|---|---|---|---|---|
 | Visual Novel foundation | Scene shell, layered character visuals, expression/pose state, full immersion mode | VN store, VN stage | Visual Novel panel | Character-specific authored VN assets still future | Deferred | M6/M7 | Moment Capture can use VN scene state as capture context |
 | Emotional TTS | Local Orpheus/Piper abstraction, voice profiles, context routing, streaming/fallback | TTS service/routes, voice manager | Audio player, voice settings | Real voice polish and install validation later | Deferred / Needs verification | M8/M9 | Capture must respect TTS priority and resource coordinator |
-| Image generation foundation | Local ComfyUI/Flux-oriented queue, presets, gallery history, resource-aware jobs | Image service/routes, prompt engine | Images panel, chat/VN generate actions | Not yet memory-linked Moment Capture | M5-scoped | M5 | M5 replaces generic image generation with character-linked capture |
-| Resource guardrails | TTS priority, image queue, VRAM pressure states, auxiliary unload hooks | `LocalResourceCoordinator` | Settings/resource banners | Real 8GB packaged app smoke test still required | Needs verification | M5 checklist, M8 productization | All M5 image work must use existing coordinator |
-| Growth visibility | Growth Dashboard, Journal, Memory Browser, Training panel | frontend panels + backend routes | Sidebar surfaces | UX polish later | Deferred, with visual review in M5 | M5/M8 | Feedback/canon changes must be visible and reversible |
+| Image generation foundation | Local ComfyUI/Flux-oriented queue, presets, gallery history, resource-aware jobs | Image service/routes, prompt engine | Images panel, chat/VN generate actions | Memory-linked Moment Capture delivered in M5 | Closed for M5; productization deferred | M8 | M5 replaces generic image generation with character-linked capture |
+| Resource guardrails | TTS priority, image queue, VRAM pressure states, auxiliary unload hooks | `LocalResourceCoordinator` | Settings/resource banners | Real 8GB packaged app smoke test still required | M5 scheduling closed; target hardware Needs verification | M8-P09 | All M5 image work must use existing coordinator |
+| Growth visibility | Growth Dashboard, Journal, Memory Browser, Training panel | frontend panels + backend routes | Sidebar surfaces | UX polish later | Visual review closed in M5; broader polish deferred | M8 | Feedback/canon changes must be visible and reversible |
 | Extensibility | `extension.v1` manifests, event bus, import preview | extension models/routes | Settings extension hub | Full plugin runtime later | Deferred | M10+ | Future image workflows should fit extension contract |
 | Settings Hub | Unified settings for memory/media/performance/backup/extensions | settings store/panel | Settings panel | Backend-synced Settings persistence later | Deferred | M8 | M5 must add capture controls here, not a new island |
-| Frontend docs | M3 surfaces exist in app | README/docs | repo docs | Frontend README stale after M3/M4 | M5-scoped | M5-P11 | M5 docs pass must update stale docs |
+| Frontend docs | M3-M5 surfaces exist in app | README/docs | repo docs | Frontend README stale after M3/M4 | Closed | M5-P11 | M5 docs pass updated stale docs |
 
 M3 is closed as an **alpha immersion foundation**, not as a final production media stack. ComfyUI, Orpheus/Piper, and packaged app behavior still require target-hardware smoke validation.
 
@@ -580,9 +580,9 @@ M3 is closed as an **alpha immersion foundation**, not as a final production med
 | Character API | CRUD endpoints | `/api/characters` | frontend API/store | Duplicate/import/export not fully surfaced | Deferred | M6/M8 | Capture API should not invent separate character identity |
 | Prompt compiler | Character prompt blocks | `CharacterPromptCompiler` | chat behavior | Richer evals | Deferred | M8 | VisualPromptCompiler should mirror this design |
 | Selected chat | `character_id` request + prompt injection | `ChatService` | selected companion in Chat | Session history later | Deferred | M8 | Capture from chat must use selected character |
-| Character-scoped memory/reflection | selected/private/shared retrieval semantics | memory and reflection scope filters | Memory Browser/filter foundations | Write-side `character_id` hardening | M5-blocking | M5-P07 | Capture feedback writes must be scoped |
+| Character-scoped memory/reflection | selected/private/shared retrieval semantics | memory and reflection scope filters | Memory Browser/filter foundations | Write-side `character_id` hardening | Closed | M5-P07/M5-P11 | Capture feedback writes are scoped |
 | Relationship state | durable conservative relationship state | service + prompt compiler | summary/future UI | Richer progression later | Deferred | M9 | Capture metadata should include relationship phase snapshot |
-| Visual identity | structured `VisualIdentityProfile` | blueprint + prompt summaries | future editor only | Visual feedback/canon updates | M5-scoped | M5-P05/M5-P06 | core M5 input |
+| Visual identity | structured `VisualIdentityProfile` | blueprint + prompt summaries | future editor only | Visual feedback/canon updates | Closed for M5; richer editor deferred | M6/M9 | core M5 input |
 | Roleplay integrity | roleplay-first policy + OOC controls | compiler + tests | future controls | Creator UI later | Deferred | M6/M7 | visual prompts must preserve adult-only and roleplay boundaries |
 | Frontend shell | selector + quick create + selected persistence | character store/API | Chat header area | Full creator later | Deferred | M6/M7 | Capture UI must read selected character from same store |
 
@@ -596,24 +596,24 @@ M4 is closed as a **runtime substrate**. It intentionally did not build the full
 | Reflection journal | delivered | visible in UI | character-aware | foundation | M5 visual change review, M8 broader rollback polish |
 | Personal LoRA | foundation | UI controls | character-ready seam | dry-run foundation | real trainer in M9 |
 | Visual Novel | out of scope | delivered foundation | character context seam | foundation | M5 scene-state capture, authored assets in M6/M7 |
-| Image generation | out of scope | local queue/gallery | visual identity ready | generic foundation | M5 Moment Capture |
+| Image generation | out of scope | local queue/gallery | visual identity ready | Moment Capture delivered | M8 target-hardware validation |
 | Character runtime | planned | UI surfaces ready | delivered | runtime foundation | M6 creator |
 | Roleplay policy | intent | philosophy surfaces | schema/compiler | foundation | creator controls in M6/M7 |
 | Resource guardrails | memory/growth budgets | media scheduler | character runtime stays bounded | foundation+ | M5 image scheduling, M8 target-hardware validation |
-| Trust controls | journal/memory/training review | Settings Hub | character data local-first | foundation+ | M5 visual feedback/canon review, M8 trust dashboard |
+| Trust controls | journal/memory/training review | Settings Hub | character data local-first | visual feedback/canon review delivered | M8 trust dashboard |
 
 ### 6.7 Carryover register
 
 | Carryover | Source milestone | Priority | Status | Why it matters | Target milestone / owner |
 |---|---:|---:|---|---|---|
 | Character import/export fully exposed | M4 | High | Deferred | Portability and M6 creator workflows | M6 basic character import/export; M8 full backup/import/export |
-| Write-side memory `character_id` hardening | M4 | High | M5-blocking | Prevent cross-character bleed before visual memories exist | M5-P07 |
-| Frontend README stale after M3/M4 | M3 | Medium | M5-scoped | Docs currently understate delivered surfaces | M5-P11 |
+| Write-side memory `character_id` hardening | M4 | High | Closed | Prevent cross-character bleed before visual memories exist | Closed by M5-P07; verified by M5-P11 |
+| Frontend README stale after M3/M4 | M3 | Medium | Closed | Docs currently understate delivered surfaces | Closed by M5-P11 |
 | Packaged Tauri backend connectivity check | M1/M3 | High | Needs verification | Dev mode working is not packaged app working | M8 productization; checklist can be recorded in M5-P11 if tested earlier |
-| Real 8GB smoke test on target hardware | M3 | High | Needs verification | Guardrails need hardware proof | M5-P09/M5-P11 checklist, final productization in M8 |
+| Real 8GB smoke test on target hardware | M3 | High | Needs verification / Pending M8 | Guardrails need hardware proof | M5-P09/M5-P11 checklist recorded; final productization in M8-P09 |
 | Long-session memory/growth evals | M2 | Medium | Deferred | “Feels alive” needs evidence | M8-P07 |
 | Actual LoRA trainer backend | M2 | Medium | Deferred | Current job is dry-run/foundation | M9-P01 |
-| Visual feedback rollback/canon UI | M4/M5 | High | M5-scoped | User trust for visual continuity | M5-P05/M5-P06 |
+| Visual feedback rollback/canon UI | M4/M5 | High | Closed | User trust for visual continuity | Closed by M5-P05/M5-P06; verified by M5-P11 |
 | Character-specific authored VN assets | M3/M4 | Medium | Deferred | VN identity continuity | M6 asset import/selection, M7 immersive preview polish |
 | Backend-synced Settings persistence | M3 | Medium | Deferred | Browser-only settings are not enough for productization | M8-P11 |
 | Full plugin runtime | M3 | Low | Deferred | Extension manifests exist but execution/runtime remains later | M10+ |
@@ -638,7 +638,7 @@ M5 must reuse the existing systems instead of creating parallel ones:
 
 ## 7. Milestone 5 — Moment Capture & Visual Continuity
 
-**Status**: Current.  
+**Status**: Completed — closed June 13, 2026.
 **Goal**: Make image generation core to Reverie’s UX by tying it to character identity, scene state, memory, gallery history, visual feedback, and reviewable canon updates.
 
 Moment Capture is not “generate an image.” It is:
@@ -648,6 +648,23 @@ capture this shared moment → preserve why it mattered → let feedback improve
 ```
 
 M5 transforms the M3 image queue from generic media generation into character-linked embodied memory.
+
+### M5 completion summary
+
+Milestone 5 delivered the Moment Capture and visual-continuity layer:
+
+- `VisualPromptCompiler` and `VisualPromptBundle` now compile bounded, deterministic visual prompt sections from `CharacterBlueprint`, `VisualIdentityProfile`, scene state, relationship phase, rejected traits, and capture intent.
+- `SceneState`, `MomentCaptureRequest`, `MomentCaptureRecord`, `VisualFeedbackAction`, `VisualChangeEvent`, review states, and `VisualMemoryArtifact` provide versioned local contracts for capture, feedback, canon proposals, rollback, and memory writeback.
+- `MomentCaptureService` queues capture jobs through the existing `ImageGenerationService` and `LocalResourceCoordinator`, preserving `character_id`, source message/session metadata, prompt hash, preset, workflow, and safe failure details.
+- Gallery/history metadata is character-linked, filterable, deletion-aware, and displays capture status, feedback state, review/canon state, source context, and saved asset metadata.
+- Feedback actions support quick and detailed correction, including wrong appearance, looks right, make canon, use outfit again, just this scene, and reject style/trait.
+- Canon-affecting feedback creates reviewable `VisualChangeEvent`s. Approval updates `VisualIdentityProfile` with provenance and rollback data; rejection/rollback prevents future positive-prompt contamination.
+- Visual memory writeback is character-private by default, refuses missing `character_id` for private visual writes, supports explicit shared/global scope, and never marks generated visual feedback as training-eligible.
+- 8GB behavior is hardened for capture jobs: queueing, TTS preemption, waiting for VRAM, preview downgrade, cancellation, retry metadata preservation, and sanitized failure payloads are covered by tests and UI status copy.
+- M5-P08 added a deterministic visual consistency eval harness covering identity anchors, rejected traits, scene mutability, distinct-character prompts, feedback/canon review, visual memory scoping, and 8GB queue pressure.
+- M5-P10 made saved capture assets forward-compatible for M6 character import/export and M8 backup/export work without implementing those future flows.
+
+Target-hardware execution on an RTX 4070 8GB mobile or equivalent packaged app remains **Pending M8-P09**. The M5 checklist is recorded in `docs/M5-P09_TARGET_HARDWARE_SMOKE_CHECKLIST.md` and must not be marked passed until run on real target hardware with the TTS and ComfyUI stacks available.
 
 ### M5 success criteria
 
@@ -1492,6 +1509,27 @@ Definition of Done:
 ---
 
 #### M5-P11 — M5 final verification, docs, and handoff
+**Status:** ✅ Completed
+
+**Delivered:**
+- Ran the M5 visual consistency eval harness: `cd backend && .venv\Scripts\python.exe -m pytest tests/test_visual_consistency_evals.py -q` (`3 passed`)
+- Ran M5/backend regression subset: `cd backend && .venv\Scripts\python.exe -m pytest tests/test_visual_prompt_compiler.py tests/test_moment_capture_contracts.py tests/test_moment_capture_service.py tests/test_image_generation_service.py tests/test_memory_api.py -q` (`50 passed`)
+- Ran full backend regression suite after closing a Windows SQLite handle lifecycle issue in `CharacterRepository`: `cd backend && .venv\Scripts\python.exe -m pytest -q` (`138 passed`)
+- Ran frontend unit tests: `cd frontend && node .\node_modules\vitest\vitest.mjs run` (`3 files / 9 tests passed`)
+- Ran frontend diagnostics: `cd frontend && node .\node_modules\svelte-check\bin\svelte-check --tsconfig .\tsconfig.json` (`0 errors / 0 warnings`)
+- Updated M5 closure documentation in `DEVELOPMENT_PLAN.md`, README docs, the capability matrix, Source of Truth, and the M5-P09 target-hardware checklist.
+- Reconciled M5-scoped carryovers: write-side visual memory scoping and visual feedback/canon rollback UI are closed; target-hardware smoke remains Pending M8.
+- Confirmed no M6+ runtime feature work was added during closure. The only code fix was repository handle cleanup needed for full verification on Windows.
+
+**Manual / evidence validation status:**
+- Chat/VN capture path: Verified by route/service/frontend store coverage and deterministic M5 tests; packaged manual smoke remains Pending M8.
+- Gallery metadata/status display: Verified by backend image-history tests, frontend visual feedback tests, and component/store review.
+- Quick and detailed feedback actions: Verified by M5 backend/frontend tests and visual consistency eval.
+- Review/approve/reject/rollback: Verified by `VisualChangeEvent` service/API tests, frontend review controls, and M5 eval harness.
+- Visual memory writeback and cross-character isolation: Verified by memory API tests and M5 eval harness.
+- Missing private `character_id` write hardening: Verified by `test_memory_api.py`.
+- 8GB queue/TTS preemption/non-blocking behavior: Verified by deterministic coordinator tests and M5 eval harness; real TTS/ComfyUI/RTX 4070 8GB packaged execution remains Pending M8-P09.
+- Target-hardware checklist: Explicitly recorded as Pending M8 in `docs/M5-P09_TARGET_HARDWARE_SMOKE_CHECKLIST.md`.
 
 **Goal**: Close M5 cleanly and prepare M6 without leaving visual continuity as folklore.
 
@@ -1832,14 +1870,11 @@ For Moment Capture tasks, Grok must also score:
 
 ## 15. Immediate Next Actions
 
-1. Land **M5-P00 — Closure Ledger finalization and gap placement** before any M5 runtime code.
-2. Confirm the carryover register has Status and Target milestone columns.
-3. Confirm write-side memory `character_id` hardening is marked M5-blocking.
-4. Confirm deferred items are placed in M6, M7, M8, or M9 instead of smuggled into M5.
-5. Have Grok generate the first runtime implementation prompt for **M5-P01 — VisualPromptCompiler v1**.
-6. Every M5 prompt must reference the M2–M4 Closure Ledger and list reused systems.
-7. Run the two-Codex implementation workflow for each M5 task.
-8. Review each output for visual continuity, character scoping, 8GB safety, test coverage, and no parallel abstractions.
+1. Start **M6-P01 — Creator architecture and draft persistence** using the two-run Codex workflow.
+2. Keep M5 Moment Capture as an available validation/first-portrait path for M6, without expanding it into a full creator or asset manager.
+3. Preserve M5 character-scoping and reviewable-canon rules for every creator field that touches visual identity, memory, or relationship state.
+4. Carry the real RTX 4070 8GB mobile packaged smoke test to **M8-P09** using `docs/M5-P09_TARGET_HARDWARE_SMOKE_CHECKLIST.md`.
+5. Keep deferred items assigned to their future owners: character import/export in M6/M8, backend-synced Settings in M8, long-session evals in M8, real Personal LoRA trainer in M9, and advanced visual evolution in M9.
 
 ---
 
