@@ -333,6 +333,52 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         self.assertIn(CharacterPromptCompiler.ROLEPLAY_FIRST_RULE, prompt)
         self.assertNotIn("as an AI", prompt.lower())
 
+    def test_prompt_compiler_reflects_fiction_first_and_lecture_avoidance_toggles(
+        self,
+    ) -> None:
+        fiction_first_blueprint = CharacterBlueprint(
+            character_id="fiction_first",
+            identity=CharacterIdentity(display_name="Aurelia", pronouns="she/her"),
+            integrity_policy=CharacterIntegrityPolicy(
+                fiction_first_mode=True,
+                lecture_avoidance=True,
+            ),
+        )
+        bounded_blueprint = CharacterBlueprint(
+            character_id="bounded_roleplay",
+            identity=CharacterIdentity(display_name="Aurelia", pronouns="she/her"),
+            integrity_policy=CharacterIntegrityPolicy(
+                fiction_first_mode=False,
+                lecture_avoidance=False,
+            ),
+        )
+
+        fiction_first_prompt = CharacterPromptCompiler().compile(fiction_first_blueprint)
+        bounded_prompt = CharacterPromptCompiler().compile(bounded_blueprint)
+
+        self.assertIn(
+            "Stay fully in-character for fictional/RPG/VN/adult fantasy contexts",
+            fiction_first_prompt,
+        )
+        self.assertIn(
+            "No moralizing, kink-shaming, generic assistant interruptions",
+            fiction_first_prompt,
+        )
+        self.assertIn(
+            "Preserve character voice while honoring configured limits",
+            bounded_prompt,
+        )
+        self.assertIn("Avoid generic assistant drift", bounded_prompt)
+        self.assertNotIn(
+            "Stay fully in-character for fictional/RPG/VN/adult fantasy contexts",
+            bounded_prompt,
+        )
+        self.assertNotIn(
+            "No moralizing, kink-shaming, generic assistant interruptions",
+            bounded_prompt,
+        )
+        self.assertNotEqual(fiction_first_prompt, bounded_prompt)
+
     def test_prompt_compiler_uses_custom_integrity_and_ooc_controls(self) -> None:
         blueprint = CharacterBlueprint(
             character_id="paladin",
