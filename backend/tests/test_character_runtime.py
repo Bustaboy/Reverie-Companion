@@ -19,6 +19,7 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
+    CommunicationProfile,
 )
 from app.services.character_service import (
     CharacterNotFoundError,
@@ -175,12 +176,13 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         prompt = CharacterPromptCompiler().compile(blueprint)
 
         self.assertIn("<character_system_prompt>", prompt)
+        self.assertIn("## Stable identity", prompt)
+        self.assertIn("Name: Aria.", prompt)
         self.assertIn(
-            "Stable identity: Aria (she/her), clearly adult early_20s_adult, human.",
-            prompt,
+            "Adult baseline: clearly adult early_20s_adult; 18+ only.", prompt
         )
-        self.assertIn("Origin/archetype: moonlit confidante.", prompt)
-        self.assertIn("Relationship tags: slow_burn, repair.", prompt)
+        self.assertIn("Core identity anchors: moonlit confidante.", prompt)
+        self.assertIn("Key dynamics: slow_burn, repair.", prompt)
         self.assertIn("Promises: ask before sharp teasing.", prompt)
         self.assertIn("Rituals: goodnight forehead kiss.", prompt)
         self.assertIn(
@@ -189,6 +191,75 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         self.assertIn("Memory scope: character_private", prompt)
         self.assertIn("Growth policy: character_scoped=True", prompt)
         self.assertNotIn("private backstory draft", prompt)
+
+    def test_prompt_compiler_m4_p04_sections_bounding_and_visual_hints(self) -> None:
+        long_style = "velvet voice with intimate starlit precision"
+        long_avoid = "never flatten her into a generic assistant persona " * 40
+        blueprint = CharacterBlueprint(
+            character_id="mira",
+            identity=CharacterIdentity(
+                display_name="Mira",
+                pronouns="she/they",
+                adult_age_range="mid_20s_adult",
+                species_or_type="android muse",
+                origin_archetype="starlit archivist",
+                creator_notes="DO NOT LEAK RAW PRIVATE CREATOR NOTE",
+            ),
+            communication=CommunicationProfile(
+                style_notes=long_style,
+                avoid_style_rules=[long_avoid, "no as-an-AI phrasing"],
+            ),
+            relationship=RelationshipState(
+                character_id="mira",
+                phase="close",
+                relationship_dynamic="protective creative partners",
+                dynamic_tags=["cozy_lab", "mutual_devotion"],
+                unresolved_threads=["finish repairing the observatory"],
+            ),
+            metadata={
+                "visual_identity": {
+                    "identity_anchors": [
+                        "silver eyes",
+                        "soft neon halo",
+                        "clearly adult silhouette",
+                    ],
+                    "scene_hints": ["rainy window", "warm monitor glow"],
+                },
+                "scene_state": {
+                    "location": "observatory",
+                    "private_notes": "hidden scene note",
+                },
+            },
+        )
+
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        for section in [
+            "## Stable identity",
+            "## Communication style / voice",
+            "## Personality and behavior rules",
+            "## Avoid-style rules",
+            "## Relationship premise / phase / dynamic",
+            "## Roleplay-first fantasy policy",
+            "## Memory usage rules",
+            "## Visual / scene hints",
+        ]:
+            self.assertIn(section, prompt)
+        self.assertIn("Name: Mira.", prompt)
+        self.assertIn("velvet voice", prompt)
+        self.assertIn(CharacterPromptCompiler.ROLEPLAY_FIRST_RULE, prompt)
+        self.assertIn("Phase: close.", prompt)
+        self.assertIn("Key dynamics: cozy_lab, mutual_devotion.", prompt)
+        self.assertIn(
+            "Visual identity anchors: silver eyes, soft neon halo, clearly adult silhouette.",
+            prompt,
+        )
+        self.assertIn("Current scene hints: location=observatory.", prompt)
+        self.assertIn("…", prompt)
+        self.assertLess(len(prompt), 10_000)
+        self.assertNotIn("DO NOT LEAK RAW PRIVATE CREATOR NOTE", prompt)
+        self.assertNotIn("hidden scene note", prompt)
+        self.assertNotIn("creator_notes", prompt)
 
     def test_prompt_compiler_includes_recent_growth_and_journal_guidance_when_provided(
         self,
