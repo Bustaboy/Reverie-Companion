@@ -84,6 +84,33 @@ Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 - `REVERIE_PERSONAL_LORA_MIN_CONFIDENCE`, `REVERIE_PERSONAL_LORA_MIN_EVIDENCE_COUNT`: candidate quality gates
 - `REVERIE_PERSONAL_LORA_MAX_EXAMPLE_CHARS`, `REVERIE_PERSONAL_LORA_MAX_EXAMPLES_PER_JOB`: dataset/job caps
 
+
+## Visual Consistency Eval Harness
+
+M5-P08 adds a lightweight, deterministic eval harness that runs inside the backend pytest suite. It does not call CLIP, cloud scoring, ComfyUI, or any external image service. Instead it checks the contract data that should make visual comparison reliable across Codex Run A vs Run B:
+
+- identity anchors are present in positive prompt bundles and prompt metadata
+- rejected or wrong traits remain out of positive prompts and appear in negative prompts
+- scene changes alter scene details without mutating identity anchors
+- the same character stays stable across scenes, while distinct characters produce distinct prompt hashes and traits
+- feedback actions affect future prompts only through reviewable flows
+- wrong-appearance corrections, make-canon approvals, outfit reuse, and character-scoped visual memory are validated
+- 8GB queue pressure stays non-blocking and degrades gracefully without GPU work
+
+Run the harness directly:
+
+```bash
+cd backend
+python -m pytest tests/test_visual_consistency_evals.py -q
+```
+
+Run it with the full backend test suite:
+
+```bash
+cd backend
+python -m pytest
+```
+
 ## Requirements
 
 - Python 3.11+
