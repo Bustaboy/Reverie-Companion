@@ -9,6 +9,8 @@
   let { compact = false }: Props = $props();
   let selected: ImageGalleryItem | null = $state(null);
   let unavailableImages = $state<string[]>([]);
+  let expandedTraitFeedbackFor = $state<string | null>(null);
+  let traitFeedback = $state<Record<string, { name: string; value: string; note: string }>>({});
 
   onMount(() => {
     void imageGenerationStore.loadGallery();
@@ -51,6 +53,31 @@
     const value = globalThis.prompt?.('Which appearance/style trait should Reverie remember?', fallback);
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  };
+
+  const traitDraft = (jobId: string) => traitFeedback[jobId] ?? { name: '', value: '', note: '' };
+
+  const updateTraitDraft = (jobId: string, patch: Partial<{ name: string; value: string; note: string }>) => {
+    traitFeedback = { ...traitFeedback, [jobId]: { ...traitDraft(jobId), ...patch } };
+  };
+
+  const toggleTraitFeedback = (jobId: string) => {
+    expandedTraitFeedbackFor = expandedTraitFeedbackFor === jobId ? null : jobId;
+  };
+
+  const sendDetailedTraitFeedback = (item: ImageGalleryItem, action: 'wrong_appearance' | 'reject_style_trait') => {
+    const draft = traitDraft(item.job_id);
+    const traitName = draft.name.trim();
+    const traitValue = draft.value.trim();
+    const note = draft.note.trim();
+    const fallback = action === 'wrong_appearance' ? 'appearance mismatch' : 'style trait to avoid';
+    const usableTrait = traitValue || traitName;
+    if (!usableTrait) return;
+    void imageGenerationStore.submitGalleryFeedback(item, action, {
+      traitName: traitName || fallback,
+      traitValue: usableTrait,
+      note: note || undefined
+    });
   };
 
   const sendFeedback = (item: ImageGalleryItem, action: Parameters<typeof imageGenerationStore.submitGalleryFeedback>[1]) => {
@@ -146,7 +173,28 @@
             <button type="button" onclick={() => sendFeedback(item, 'make_canon')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Make Canon</button>
             <button type="button" onclick={() => sendFeedback(item, 'just_this_scene')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Just This Scene</button>
             <button type="button" onclick={() => sendFeedback(item, 'reject_style_trait')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Reject Style Trait</button>
+            <button type="button" class="secondary" onclick={() => toggleTraitFeedback(item.job_id)} disabled={!item.moment_capture_id}>{expandedTraitFeedbackFor === item.job_id ? 'Hide Details' : 'Trait Details'}</button>
           </div>
+          {#if expandedTraitFeedbackFor === item.job_id}
+            <div class="gallery-trait-feedback" aria-label="Detailed trait feedback">
+              <label>
+                <span>Trait</span>
+                <input type="text" value={traitDraft(item.job_id).name} placeholder="Hair color, eye color, outfit, style…" oninput={(event) => updateTraitDraft(item.job_id, { name: event.currentTarget.value })} />
+              </label>
+              <label>
+                <span>Correction</span>
+                <input type="text" value={traitDraft(item.job_id).value} placeholder="What should Reverie remember or avoid?" oninput={(event) => updateTraitDraft(item.job_id, { value: event.currentTarget.value })} />
+              </label>
+              <label>
+                <span>Optional note</span>
+                <textarea rows="2" value={traitDraft(item.job_id).note} placeholder="Add context for review…" oninput={(event) => updateTraitDraft(item.job_id, { note: event.currentTarget.value })}></textarea>
+              </label>
+              <div class="gallery-actions">
+                <button type="button" onclick={() => sendDetailedTraitFeedback(item, 'wrong_appearance')} disabled={!traitDraft(item.job_id).name.trim() && !traitDraft(item.job_id).value.trim()}>Submit Wrong Appearance</button>
+                <button type="button" onclick={() => sendDetailedTraitFeedback(item, 'reject_style_trait')} disabled={!traitDraft(item.job_id).name.trim() && !traitDraft(item.job_id).value.trim()}>Submit Reject Trait</button>
+              </div>
+            </div>
+          {/if}
           <div class="gallery-actions" aria-label="Image controls">
             <button type="button" onclick={() => imageGenerationStore.regenerate(item)}>Regenerate</button>
             <button type="button" onclick={() => imageGenerationStore.vary(item)}>Vary</button>

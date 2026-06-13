@@ -25,6 +25,38 @@ describe('ImageService visual feedback integration', () => {
     expect(payload).toMatchObject({ character_id: 'char-1', action: 'looks_right', source_image_ref: 'job-1' });
   });
 
+
+  it('submits detailed trait feedback for wrong appearance corrections', async () => {
+    let payload: unknown;
+    const fetcher = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      payload = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          record: { feedback_state: 'wrong_appearance', review_state: 'unreviewed' },
+          visual_change_event: { event_id: 'event-trait', character_id: 'char-1', canon_status: 'proposed' }
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const service = new ImageService({ baseUrl: 'http://test.local', fetcher });
+    await service.submitMomentCaptureFeedback('capture-trait', {
+      character_id: 'char-1',
+      action: 'wrong_appearance',
+      trait_name: 'eye color',
+      trait_value: 'eyes should stay amber',
+      note: 'Generated blue eyes on this capture.'
+    });
+
+    expect(payload).toMatchObject({
+      character_id: 'char-1',
+      action: 'wrong_appearance',
+      trait_name: 'eye color',
+      trait_value: 'eyes should stay amber',
+      note: 'Generated blue eyes on this capture.'
+    });
+  });
+
   it('lists and reviews visual change events through the M5-P05 review flow', async () => {
     const calls: string[] = [];
     const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
