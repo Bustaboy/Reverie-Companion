@@ -8,7 +8,14 @@ import pytest
 
 from app.models.image import ImageJobStatus, ImageQualityPreset
 from app.schemas.character_blueprint import CharacterBlueprint, CharacterIdentity
-from app.schemas.moment_capture import MomentCaptureRequest, SceneState
+from app.schemas.moment_capture import (
+    FeedbackState,
+    MomentCaptureRequest,
+    ReviewState,
+    SceneState,
+    VisualChangeCanonStatus,
+    VisualFeedbackAction,
+)
 from app.schemas.relationship_state import RelationshipPhase
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_service import CharacterNotFoundError
@@ -25,6 +32,28 @@ class FakeCharacterService:
         if self.character is None or self.character.character_id != character_id:
             raise CharacterNotFoundError(character_id)
         return self.character
+
+    def get_visual_identity(self, character_id: str) -> VisualIdentityProfile:
+        return self.load_by_id(character_id).visual_identity
+
+    def update_visual_identity(
+        self, character_id: str, patch: dict[str, object]
+    ) -> VisualIdentityProfile:
+        character = self.load_by_id(character_id)
+        visual = character.visual_identity
+        if "evolving_trait" in patch and isinstance(patch["evolving_trait"], dict):
+            trait = patch["evolving_trait"]
+            visual = visual.with_evolving_trait(
+                str(trait["name"]),
+                str(trait["value"]),
+                provenance=str(trait["provenance"]),
+            )
+        if "rejected_traits" in patch:
+            visual = visual.model_copy(
+                update={"rejected_traits": patch["rejected_traits"]}
+            )
+        self.character = character.model_copy(update={"visual_identity": visual})
+        return visual
 
 
 def _character() -> CharacterBlueprint:
@@ -89,12 +118,10 @@ def test_capture_queues_image_job_and_persists_record_with_metadata(tmp_path) ->
         assert job.source == "moment_capture"
         assert job.context["moment_capture"]["character_id"] == "aria"
         assert (
-            job.context["moment_capture"]["prompt_hash"]
-            == response.record.prompt_hash
+            job.context["moment_capture"]["prompt_hash"] == response.record.prompt_hash
         )
         assert (
-            job.context["moment_capture"]["scene_state"]["location"]
-            == "rainy balcony"
+            job.context["moment_capture"]["scene_state"]["location"] == "rainy balcony"
         )
         assert service.get_record(response.record.capture_id) == response.record
         assert (tmp_path / "moment_captures.json").exists()
@@ -164,3 +191,183 @@ def test_api_boundary_returns_structured_missing_character_error() -> None:
         assert exc.value.detail["error"]["retryable"] is False
 
     asyncio.run(run_test())
+
+
+def test_feedback_actions_validate_and_persist_summary(tmp_path) -> None:
+    service = MomentCaptureService(
+        character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+    )
+    record = MomentCaptureRecordForTest(_request(), "job-feedback")
+    service._records[record.capture_id] = record
+
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    for action in (
+        VisualFeedbackAction.looks_right,
+        VisualFeedbackAction.wrong_appearance,
+        VisualFeedbackAction.make_canon,
+        VisualFeedbackAction.use_outfit_again,
+        VisualFeedbackAction.just_this_scene,
+        VisualFeedbackAction.reject_style_trait,
+    ):
+        response = service.submit_feedback(
+            record.capture_id,
+            VisualFeedbackRequest(
+                character_id="aria",
+                action=action,
+                trait_name="hair",
+                trait_value="silver braid",
+                note=f"user chose {action.value}",
+            ),
+        )
+        assert (
+            response.record.metadata["feedback_summary"]["latest_action"]
+            == action.value
+        )
+
+    assert service.get_record(record.capture_id).metadata["feedback_summary"]
+
+
+def test_make_canon_is_pending_until_approved_then_rolls_back(tmp_path) -> None:
+    character = _character().model_copy(
+        update={
+            "visual_identity": _character().visual_identity.with_evolving_trait(
+                "hair", "long black-violet hair", provenance="creator_seed"
+            )
+        }
+    )
+    character_service = FakeCharacterService(character)
+    service = MomentCaptureService(
+        character_service=character_service,  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+    )
+    record = MomentCaptureRecordForTest(_request(), "job-canon")
+    service._records[record.capture_id] = record
+
+    from app.services.moment_capture_service import (
+        VisualChangeReviewRequest,
+        VisualFeedbackRequest,
+    )
+
+    feedback = service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.make_canon,
+            trait_name="hair",
+            trait_value="short silver hair",
+            source_image_ref="/captures/aria.png",
+        ),
+    )
+
+    event = feedback.visual_change_event
+    assert event is not None
+    assert event.canon_status == VisualChangeCanonStatus.proposed
+    assert event.metadata["source_image_ref"] == "/captures/aria.png"
+    assert (
+        character_service.get_visual_identity("aria").evolving_traits[-1].value
+        == "long black-violet hair"
+    )
+    assert feedback.record.review_state == ReviewState.canon_requested
+
+    approved = service.approve_visual_change(
+        event.event_id, VisualChangeReviewRequest(character_id="aria")
+    )
+    assert approved.event.canon_status == VisualChangeCanonStatus.canonized
+    assert approved.event.rollback_id
+    assert (
+        character_service.get_visual_identity("aria").evolving_traits[-1].value
+        == "short silver hair"
+    )
+    assert (
+        "visual_change:"
+        in character_service.get_visual_identity("aria").evolving_traits[-1].provenance
+    )
+
+    rollback = service.rollback_visual_change(
+        event.event_id, VisualChangeReviewRequest(character_id="aria")
+    )
+    assert rollback.event.rollback_id == event.event_id
+    assert rollback.event.canon_status == VisualChangeCanonStatus.rolled_back
+    assert (
+        character_service.get_visual_identity("aria").evolving_traits[-1].value
+        == "long black-violet hair"
+    )
+
+
+def test_rejected_and_scene_only_feedback_do_not_update_positive_identity(
+    tmp_path,
+) -> None:
+    character_service = FakeCharacterService(_character())
+    service = MomentCaptureService(
+        character_service=character_service,  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+    )
+    record = MomentCaptureRecordForTest(_request(), "job-reject")
+    service._records[record.capture_id] = record
+
+    from app.services.moment_capture_service import (
+        VisualChangeReviewRequest,
+        VisualFeedbackRequest,
+    )
+    from app.services.visual_prompt_compiler import VisualPromptCompiler
+
+    rejected = service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.reject_style_trait,
+            trait_value="blue eyes",
+        ),
+    )
+    assert rejected.visual_change_event is not None
+    service.reject_visual_change(
+        rejected.visual_change_event.event_id,
+        VisualChangeReviewRequest(character_id="aria"),
+    )
+    assert "blue eyes" in character_service.get_visual_identity("aria").rejected_traits
+    assert (
+        character_service.get_visual_identity("aria").current_appearance
+        == "long black-violet hair and a moon pendant"
+    )
+
+    scene_only = service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.just_this_scene,
+            trait_value="red dress",
+        ),
+    )
+    assert scene_only.visual_change_event is None
+    assert scene_only.record.metadata["feedback_summary"]["scene_only"] is True
+
+    prompt = VisualPromptCompiler().compile(
+        visual_identity=character_service.get_visual_identity("aria")
+    )
+    assert "blue eyes" not in prompt.positive_prompt
+    assert "blue eyes" in prompt.negative_prompt
+
+
+def MomentCaptureRecordForTest(request: MomentCaptureRequest, image_job_id: str):
+    from app.schemas.moment_capture import MomentCaptureRecord
+
+    return MomentCaptureRecord(
+        capture_id=f"cap-{image_job_id}",
+        character_id=request.character_id,
+        conversation_id=request.conversation_id,
+        session_id=request.session_id,
+        source_message_id=request.source_message_id,
+        source_turn_index=request.source_turn_index,
+        scene_state=request.scene_state,
+        relationship_phase_snapshot=request.relationship_phase_snapshot,
+        visual_identity_version=request.visual_identity_version,
+        visual_identity_updated_at=request.visual_identity_updated_at,
+        prompt_hash=request.prompt_hash,
+        image_job_id=image_job_id,
+        output_paths=[f"/tmp/{image_job_id}.png"],
+    )

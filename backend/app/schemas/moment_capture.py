@@ -80,6 +80,8 @@ class VisualFeedbackAction(StrEnum):
     wrong_appearance = "wrong_appearance"
     make_canon = "make_canon"
     use_outfit_again = "use_outfit_again"
+    just_this_scene = "just_this_scene"
+    reject_style_trait = "reject_style_trait"
     scene_only = "scene_only"
     never_use_trait = "never_use_trait"
     favorite = "favorite"
