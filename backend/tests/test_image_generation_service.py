@@ -501,3 +501,97 @@ def test_image_history_delete_tombstones_metadata_and_hides_from_default_list(
         )
 
     asyncio.run(run_test())
+
+
+def test_unknown_vram_uses_preview_for_moment_capture_with_metadata_events(
+    tmp_path,
+) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=None)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                conversation_id="conv-cap",
+                source="moment_capture",
+                prompt="capture safely",
+                quality_preset=ImageQualityPreset.high_8gb,
+                context={
+                    "moment_capture": {
+                        "capture_id": "cap-safe",
+                        "character_id": "char-safe",
+                        "session_id": "sess-safe",
+                        "prompt_hash": "hash-safe",
+                    }
+                },
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        completed = service.get_job(job.job_id)
+        assert completed.active_preset == ImageQualityPreset.preview_8gb
+        assert completed.fallback_used is True
+        assert completed.moment_capture_id == "cap-safe"
+        assert completed.character_id == "char-safe"
+        assert any(
+            event.resource_mode == "unknown_vram_preview"
+            and event.moment_capture_id == "cap-safe"
+            and event.character_id == "char-safe"
+            and event.pressure == "unknown"
+            for event in service._jobs[job.job_id].events
+        )
+
+    asyncio.run(run_test())
+
+
+def test_failure_payload_preserves_debug_metadata_without_prompts(tmp_path) -> None:
+    class FailingAdapter(FakeAdapter):
+        async def generate(self, job, preset):
+            raise ImageGenerationError(
+                "Local ComfyUI is not reachable. Start ComfyUI with --lowvram and retry.",
+                code="image_comfy_unreachable",
+                retryable=True,
+                details={"url": "http://127.0.0.1:8188", "prompt": "private prompt"},
+            )
+
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        service = make_service(tmp_path, coordinator, FailingAdapter())
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                source="moment_capture",
+                prompt="very private capture prompt",
+                context={
+                    "moment_capture": {
+                        "capture_id": "cap-fail",
+                        "character_id": "char-fail",
+                        "session_id": "sess-fail",
+                        "prompt_hash": "hash-fail",
+                    }
+                },
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.failed,
+            ImageJobStatus.completed,
+        }:
+            await asyncio.sleep(0.01)
+
+        failed = service.get_job(job.job_id)
+        assert failed.status == ImageJobStatus.failed
+        assert failed.error is not None
+        assert failed.error["retryable"] is True
+        details = failed.error["details"]
+        assert details["url"] == "http://127.0.0.1:8188"
+        assert "prompt" not in details
+        assert details["debug"]["capture_id"] == "cap-fail"
+        assert details["debug"]["character_id"] == "char-fail"
+        assert "very private" not in json.dumps(details)
+
+    asyncio.run(run_test())

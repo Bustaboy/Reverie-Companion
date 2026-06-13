@@ -279,7 +279,9 @@ class ComfyUIFluxAdapter:
 
     def _open_json(self, request: urllib.request.Request) -> dict[str, Any]:
         try:
-            with urllib.request.urlopen(request, timeout=10.0) as response:  # noqa: S310 - local ComfyUI URL from settings.
+            with urllib.request.urlopen(
+                request, timeout=10.0
+            ) as response:  # noqa: S310 - local ComfyUI URL from settings.
                 return json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.URLError as exc:
             raise ImageGenerationError(
@@ -416,7 +418,13 @@ class ImageGenerationService:
         )
         self._jobs[job_id] = job
         self._emit(
-            job, event="job.queued", message="Image job queued behind chat and TTS."
+            job,
+            event="job.queued",
+            message=self._capture_message(
+                job,
+                "Moment Capture queued behind chat and voice.",
+                "Image job queued behind chat and TTS.",
+            ),
         )
         await self._queue.put(job_id)
         return job.to_read()
@@ -606,7 +614,11 @@ class ImageGenerationService:
                 status=ImageJobStatus.cancelled,
                 phase="cancelled",
                 progress=job.progress,
-                message="Image job cancelled.",
+                message=self._capture_message(
+                    job,
+                    "Moment Capture cancelled. Capture metadata was preserved for retry.",
+                    "Image job cancelled.",
+                ),
             )
         return job.to_read()
 
@@ -712,7 +724,11 @@ class ImageGenerationService:
                 job,
                 status=ImageJobStatus.cancelled,
                 phase="cancelled",
-                message="Image job cancelled before start.",
+                message=self._capture_message(
+                    job,
+                    "Moment Capture cancelled before rendering. Capture metadata was preserved for retry.",
+                    "Image job cancelled before start.",
+                ),
             )
             return
         async with self._coordinator.image_job_section(job_id=job.job_id):
@@ -732,7 +748,11 @@ class ImageGenerationService:
                     job,
                     status=ImageJobStatus.cancelled,
                     phase="cancelled",
-                    message="Image job cancelled before generation.",
+                    message=self._capture_message(
+                        job,
+                        "Moment Capture cancelled before rendering. Capture metadata was preserved for retry.",
+                        "Image job cancelled before generation.",
+                    ),
                 )
                 return
             await self._attempt_generation_with_tts_preemption(job)
@@ -747,7 +767,11 @@ class ImageGenerationService:
                     status=ImageJobStatus.paused,
                     phase="tts_priority",
                     resource_mode="paused_for_tts",
-                    message="Paused while Reverie is speaking; TTS has priority over image generation.",
+                    message=self._capture_message(
+                        job,
+                        "Moment Capture paused while Reverie is speaking; TTS has priority.",
+                        "Paused while Reverie is speaking; TTS has priority over image generation.",
+                    ),
                 )
                 await self._coordinator.wait_for_tts_idle()
                 self._update(
@@ -755,7 +779,11 @@ class ImageGenerationService:
                     status=ImageJobStatus.waiting_for_resources,
                     phase="resource_check",
                     resource_mode="checking",
-                    message="TTS finished; checking VRAM before resuming image generation.",
+                    message=self._capture_message(
+                        job,
+                        "Voice finished; checking VRAM before resuming Moment Capture.",
+                        "TTS finished; checking VRAM before resuming image generation.",
+                    ),
                 )
             status = self._resource_status()
             snapshot = status.snapshot
@@ -778,7 +806,11 @@ class ImageGenerationService:
                     phase="resource_check",
                     resource_mode="unknown_vram_preview",
                     progress=0.05,
-                    message="VRAM telemetry is unavailable; using the preview 8GB preset for safety.",
+                    message=self._capture_message(
+                        job,
+                        "VRAM telemetry is unavailable; Moment Capture is using the preview preset for safety.",
+                        "VRAM telemetry is unavailable; using the preview 8GB preset for safety.",
+                    ),
                 )
                 return
             if (
@@ -795,7 +827,11 @@ class ImageGenerationService:
                     phase="resource_ready",
                     resource_mode="vram_ready",
                     progress=0.08,
-                    message="Image resources are available; starting queued generation.",
+                    message=self._capture_message(
+                        job,
+                        "Resources are available; starting queued Moment Capture.",
+                        "Image resources are available; starting queued generation.",
+                    ),
                 )
                 return
             self._update(
@@ -805,7 +841,11 @@ class ImageGenerationService:
                 resource_mode="waiting_for_vram",
                 progress=0.03,
                 message=status.warning
-                or "Waiting for enough free VRAM before starting image generation.",
+                or self._capture_message(
+                    job,
+                    "Waiting for enough free VRAM before starting Moment Capture.",
+                    "Waiting for enough free VRAM before starting image generation.",
+                ),
             )
             await asyncio.sleep(self._settings.image_generation_resume_poll_seconds)
 
@@ -852,7 +892,11 @@ class ImageGenerationService:
                     resource_mode="degraded",
                     progress=0.10,
                     message=status.warning
-                    or "VRAM is tight; downgrading image generation to preview quality.",
+                    or self._capture_message(
+                        job,
+                        "VRAM is tight; downgrading Moment Capture to preview quality.",
+                        "VRAM is tight; downgrading image generation to preview quality.",
+                    ),
                 )
             preset = PRESET_CONFIGS[job.active_preset]
             self._update(
@@ -861,7 +905,11 @@ class ImageGenerationService:
                 phase="comfyui_generation",
                 resource_mode="exclusive_media",
                 progress=0.15,
-                message=f"Generating local image with {job.active_preset.value}.",
+                message=self._capture_message(
+                    job,
+                    f"Rendering Moment Capture with {job.active_preset.value}.",
+                    f"Generating local image with {job.active_preset.value}.",
+                ),
             )
             generation_task = asyncio.create_task(self._adapter.generate(job, preset))
             monitor_task = asyncio.create_task(self._monitor_tts_preemption(job))
@@ -906,7 +954,11 @@ class ImageGenerationService:
                         phase="tts_preempted",
                         resource_mode="paused_for_tts",
                         progress=job.progress,
-                        message="Image generation paused so TTS can speak first.",
+                        message=self._capture_message(
+                            job,
+                            "Moment Capture paused so TTS can speak first.",
+                            "Image generation paused so TTS can speak first.",
+                        ),
                     )
                     await self._wait_for_safe_resources(job)
                     continue
@@ -935,7 +987,11 @@ class ImageGenerationService:
                         phase="oom_fallback",
                         resource_mode="degraded",
                         progress=0.10,
-                        message="GPU memory was tight; retrying once with the preview 8GB preset.",
+                        message=self._capture_message(
+                            job,
+                            "GPU memory was tight; retrying Moment Capture once with the preview 8GB preset.",
+                            "GPU memory was tight; retrying once with the preview 8GB preset.",
+                        ),
                     )
                     continue
                 self._fail(
@@ -951,7 +1007,11 @@ class ImageGenerationService:
                 phase="completed",
                 resource_mode="complete",
                 progress=1.0,
-                message="Image generation completed.",
+                message=self._capture_message(
+                    job,
+                    "Moment Capture image completed.",
+                    "Image generation completed.",
+                ),
                 output_paths=outputs,
             )
             self._record_history_item(job)
@@ -959,7 +1019,11 @@ class ImageGenerationService:
         self._fail(
             job,
             code="image_preempted_or_oom",
-            message="Image generation could not complete safely under current local resource pressure.",
+            message=self._capture_message(
+                job,
+                "Moment Capture could not complete safely under current local resource pressure.",
+                "Image generation could not complete safely under current local resource pressure.",
+            ),
             retryable=True,
         )
 
@@ -1020,6 +1084,51 @@ class ImageGenerationService:
                 details={"job_id": job_id},
             ) from exc
 
+    def _capture_message(
+        self, job: ImageJob, capture_message: str, image_message: str
+    ) -> str:
+        return (
+            capture_message
+            if job.moment_capture_id or job.source == "moment_capture"
+            else image_message
+        )
+
+    def _safe_failure_details(
+        self, job: ImageJob, details: dict[str, object] | None
+    ) -> dict[str, object]:
+        safe_keys = {
+            "url",
+            "prompt_id",
+            "history_path",
+            "manifest_path",
+            "job_id",
+            "output_index",
+            "backend",
+        }
+        safe_details = {
+            key: value
+            for key, value in (details or {}).items()
+            if key in safe_keys
+            and isinstance(value, str | int | float | bool | type(None))
+        }
+        safe_details["debug"] = {
+            "job_id": job.job_id,
+            "source": job.source,
+            "conversation_id": job.conversation_id,
+            "source_message_id": job.source_message_id,
+            "capture_id": job.moment_capture_id,
+            "character_id": job.character_id,
+            "session_id": job.session_id,
+            "prompt_hash": job.prompt_hash,
+            "requested_preset": job.requested_preset.value,
+            "active_preset": job.active_preset.value,
+            "resource_mode": job.resource_mode,
+            "pressure": job.pressure,
+            "vram_free_mb": job.vram_free_mb,
+            "vram_required_mb": job.vram_required_mb,
+        }
+        return safe_details
+
     def _fail(
         self,
         job: ImageJob,
@@ -1038,7 +1147,7 @@ class ImageGenerationService:
             error={
                 "code": code,
                 "message": message,
-                "details": details or {},
+                "details": self._safe_failure_details(job, details),
                 "retryable": retryable,
             },
         )
@@ -1097,6 +1206,8 @@ class ImageGenerationService:
             fallback_used=job.fallback_used,
             vram_free_mb=job.vram_free_mb,
             vram_required_mb=job.vram_required_mb,
+            pressure=job.pressure,
+            warning=job.warning,
             conversation_id=job.conversation_id,
             source=job.source,
             source_message_id=job.source_message_id,
