@@ -24,7 +24,17 @@ from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
 from app.models.image import ImageGenerateRequest, ImageJobRead
-from app.schemas.moment_capture import MomentCaptureRecord, MomentCaptureRequest
+from app.schemas.moment_capture import (
+    FeedbackState,
+    MomentCaptureRecord,
+    MomentCaptureRequest,
+    ReviewState,
+    VisualChangeCanonStatus,
+    VisualChangeEvent,
+    VisualFeedbackAction,
+    VisualFeedbackRequest,
+    utc_now_iso,
+)
 from app.services.character_service import CharacterService
 from app.services.image_generation_service import (
     ImageGenerationService,
@@ -63,8 +73,10 @@ class MomentCaptureService:
         )
         self._prompt_compiler = prompt_compiler or VisualPromptCompiler()
         self._records_path = records_path or self._default_records_path(self._settings)
+        self._events_path = self._records_path.with_name("visual_change_events.json")
         self._records_path.parent.mkdir(parents=True, exist_ok=True)
         self._records: dict[str, MomentCaptureRecord] = self._load_records()
+        self._events: dict[str, VisualChangeEvent] = self._load_events()
 
     async def capture(self, request: MomentCaptureRequest) -> MomentCaptureResponse:
         """Create a durable capture record and queue image generation.
@@ -148,6 +160,226 @@ class MomentCaptureService:
     def get_record(self, capture_id: str) -> MomentCaptureRecord | None:
         return self._records.get(capture_id)
 
+    def submit_feedback(
+        self, capture_id: str, request: VisualFeedbackRequest
+    ) -> tuple[MomentCaptureRecord, VisualChangeEvent | None]:
+        """Persist capture feedback and create reviewable visual events when needed."""
+
+        record = self._require_record(capture_id, request.character_id)
+        character = self._character_service.load_by_id(request.character_id)
+        action = request.action
+        metadata = dict(record.metadata)
+        feedback_summary = {
+            "action": action.value,
+            "note": request.note,
+            "changed_trait": request.changed_trait,
+            "proposed_value": request.proposed_value,
+            "rejected_trait": request.rejected_trait,
+            "source_image_ref": request.source_image_ref
+            or self._source_image_ref(record),
+            "updated_at": utc_now_iso(),
+        }
+        metadata["feedback_summary"] = feedback_summary
+
+        event: VisualChangeEvent | None = None
+        feedback_state = record.feedback_state
+        review_state = record.review_state
+        rollback_id = record.rollback_id
+
+        if action == VisualFeedbackAction.looks_right:
+            feedback_state = FeedbackState.looks_right
+            review_state = ReviewState.accepted
+        elif action == VisualFeedbackAction.wrong_appearance:
+            feedback_state = FeedbackState.wrong_appearance
+            rejected = request.rejected_trait or request.proposed_value or request.note
+            metadata.setdefault("rejected_visual_evidence", [])
+            if rejected:
+                metadata["rejected_visual_evidence"].append(str(rejected))
+        elif action == VisualFeedbackAction.just_this_scene:
+            feedback_state = FeedbackState.looks_right
+            metadata["scene_only"] = True
+        elif action == VisualFeedbackAction.reject_style_trait:
+            feedback_state = FeedbackState.rejected
+            rejected = request.rejected_trait or request.proposed_value or request.note
+            if rejected:
+                metadata.setdefault("rejected_trait_additions", []).append(
+                    str(rejected)
+                )
+                self._add_rejected_trait(
+                    request.character_id, str(rejected), source=capture_id
+                )
+        elif action in {
+            VisualFeedbackAction.make_canon,
+            VisualFeedbackAction.use_outfit_again,
+        }:
+            changed_trait = request.changed_trait or (
+                "outfit"
+                if action == VisualFeedbackAction.use_outfit_again
+                else "appearance"
+            )
+            new_value = (
+                request.proposed_value or request.note or record.scene_state.outfit
+            )
+            if not new_value:
+                raise ValueError(
+                    "Canon-affecting feedback requires proposed_value or note."
+                )
+            previous_value = self._previous_visual_value(
+                character.visual_identity, changed_trait
+            )
+            event = VisualChangeEvent(
+                event_id=f"vce_{uuid4().hex}",
+                character_id=request.character_id,
+                capture_id=capture_id,
+                changed_trait=changed_trait,
+                previous_value=previous_value,
+                new_value=str(new_value),
+                reason=request.note
+                or f"User selected {action.value} for reviewed Moment Capture.",
+                feedback_action=action,
+                canon_status=VisualChangeCanonStatus.proposed,
+                rollback_id=f"rollback_{uuid4().hex}",
+                metadata={
+                    "source_image_ref": request.source_image_ref
+                    or self._source_image_ref(record),
+                    "provenance": f"moment_capture:{capture_id}",
+                    **request.metadata,
+                },
+            )
+            self._events[event.event_id] = event
+            self._write_events()
+            feedback_state = FeedbackState.looks_right
+            review_state = ReviewState.canon_requested
+            rollback_id = event.event_id
+
+        updated = MomentCaptureRecord.model_validate(
+            {
+                **record.model_dump(mode="json"),
+                "feedback_state": feedback_state,
+                "review_state": review_state,
+                "feedback_actions": [*record.feedback_actions, action],
+                "metadata": metadata,
+                "rollback_id": rollback_id,
+                "updated_at": utc_now_iso(),
+            }
+        )
+        self._records[capture_id] = updated
+        self._write_records()
+        return updated, event
+
+    def list_visual_changes(
+        self, *, character_id: str, status: VisualChangeCanonStatus | None = None
+    ) -> list[VisualChangeEvent]:
+        return [
+            event
+            for event in sorted(self._events.values(), key=lambda item: item.created_at)
+            if event.character_id == character_id
+            and (status is None or event.canon_status == status)
+        ]
+
+    def get_visual_change(
+        self, event_id: str, *, character_id: str
+    ) -> VisualChangeEvent | None:
+        event = self._events.get(event_id)
+        if event is None or event.character_id != character_id:
+            return None
+        return event
+
+    def approve_visual_change(
+        self, event_id: str, *, character_id: str, note: str | None = None
+    ) -> VisualChangeEvent:
+        event = self._require_event(event_id, character_id)
+        if event.canon_status != VisualChangeCanonStatus.proposed:
+            raise ValueError("Only pending visual changes can be approved.")
+        provenance = f"visual_change_event:{event.event_id}"
+        self._character_service.update_visual_identity(
+            character_id,
+            {
+                "evolving_trait": {
+                    "name": event.changed_trait,
+                    "value": event.new_value,
+                    "provenance": provenance,
+                },
+                "rejected_traits": self._without_rejected_trait(
+                    character_id, event.new_value
+                ),
+            },
+        )
+        approved = event.model_copy(
+            update={
+                "canon_status": VisualChangeCanonStatus.approved,
+                "updated_at": utc_now_iso(),
+                "metadata": {
+                    **event.metadata,
+                    "approval_note": note,
+                    "provenance": provenance,
+                    "rollback_source_event_id": event.event_id,
+                },
+            }
+        )
+        self._events[event_id] = approved
+        self._write_events()
+        return approved
+
+    def reject_visual_change(
+        self, event_id: str, *, character_id: str, note: str | None = None
+    ) -> VisualChangeEvent:
+        event = self._require_event(event_id, character_id)
+        rejected = event.model_copy(
+            update={
+                "canon_status": VisualChangeCanonStatus.rejected,
+                "updated_at": utc_now_iso(),
+                "metadata": {**event.metadata, "rejection_note": note},
+            }
+        )
+        self._events[event_id] = rejected
+        self._write_events()
+        return rejected
+
+    def rollback_visual_change(
+        self, event_id: str, *, character_id: str, note: str | None = None
+    ) -> VisualChangeEvent:
+        event = self._require_event(event_id, character_id)
+        if (
+            event.canon_status != VisualChangeCanonStatus.approved
+            or not event.rollback_available
+        ):
+            raise ValueError(
+                "Only approved changes with rollback metadata can be rolled back."
+            )
+        rollback = VisualChangeEvent(
+            event_id=f"vce_{uuid4().hex}",
+            character_id=character_id,
+            capture_id=event.capture_id,
+            changed_trait=event.changed_trait,
+            previous_value=event.new_value,
+            new_value=event.previous_value or "",
+            reason=note or f"Rollback of approved visual change {event.event_id}.",
+            feedback_action=VisualFeedbackAction.rollback,
+            canon_status=VisualChangeCanonStatus.rolled_back,
+            rollback_id=event.event_id,
+            metadata={**event.metadata, "rollback_of": event.event_id},
+        )
+        self._character_service.update_visual_identity(
+            character_id,
+            {
+                "evolving_trait": {
+                    "name": event.changed_trait,
+                    "value": rollback.new_value,
+                    "provenance": f"visual_change_rollback:{rollback.event_id}",
+                },
+            },
+        )
+        self._events[event.event_id] = event.model_copy(
+            update={
+                "canon_status": VisualChangeCanonStatus.rolled_back,
+                "updated_at": utc_now_iso(),
+            }
+        )
+        self._events[rollback.event_id] = rollback
+        self._write_events()
+        return rollback
+
     @staticmethod
     def _default_records_path(settings: Settings) -> Path:
         return Path(settings.image_generation_history_path).with_name(
@@ -216,3 +448,74 @@ class MomentCaptureService:
         self._records_path.write_text(
             json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
         )
+
+    def _load_events(self) -> dict[str, VisualChangeEvent]:
+        if not self._events_path.exists():
+            return {}
+        data = json.loads(self._events_path.read_text(encoding="utf-8"))
+        return {
+            item["event_id"]: VisualChangeEvent.model_validate(item)
+            for item in data.get("items", [])
+        }
+
+    def _write_events(self) -> None:
+        payload = {
+            "schema_version": "visual_change_events.v1",
+            "items": [
+                event.model_dump(mode="json")
+                for event in sorted(
+                    self._events.values(), key=lambda item: item.created_at
+                )
+            ],
+        }
+        self._events_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+    def _require_record(
+        self, capture_id: str, character_id: str
+    ) -> MomentCaptureRecord:
+        record = self._records.get(capture_id)
+        if record is None or record.character_id != character_id:
+            raise KeyError(capture_id)
+        return record
+
+    def _require_event(self, event_id: str, character_id: str) -> VisualChangeEvent:
+        event = self.get_visual_change(event_id, character_id=character_id)
+        if event is None:
+            raise KeyError(event_id)
+        return event
+
+    def _source_image_ref(self, record: MomentCaptureRecord) -> str:
+        return (
+            record.output_paths[0]
+            if record.output_paths
+            else f"image-job:{record.image_job_id}"
+        )
+
+    def _previous_visual_value(self, profile, changed_trait: str) -> str | None:
+        for trait in profile.evolving_traits:
+            if trait.name == changed_trait:
+                return trait.value
+        return profile.current_appearance
+
+    def _add_rejected_trait(
+        self, character_id: str, trait: str, *, source: str
+    ) -> None:
+        visual = self._character_service.get_visual_identity(character_id)
+        rejected = [*visual.rejected_traits, trait]
+        self._character_service.update_visual_identity(
+            character_id,
+            {
+                "rejected_traits": rejected,
+                "current_appearance": visual.current_appearance,
+            },
+        )
+
+    def _without_rejected_trait(self, character_id: str, value: str) -> list[str]:
+        visual = self._character_service.get_visual_identity(character_id)
+        return [
+            item
+            for item in visual.rejected_traits
+            if item.casefold() != value.casefold()
+        ]

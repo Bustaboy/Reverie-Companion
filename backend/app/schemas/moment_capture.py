@@ -80,8 +80,8 @@ class VisualFeedbackAction(StrEnum):
     wrong_appearance = "wrong_appearance"
     make_canon = "make_canon"
     use_outfit_again = "use_outfit_again"
-    scene_only = "scene_only"
-    never_use_trait = "never_use_trait"
+    just_this_scene = "just_this_scene"
+    reject_style_trait = "reject_style_trait"
     favorite = "favorite"
     delete = "delete"
     rollback = "rollback"
@@ -511,3 +511,31 @@ class VisualChangeEvent(BaseModel):
         if self.previous_value is None:
             self.rollback_available = False
         return self
+
+
+class VisualFeedbackRequest(BaseModel):
+    """User feedback for a generated/captured image.
+
+    Feedback is capture-scoped and character-scoped. Canon-affecting actions
+    create reviewable ``VisualChangeEvent`` records; constructing this request
+    never directly mutates visual canon.
+    """
+
+    character_id: str = Field(..., min_length=1, max_length=120)
+    action: VisualFeedbackAction
+    changed_trait: str | None = Field(default=None, max_length=120)
+    proposed_value: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
+    rejected_trait: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    note: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
+    source_image_ref: str | None = Field(default=None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VisualFeedbackResponse(BaseModel):
+    record: MomentCaptureRecord
+    event: VisualChangeEvent | None = None
+
+
+class VisualChangeReviewRequest(BaseModel):
+    character_id: str = Field(..., min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)

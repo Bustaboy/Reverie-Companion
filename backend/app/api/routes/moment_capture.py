@@ -9,13 +9,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.routes.images import get_images_service
 from app.core.config import Settings, get_settings
-from app.schemas.moment_capture import MomentCaptureRequest
+from app.schemas.moment_capture import (
+    MomentCaptureRequest,
+    VisualChangeCanonStatus,
+    VisualChangeEvent,
+    VisualChangeReviewRequest,
+    VisualFeedbackRequest,
+    VisualFeedbackResponse,
+)
 from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.image_generation_service import (
     ImageGenerationError,
     ImageGenerationService,
 )
-from app.services.moment_capture_service import MomentCaptureResponse, MomentCaptureService
+from app.services.moment_capture_service import (
+    MomentCaptureResponse,
+    MomentCaptureService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,5 +94,122 @@ async def create_moment_capture(
                     "details": exc.details,
                     "retryable": exc.retryable,
                 }
+            },
+        ) from exc
+
+
+@router.post("/{capture_id}/feedback", response_model=VisualFeedbackResponse)
+async def submit_moment_capture_feedback(
+    capture_id: str,
+    request: VisualFeedbackRequest,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+) -> VisualFeedbackResponse:
+    """Store user visual feedback and create pending canon review events."""
+
+    try:
+        record, event = service.submit_feedback(capture_id, request)
+    except CharacterNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "character_not_found",
+                    "details": {"character_id": exc.character_id},
+                }
+            },
+        ) from exc
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "capture_not_found",
+                    "details": {"capture_id": str(exc)},
+                }
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "invalid_visual_feedback", "message": str(exc)}},
+        ) from exc
+    return VisualFeedbackResponse(record=record, event=event)
+
+
+@router.get("/visual-changes", response_model=list[VisualChangeEvent])
+async def list_visual_changes(
+    character_id: str,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+    status_filter: VisualChangeCanonStatus | None = VisualChangeCanonStatus.proposed,
+) -> list[VisualChangeEvent]:
+    """List pending/reviewed visual changes for an explicit character."""
+
+    return service.list_visual_changes(character_id=character_id, status=status_filter)
+
+
+@router.get("/visual-changes/{event_id}", response_model=VisualChangeEvent)
+async def read_visual_change(
+    event_id: str,
+    character_id: str,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+) -> VisualChangeEvent:
+    event = service.get_visual_change(event_id, character_id=character_id)
+    if event is None:
+        raise HTTPException(
+            status_code=404, detail={"error": {"code": "visual_change_not_found"}}
+        )
+    return event
+
+
+@router.post("/visual-changes/{event_id}/approve", response_model=VisualChangeEvent)
+async def approve_visual_change(
+    event_id: str,
+    request: VisualChangeReviewRequest,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+) -> VisualChangeEvent:
+    try:
+        return service.approve_visual_change(
+            event_id, character_id=request.character_id, note=request.note
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {"code": "visual_change_review_failed", "message": str(exc)}
+            },
+        ) from exc
+
+
+@router.post("/visual-changes/{event_id}/reject", response_model=VisualChangeEvent)
+async def reject_visual_change(
+    event_id: str,
+    request: VisualChangeReviewRequest,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+) -> VisualChangeEvent:
+    try:
+        return service.reject_visual_change(
+            event_id, character_id=request.character_id, note=request.note
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error": {"code": "visual_change_not_found"}}
+        ) from exc
+
+
+@router.post("/visual-changes/{event_id}/rollback", response_model=VisualChangeEvent)
+async def rollback_visual_change(
+    event_id: str,
+    request: VisualChangeReviewRequest,
+    service: Annotated[MomentCaptureService, Depends(get_moment_capture_service)],
+) -> VisualChangeEvent:
+    try:
+        return service.rollback_visual_change(
+            event_id, character_id=request.character_id, note=request.note
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {"code": "visual_change_rollback_failed", "message": str(exc)}
             },
         ) from exc
