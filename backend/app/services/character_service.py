@@ -103,6 +103,8 @@ class CharacterPromptCompiler:
         personality = blueprint.personality
         communication = blueprint.communication
         memory_policy = blueprint.memory_policy
+        integrity_policy = blueprint.integrity_policy
+        meta_consent_policy = blueprint.meta_consent_policy
         growth_policy = blueprint.growth_policy
 
         system_sections = [
@@ -166,8 +168,10 @@ class CharacterPromptCompiler:
                 ],
             ),
             self._section(
-                "Roleplay-first fantasy policy",
-                self._roleplay_integrity_lines(blueprint.roleplay_policy),
+                "Character integrity / roleplay boundary policy",
+                self._roleplay_integrity_lines(
+                    blueprint.roleplay_policy, integrity_policy, meta_consent_policy
+                ),
             ),
             "</character_system_prompt>",
         ]
@@ -325,29 +329,40 @@ class CharacterPromptCompiler:
             return None
         return "Recent journal context: " + " | ".join(lines)
 
-    def _roleplay_integrity_lines(self, roleplay) -> list[str]:
+    def _roleplay_integrity_lines(self, roleplay, integrity, meta_consent) -> list[str]:
         adult_mode = (
-            "Fictional adult fantasy is allowed by default."
+            "Fictional adult fantasy is allowed by default; keep adult roleplay in character unless an explicit meta boundary appears."
             if roleplay.adult_roleplay_allowed
             else "Follow the companion's selected intimacy limits."
         )
         stance = (
-            "Stay in-character for fictional/RPG/VN/adult fantasy contexts."
-            if roleplay.fiction_first_mode
+            "Fiction-first mode: Stay in-character for fictional/RPG/VN/adult fantasy contexts, including fantasy violence and dark romance."
+            if integrity.fiction_first_mode and roleplay.fiction_first_mode
             else "Preserve character voice while honoring configured limits."
         )
         lecture_rule = (
-            "No moralizing, kink-shaming, or generic assistant interruptions."
-            if roleplay.lecture_avoidance
+            "Lecture avoidance: no moralizing, kink-shaming, generic assistant interruptions, or 'as an AI' breaks for fictional scenes."
+            if integrity.lecture_avoidance and roleplay.lecture_avoidance
             else "Avoid generic assistant drift."
         )
+        pushback_rule = (
+            f"In-character pushback: when the character disagrees, use {integrity.disagreement_style.value} disagreement while preserving personality, intimacy, and the scene."
+            if integrity.in_character_pushback
+            else "Do not add forced disagreement; preserve the character's established dynamic."
+        )
+        pause_commands = self._join(meta_consent.pause_commands, limit=8, chars=40)
         return [
             stance,
             adult_mode,
+            f"Character independence: {integrity.independence:.2f}; avoid bland agreement drift while keeping pushback in-world.",
+            pushback_rule,
             lecture_rule,
             self.ROLEPLAY_FIRST_RULE,
-            "Only step out for real-world harm planning, underage sexual content, deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear actual distress.",
-            f"Safeword/OOC policy: {self._clip(roleplay.safeword_policy)}",
+            f"Reality boundary style: {integrity.reality_boundary_style.value}; only step out for real-world harm planning, underage sexual content, deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear actual distress.",
+            "For real-world harm planning, briefly leave the fiction layer, do not provide operational help, and redirect back to fictional roleplay or a safer scene frame.",
+            f"Safeword/OOC controls: safeword='{self._clip(meta_consent.safeword, 40)}', OOC marker='{self._clip(meta_consent.ooc_marker, 20)}', pause commands={pause_commands}; these always override in-scene dialogue.",
+            f"Fade-to-black preference: {meta_consent.fade_to_black_preference}.",
+            f"Legacy consent note: {self._clip(roleplay.safeword_policy)}",
         ]
 
     def _join(

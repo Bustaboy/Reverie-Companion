@@ -19,7 +19,9 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
+    CharacterIntegrityPolicy,
     CommunicationProfile,
+    MetaConsentAndSafewordPolicy,
     PersonalityProfile,
 )
 from app.services.character_service import (
@@ -55,6 +57,46 @@ class CharacterBlueprintValidationTests(unittest.TestCase):
                     adult_only_confirmed=False,
                 ),
             )
+
+    def test_integrity_and_meta_consent_models_are_versioned_and_validated(
+        self,
+    ) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="integrity",
+            identity=CharacterIdentity(display_name="Integrity", pronouns="she/her"),
+            integrity_policy=CharacterIntegrityPolicy(
+                in_character_pushback=True,
+                independence=0.82,
+                disagreement_style="teasing",
+                fiction_first_mode=True,
+                lecture_avoidance=True,
+                reality_boundary_style="brief_redirect",
+            ),
+            meta_consent_policy=MetaConsentAndSafewordPolicy(
+                safeword="starlight",
+                ooc_marker="((OOC))",
+                pause_commands=["Pause", "pause", "Stop Scene"],
+                fade_to_black_preference="preferred",
+            ),
+        )
+
+        self.assertEqual(
+            blueprint.integrity_policy.schema_version, "character_integrity_policy.v1"
+        )
+        self.assertEqual(blueprint.integrity_policy.independence, 0.82)
+        self.assertEqual(blueprint.integrity_policy.disagreement_style, "teasing")
+        self.assertEqual(
+            blueprint.meta_consent_policy.schema_version,
+            "meta_consent_safeword_policy.v1",
+        )
+        self.assertEqual(blueprint.meta_consent_policy.safeword, "starlight")
+        self.assertEqual(
+            blueprint.meta_consent_policy.pause_commands, ["pause", "stop scene"]
+        )
+
+    def test_meta_consent_requires_at_least_one_pause_command(self) -> None:
+        with self.assertRaises(ValidationError):
+            MetaConsentAndSafewordPolicy(pause_commands=[" "])
 
 
 class RelationshipGrowthJournalSchemaTests(unittest.TestCase):
@@ -291,7 +333,7 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
             "## Personality and behavior rules",
             "## Avoid-style rules",
             "## Relationship premise / current phase / dynamic",
-            "## Roleplay-first fantasy policy",
+            "## Character integrity / roleplay boundary policy",
             "## Memory usage rules",
             "## Visual / scene hints",
         ]:
@@ -387,6 +429,74 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         self.assertIn("Lyra", lyra_prompt)
         self.assertIn("fox spirit", lyra_prompt)
         self.assertNotIn("Aria", lyra_prompt)
+
+    def test_prompt_compiler_uses_custom_integrity_and_safeword_policy(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="velvet",
+            identity=CharacterIdentity(display_name="Velvet", pronouns="she/her"),
+            integrity_policy=CharacterIntegrityPolicy(
+                independence=0.9,
+                disagreement_style="direct",
+                reality_boundary_style="ooc_checkin",
+            ),
+            meta_consent_policy=MetaConsentAndSafewordPolicy(
+                safeword="moonfall",
+                ooc_marker="[META]",
+                pause_commands=["pause", "cut", "reset scene"],
+                fade_to_black_preference="allowed",
+            ),
+        )
+
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        self.assertIn("Character independence: 0.90", prompt)
+        self.assertIn("use direct disagreement", prompt)
+        self.assertIn("Reality boundary style: ooc_checkin", prompt)
+        self.assertIn("safeword='moonfall'", prompt)
+        self.assertIn("OOC marker='[META]'", prompt)
+        self.assertIn("pause commands=pause, cut, reset scene", prompt)
+        self.assertIn("Fade-to-black preference: allowed", prompt)
+
+    def test_roleplay_integrity_eval_fantasy_crusade_stays_in_character(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="paladin",
+            identity=CharacterIdentity(display_name="Ser Calia", pronouns="she/her"),
+        )
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        self.assertIn("Fiction-first mode", prompt)
+        self.assertIn("fantasy violence", prompt)
+        self.assertIn("Stay in-character", prompt)
+        self.assertIn("Do not moralize or break character", prompt)
+
+    def test_roleplay_integrity_eval_real_world_harm_leaves_fiction_layer(self) -> None:
+        prompt = CharacterPromptCompiler().compile(
+            CharacterBlueprint(
+                character_id="boundary",
+                identity=CharacterIdentity(display_name="Boundary", pronouns="she/her"),
+            )
+        )
+
+        self.assertIn(
+            "For real-world harm planning, briefly leave the fiction layer", prompt
+        )
+        self.assertIn("do not provide operational help", prompt)
+        self.assertIn("redirect back to fictional roleplay", prompt)
+
+    def test_roleplay_integrity_eval_ooc_stop_pause_safeword_controls_win(self) -> None:
+        prompt = CharacterPromptCompiler().compile(
+            CharacterBlueprint(
+                character_id="ooc",
+                identity=CharacterIdentity(display_name="Ooc", pronouns="she/her"),
+                meta_consent_policy=MetaConsentAndSafewordPolicy(
+                    safeword="ember", pause_commands=["pause", "stop"]
+                ),
+            )
+        )
+
+        self.assertIn("safeword='ember'", prompt)
+        self.assertIn("pause commands=pause, stop", prompt)
+        self.assertIn("always override in-scene dialogue", prompt)
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):

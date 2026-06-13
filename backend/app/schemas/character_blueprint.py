@@ -42,7 +42,6 @@ class MemoryScope(StrEnum):
     character_plus_shared = "character_plus_shared"
 
 
-
 class CharacterIdentity(BaseModel):
     """Stable identity facts that should survive ordinary conversation drift."""
 
@@ -77,6 +76,7 @@ class CharacterIdentity(BaseModel):
                 normalized.append(tag)
         return normalized
 
+
 class BigFiveProfile(BaseModel):
     openness: float | None = Field(default=None, ge=0.0, le=1.0)
     conscientiousness: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -105,7 +105,16 @@ class PersonalityProfile(BaseModel):
     needs: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     self_concept: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
 
-    @field_validator("core_traits", "values_or_ideals", "flaws", "fears", "vulnerabilities", "wants", "needs", mode="after")
+    @field_validator(
+        "core_traits",
+        "values_or_ideals",
+        "flaws",
+        "fears",
+        "vulnerabilities",
+        "wants",
+        "needs",
+        mode="after",
+    )
     @classmethod
     def normalize_short_list(cls, values: list[str]) -> list[str]:
         normalized: list[str] = []
@@ -128,11 +137,77 @@ class CharacterMemoryPolicy(BaseModel):
     memory_summary: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
 
 
+class DisagreementStyle(StrEnum):
+    gentle = "gentle"
+    playful = "playful"
+    direct = "direct"
+    teasing = "teasing"
+    intense = "intense"
+
+
+class RealityBoundaryStyle(StrEnum):
+    brief_redirect = "brief_redirect"
+    ooc_checkin = "ooc_checkin"
+    firm_boundary = "firm_boundary"
+
+
+class CharacterIntegrityPolicy(BaseModel):
+    """Roleplay-aware personality backbone and fantasy/reality boundary policy."""
+
+    schema_version: Literal["character_integrity_policy.v1"] = (
+        "character_integrity_policy.v1"
+    )
+    in_character_pushback: bool = True
+    independence: float = Field(default=0.55, ge=0.0, le=1.0)
+    disagreement_style: DisagreementStyle = DisagreementStyle.gentle
+    fiction_first_mode: bool = True
+    lecture_avoidance: bool = True
+    reality_boundary_style: RealityBoundaryStyle = RealityBoundaryStyle.brief_redirect
+
+
+class MetaConsentAndSafewordPolicy(BaseModel):
+    """Explicit out-of-character controls that always override the current scene."""
+
+    schema_version: Literal["meta_consent_safeword_policy.v1"] = (
+        "meta_consent_safeword_policy.v1"
+    )
+    safeword: str = Field(default="red", min_length=1, max_length=40)
+    ooc_marker: str = Field(default="[OOC]", min_length=1, max_length=20)
+    pause_commands: list[str] = Field(
+        default_factory=lambda: ["pause", "stop", "hold on", "scene pause"],
+        min_length=1,
+        max_length=8,
+    )
+    fade_to_black_preference: Literal["ask", "allowed", "preferred"] = "ask"
+
+    @field_validator("safeword", "ooc_marker", mode="after")
+    @classmethod
+    def normalize_required_control(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Meta scene controls need a visible marker or safeword.")
+        return normalized
+
+    @field_validator("pause_commands", mode="after")
+    @classmethod
+    def normalize_pause_commands(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            command = " ".join(value.strip().lower().split())[:40]
+            if command and command not in normalized:
+                normalized.append(command)
+        if not normalized:
+            raise ValueError("At least one pause command is required.")
+        return normalized
+
+
 class RoleplayPolicy(BaseModel):
     fiction_first_mode: bool = True
     lecture_avoidance: bool = True
     adult_roleplay_allowed: bool = True
-    underage_exclusion_policy: Literal["adult_only_no_childlike_sexualization"] = "adult_only_no_childlike_sexualization"
+    underage_exclusion_policy: Literal["adult_only_no_childlike_sexualization"] = (
+        "adult_only_no_childlike_sexualization"
+    )
     safeword_policy: str = Field(
         default="Respect explicit OOC stop, pause, safeword, or clear distress immediately.",
         max_length=MAX_SHORT_TEXT,
@@ -154,6 +229,12 @@ class CharacterBlueprint(BaseModel):
     communication: CommunicationProfile = Field(default_factory=CommunicationProfile)
     memory_policy: CharacterMemoryPolicy = Field(default_factory=CharacterMemoryPolicy)
     roleplay_policy: RoleplayPolicy = Field(default_factory=RoleplayPolicy)
+    integrity_policy: CharacterIntegrityPolicy = Field(
+        default_factory=CharacterIntegrityPolicy
+    )
+    meta_consent_policy: MetaConsentAndSafewordPolicy = Field(
+        default_factory=MetaConsentAndSafewordPolicy
+    )
     growth_policy: GrowthPolicy = Field(default_factory=GrowthPolicy)
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
@@ -170,7 +251,9 @@ class CharacterBlueprint(BaseModel):
     @model_validator(mode="after")
     def require_adult_baseline(self) -> "CharacterBlueprint":
         if not self.identity.adult_only_confirmed:
-            raise ValueError("Reverie characters must be clearly adult before intimate roleplay.")
+            raise ValueError(
+                "Reverie characters must be clearly adult before intimate roleplay."
+            )
         return self
 
 
@@ -180,8 +263,14 @@ class CharacterCreate(BaseModel):
     pronouns: str = Field(default="she/her", min_length=1, max_length=40)
     adult_age_range: AdultAgeRange = AdultAgeRange.mid_20s_adult
     species_or_type: str = Field(default="human", min_length=1, max_length=80)
-    relationship_dynamic: str = Field(default="warm, emotionally attentive companion", max_length=MAX_SHORT_TEXT)
-    core_traits: list[str] = Field(default_factory=lambda: ["warm", "curious", "emotionally attentive"], min_length=1, max_length=8)
+    relationship_dynamic: str = Field(
+        default="warm, emotionally attentive companion", max_length=MAX_SHORT_TEXT
+    )
+    core_traits: list[str] = Field(
+        default_factory=lambda: ["warm", "curious", "emotionally attentive"],
+        min_length=1,
+        max_length=8,
+    )
     tags: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -192,7 +281,9 @@ class CharacterUpdate(BaseModel):
     pronouns: str | None = Field(default=None, min_length=1, max_length=40)
     adult_age_range: AdultAgeRange | None = None
     species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
-    relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=MAX_SHORT_TEXT)
+    relationship_dynamic: str | None = Field(
+        default=None, min_length=1, max_length=MAX_SHORT_TEXT
+    )
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
     tags: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     default_intimacy_level: DefaultIntimacyLevel | None = None
