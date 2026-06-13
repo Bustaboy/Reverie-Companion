@@ -94,15 +94,17 @@ function createCharacterStore() {
     subscribe: store.subscribe,
     loadCharacters,
     selectCharacter,
-    async createBasicCharacter(input: CharacterCreateInput) {
+    async createBasicCharacter(input: CharacterCreateInput): Promise<CharacterBlueprint | null> {
       store.update((state) => ({ ...state, loading: true, error: null }));
 
       try {
         const character = await characterService.createBasicCharacter(input);
         await loadCharacters();
         await selectCharacter(character.character_id);
+        return character;
       } catch (error) {
         store.update((state) => ({ ...state, loading: false, error: toFriendlyError(error) }));
+        return null;
       }
     },
     clearError() {

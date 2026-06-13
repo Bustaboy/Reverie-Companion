@@ -11,8 +11,32 @@
     void characterStore.selectCharacter(target.value || null);
   };
 
+  let showCreateForm = $state(false);
+  let newDisplayName = $state('');
+  let newPronouns = $state('');
+
   const refreshCharacters = () => {
     void characterStore.loadCharacters();
+  };
+
+  const openCreateForm = () => {
+    characterStore.clearError();
+    newDisplayName = '';
+    newPronouns = '';
+    showCreateForm = true;
+  };
+
+  const closeCreateForm = () => {
+    showCreateForm = false;
+  };
+
+  const createCharacter = async () => {
+    const character = await characterStore.createBasicCharacter({
+      display_name: newDisplayName.trim() || 'New Companion',
+      pronouns: newPronouns.trim() || 'she/her'
+    });
+
+    if (character) closeCreateForm();
   };
 
   const selectedSummary = $derived.by(() => {
@@ -48,9 +72,44 @@
           <option value={character.character_id}>{character.display_name} · {character.pronouns}</option>
         {/each}
       </select>
+      <button type="button" class="ghost-button" disabled={$characterStore.loading} onclick={openCreateForm}>+ New</button>
       <button type="button" class="ghost-button" disabled={$characterStore.loading} onclick={refreshCharacters}>
         {$characterStore.loading ? 'Loading…' : 'Refresh'}
       </button>
     </div>
   </div>
 </aside>
+
+{#if showCreateForm}
+  <div class="character-create-backdrop" role="presentation" onclick={closeCreateForm}></div>
+  <div class="character-create-modal" role="dialog" aria-modal="true" aria-labelledby="character-create-title">
+    <form onsubmit={(event) => { event.preventDefault(); void createCharacter(); }}>
+      <header>
+        <div>
+          <p class="eyebrow">Quick character</p>
+          <h2 id="character-create-title">Create new character</h2>
+        </div>
+        <button type="button" class="ghost-button" onclick={closeCreateForm} aria-label="Close character creator">Close</button>
+      </header>
+
+      <label>
+        Display name
+        <input bind:value={newDisplayName} name="display-name" type="text" placeholder="Reverie" autocomplete="off" />
+      </label>
+
+      <label>
+        Pronouns
+        <input bind:value={newPronouns} name="pronouns" type="text" placeholder="she/her" autocomplete="off" />
+      </label>
+
+      <p class="character-create-note">This only creates a basic local character shell. Deeper identity, visual, and relationship setup can come later.</p>
+
+      <footer>
+        <button type="button" class="ghost-button" onclick={closeCreateForm} disabled={$characterStore.loading}>Cancel</button>
+        <button type="submit" class="ghost-button primary" disabled={$characterStore.loading}>
+          {$characterStore.loading ? 'Creating…' : 'Create and select'}
+        </button>
+      </footer>
+    </form>
+  </div>
+{/if}
