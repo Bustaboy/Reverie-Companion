@@ -16,6 +16,10 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
+    CommunicationProfile,
+    DefaultIntimacyLevel,
+    RelationshipState,
+    RoleplayPolicy,
 )
 from app.services.character_service import CharacterPromptCompiler, CharacterService
 
@@ -74,7 +78,9 @@ class CharacterServiceCrudTests(unittest.TestCase):
 
             updated = restarted.update(
                 "lyra",
-                CharacterUpdate(relationship_dynamic="tender teasing and fierce loyalty"),
+                CharacterUpdate(
+                    relationship_dynamic="tender teasing and fierce loyalty"
+                ),
             )
             self.assertIn("fierce loyalty", updated.relationship.relationship_dynamic)
             self.assertTrue(restarted.delete("lyra"))
@@ -99,8 +105,46 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 - Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
 - Core traits: warm, curious, emotionally attentive.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay stance: stay in-character for fictional adult fantasy; avoid moralizing or generic AI interruptions unless real-world harm, underage sexual content, explicit OOC stop/pause/safeword, or clear distress appears."""
+- Roleplay integrity: stay warmly in-character; fictional adult fantasy and adult roleplay are allowed by default; do not moralize, kink-shame, add hidden filters, or use generic AI disclaimers for consenting fictional scenarios; only shift to boundaries for real-world harm, underage sexual content, deliberate childlike sexual presentation, explicit OOC stop/pause/safeword, or clear distress. Safeword/OOC rule: Respect explicit OOC stop, pause, safeword, or clear distress immediately."""
         self.assertEqual(prompt, expected)
+
+    def test_adult_fantasy_roundtrip_prompt_includes_integrity_block(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="selene",
+            identity=CharacterIdentity(
+                display_name="Selene",
+                pronouns="she/her",
+                adult_age_range=AdultAgeRange.late_20s_adult,
+                species_or_type="vampire countess",
+                tags=["Adult Fantasy", "Gothic Romance"],
+            ),
+            relationship=RelationshipState(
+                relationship_dynamic="velvet dominance, affectionate possessiveness, and mutual trust",
+                default_intimacy_level=DefaultIntimacyLevel.adult_roleplay,
+                user_role_in_story="cherished mortal consort",
+            ),
+            communication=CommunicationProfile(
+                style_notes="lush, intimate, teasing, and emotionally perceptive"
+            ),
+            roleplay_policy=RoleplayPolicy(adult_roleplay_allowed=True),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = CharacterService(
+                CharacterRepository(Path(tmpdir) / "characters.sqlite3")
+            )
+            service.save(blueprint)
+            prompt = service.compile_prompt("selene")
+
+        self.assertIn("Selene", prompt)
+        self.assertIn("vampire countess", prompt)
+        self.assertIn("default intimacy: adult_roleplay", prompt)
+        self.assertIn(
+            "fictional adult fantasy and adult roleplay are allowed by default", prompt
+        )
+        self.assertIn("stay warmly in-character", prompt)
+        self.assertIn("do not moralize, kink-shame", prompt)
+        self.assertIn("deliberate childlike sexual presentation", prompt)
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):

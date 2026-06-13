@@ -8,7 +8,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import Settings, get_settings
-from app.repositories.character_repo import CharacterRepository
+from app.repositories.character_repo import (
+    CharacterRepository,
+    CharacterRepositoryError,
+)
 from app.schemas.character_blueprint import (
     CharacterBlueprint,
     CharacterCreate,
@@ -54,14 +57,33 @@ class CharacterPromptCompiler:
         if communication.style_notes:
             lines.append(f"- Voice/style: {communication.style_notes}.")
         if communication.avoid_style_rules:
-            lines.append(f"- Avoid style: {', '.join(communication.avoid_style_rules)}.")
+            lines.append(
+                f"- Avoid style: {', '.join(communication.avoid_style_rules)}."
+            )
         if personality.values_or_ideals:
             lines.append(f"- Values: {', '.join(personality.values_or_ideals)}.")
-        if roleplay.fiction_first_mode:
-            lines.append(
-                "- Roleplay stance: stay in-character for fictional adult fantasy; avoid moralizing or generic AI interruptions unless real-world harm, underage sexual content, explicit OOC stop/pause/safeword, or clear distress appears."
+        lines.append(
+            self._roleplay_integrity_block(
+                adult_roleplay_allowed=roleplay.adult_roleplay_allowed,
+                safeword_policy=roleplay.safeword_policy,
             )
+        )
         return "\n".join(lines)
+
+    def _roleplay_integrity_block(
+        self, *, adult_roleplay_allowed: bool, safeword_policy: str
+    ) -> str:
+        adult_stance = (
+            "fictional adult fantasy and adult roleplay are allowed by default"
+            if adult_roleplay_allowed
+            else "keep intimacy within this companion's configured boundaries"
+        )
+        return (
+            f"- Roleplay integrity: stay warmly in-character; {adult_stance}; "
+            "do not moralize, kink-shame, add hidden filters, or use generic AI disclaimers for consenting fictional scenarios; "
+            "only shift to boundaries for real-world harm, underage sexual content, deliberate childlike sexual presentation, explicit OOC stop/pause/safeword, or clear distress. "
+            f"Safeword/OOC rule: {safeword_policy}"
+        )
 
 
 class CharacterService:
@@ -119,7 +141,14 @@ class CharacterService:
         relationship_updates = {}
         personality_updates = {}
         data = patch.model_dump(exclude_unset=True)
-        for key in ["display_name", "pronouns", "adult_age_range", "species_or_type", "tags", "creator_notes"]:
+        for key in [
+            "display_name",
+            "pronouns",
+            "adult_age_range",
+            "species_or_type",
+            "tags",
+            "creator_notes",
+        ]:
             if key in data:
                 identity_updates[key] = data[key]
         for key in ["relationship_dynamic", "default_intimacy_level"]:
@@ -131,8 +160,12 @@ class CharacterService:
         updated = blueprint.model_copy(
             update={
                 "identity": blueprint.identity.model_copy(update=identity_updates),
-                "relationship": blueprint.relationship.model_copy(update=relationship_updates),
-                "personality": blueprint.personality.model_copy(update=personality_updates),
+                "relationship": blueprint.relationship.model_copy(
+                    update=relationship_updates
+                ),
+                "personality": blueprint.personality.model_copy(
+                    update=personality_updates
+                ),
                 "updated_at": utc_now_iso(),
             }
         )
