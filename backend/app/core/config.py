@@ -159,6 +159,7 @@ class Settings(BaseSettings):
     image_generation_output_dir: str = "./data/images/generated"
     image_generation_history_path: str = "./data/images/history.json"
     character_assets_dir: str = "./data/characters"
+    character_db_path: str = "./data/characters/characters.sqlite3"
     image_generation_default_preset: str = Field(
         default="preview_8gb", pattern="^(preview_8gb|balanced_8gb|high_8gb)$"
     )
