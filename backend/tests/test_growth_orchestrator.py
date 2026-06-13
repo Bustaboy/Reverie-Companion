@@ -11,6 +11,10 @@ from typing import Any
 from app.core.config import Settings
 from app.core.growth import GrowthOrchestrator
 from app.core.lora import PersonalLoRATrainer, PersonalLoRATrainerConfig
+from app.repositories.character_repo import CharacterRepository
+from app.schemas.character_blueprint import CharacterCreate
+from app.schemas.growth_policy import GrowthPace, ReflectionFrequency
+from app.services.character_service import CharacterService
 from app.models.chat import ChatMessage, ChatRequest
 
 
@@ -18,10 +22,14 @@ class FakeReflectionManager:
     def __init__(self) -> None:
         self.triggered = 0
 
-    def get_recent_journal_entries(self, limit: int = 5) -> list[dict[str, Any]]:
+    def get_recent_journal_entries(
+        self, limit: int = 5, *, character_id: str | None = None
+    ) -> list[dict[str, Any]]:
         return []
 
-    def trigger_reflection(self, history: list[dict[str, str]]) -> dict[str, Any]:
+    def trigger_reflection(
+        self, history: list[dict[str, str]], *, character_id: str | None = None
+    ) -> dict[str, Any]:
         self.triggered += 1
         return {
             "entry_id": "journal_growth_loop",
@@ -94,6 +102,64 @@ class GrowthOrchestratorTests(unittest.TestCase):
             self.assertEqual(len(examples), 1)
             self.assertEqual(examples[0]["status"], "pending_review")
             self.assertEqual(examples[0]["source_journal_id"], "journal_growth_loop")
+
+    def test_character_growth_policy_controls_reflection_frequency_and_scope(
+        self,
+    ) -> None:
+        asyncio.run(
+            self._assert_character_growth_policy_controls_reflection_frequency_and_scope()
+        )
+
+    async def _assert_character_growth_policy_controls_reflection_frequency_and_scope(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = CharacterService(
+                CharacterRepository(Path(temp_dir) / "characters.sqlite3")
+            )
+            blueprint = service.create(
+                CharacterCreate(character_id="aria", display_name="Aria")
+            )
+            service.save(
+                blueprint.model_copy(
+                    update={
+                        "growth_policy": blueprint.growth_policy.model_copy(
+                            update={
+                                "character_id": "aria",
+                                "reflection_frequency": ReflectionFrequency.high,
+                                "growth_pace": GrowthPace.responsive,
+                                "reflection_after_significant_turns": 2,
+                            }
+                        )
+                    }
+                )
+            )
+            reflection = FakeReflectionManager()
+            orchestrator = GrowthOrchestrator(
+                settings=Settings(
+                    memory_enabled=False,
+                    reflection_min_interval_seconds=0,
+                    reflection_user_message_interval=99,
+                ),
+                reflection_manager=reflection,  # type: ignore[arg-type]
+                character_service=service,
+            )
+            request = ChatRequest(
+                character_id="aria",
+                stream=False,
+                messages=[
+                    ChatMessage(role="user", content="First hello."),
+                    ChatMessage(role="assistant", content="Hi, love."),
+                    ChatMessage(role="user", content="Second quiet moment."),
+                ],
+            )
+
+            orchestrator.schedule_reflection_if_due(request, request_id="req-policy")
+            await asyncio.gather(*GrowthOrchestrator._inflight_reflection_tasks)
+
+            self.assertEqual(reflection.triggered, 1)
+            relationship = service.get_relationship_state("aria")
+            self.assertGreater(relationship.trust_level, 0.25)
 
 
 if __name__ == "__main__":

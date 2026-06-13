@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 from pathlib import Path
 from uuid import uuid4
 
@@ -46,7 +47,12 @@ class ScopedMemoryHooks:
 class CharacterPromptCompiler:
     """Compile compact model-facing character context from a blueprint."""
 
-    def compile(self, blueprint: CharacterBlueprint) -> str:
+    def compile(
+        self,
+        blueprint: CharacterBlueprint,
+        *,
+        growth_insights: list[dict[str, Any]] | None = None,
+    ) -> str:
         identity = blueprint.identity
         relationship = blueprint.relationship
         personality = blueprint.personality
@@ -73,7 +79,29 @@ class CharacterPromptCompiler:
         # roleplay integrity block so fictional adult scenes stay in-character
         # while OOC stop controls and real-world harm boundaries still win.
         lines.append(self._roleplay_integrity_block(roleplay))
+        growth_block = self._growth_guidance_block(growth_insights or [])
+        if growth_block:
+            lines.append(growth_block)
         return "\n".join(lines)
+
+    def _growth_guidance_block(self, growth_insights: list[dict[str, Any]]) -> str:
+        """Format recent journal insights as compact, lower-priority guidance."""
+
+        lines: list[str] = []
+        for insight in growth_insights[:3]:
+            entry_id = str(insight.get("entry_id") or "journal_unknown")[:80]
+            summary = str(insight.get("summary") or "").strip()[:220]
+            if not summary:
+                continue
+            evidence = insight.get("evidence_ids") or [entry_id]
+            evidence_text = ",".join(str(item)[:80] for item in evidence[:3])
+            lines.append(f"- [{entry_id} | evidence={evidence_text}] {summary}")
+        if not lines:
+            return ""
+        return (
+            "- Recent growth guidance: user-approved local growth, subordinate to stable canon and the latest user message. "
+            + " ".join(lines)
+        )
 
     def _roleplay_integrity_block(self, roleplay) -> str:
         adult_mode = (
@@ -209,8 +237,12 @@ class CharacterService:
     def delete(self, character_id: str) -> bool:
         return self._repository.delete(character_id)
 
-    def compile_prompt(self, character_id: str) -> str:
-        return self._compiler.compile(self.load_by_id(character_id))
+    def compile_prompt(
+        self, character_id: str, *, growth_insights: list[dict[str, Any]] | None = None
+    ) -> str:
+        return self._compiler.compile(
+            self.load_by_id(character_id), growth_insights=growth_insights
+        )
 
     def scoped_memory_hooks(self, character_id: str | None) -> ScopedMemoryHooks:
         return ScopedMemoryHooks(character_id=character_id)
