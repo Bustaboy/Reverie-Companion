@@ -148,6 +148,14 @@ class ImageJob:
     conversation_id: str
     source: str | None
     source_message_id: str | None
+    character_id: str | None
+    session_id: str | None
+    moment_capture_id: str | None
+    scene_summary: str | None
+    prompt_hash: str | None
+    feedback_status: str
+    review_status: str
+    canon_status: str
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -195,6 +203,14 @@ class ImageJob:
             conversation_id=self.conversation_id,
             source=self.source,
             source_message_id=self.source_message_id,
+            character_id=self.character_id,
+            session_id=self.session_id,
+            moment_capture_id=self.moment_capture_id,
+            scene_summary=self.scene_summary,
+            prompt_hash=self.prompt_hash,
+            feedback_status=self.feedback_status,
+            review_status=self.review_status,
+            canon_status=self.canon_status,
             saved_to_assets=self.saved_to_assets,
         )
 
@@ -378,6 +394,7 @@ class ImageGenerationService:
             "detected_scene_tags": engineered.detected_scene_tags,
             "deterministic": True,
         }
+        metadata_v2 = self._image_metadata_from_context(enriched_context)
         job = ImageJob(
             job_id=job_id,
             prompt=engineered.prompt,
@@ -386,6 +403,14 @@ class ImageGenerationService:
             conversation_id=request.conversation_id,
             source=request.source,
             source_message_id=request.source_message_id,
+            character_id=metadata_v2.get("character_id"),
+            session_id=metadata_v2.get("session_id"),
+            moment_capture_id=metadata_v2.get("moment_capture_id"),
+            scene_summary=metadata_v2.get("scene_summary"),
+            prompt_hash=metadata_v2.get("prompt_hash"),
+            feedback_status=metadata_v2.get("feedback_status", "pending"),
+            review_status=metadata_v2.get("review_status", "unreviewed"),
+            canon_status=metadata_v2.get("canon_status", "not_requested"),
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )
@@ -1075,6 +1100,14 @@ class ImageGenerationService:
             conversation_id=job.conversation_id,
             source=job.source,
             source_message_id=job.source_message_id,
+            character_id=job.character_id,
+            session_id=job.session_id,
+            moment_capture_id=job.moment_capture_id,
+            scene_summary=job.scene_summary,
+            prompt_hash=job.prompt_hash,
+            feedback_status=job.feedback_status,
+            review_status=job.review_status,
+            canon_status=job.canon_status,
             saved_to_assets=job.saved_to_assets,
         )
         job.events.append(payload)
@@ -1154,7 +1187,30 @@ class ImageGenerationService:
         self._write_history()
 
     def _history_metadata_from_job(self, job: ImageJob) -> dict[str, Any]:
-        context = job.context or {}
+        metadata = self._image_metadata_from_context(job.context or {})
+        metadata.update(
+            {
+                "character_id": job.character_id,
+                "session_id": job.session_id,
+                "moment_capture_id": job.moment_capture_id,
+                "scene_summary": job.scene_summary,
+                "prompt_hash": job.prompt_hash,
+                "feedback_status": job.feedback_status,
+                "review_status": job.review_status,
+                "canon_status": job.canon_status,
+            }
+        )
+        return metadata
+
+    def _image_metadata_from_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Extract stable image metadata once for jobs, events, and history.
+
+        Gallery metadata v2 should not exist only at persistence time: active job
+        reads and SSE events need the same character/capture context so API
+        consumers can connect an in-flight image to its companion moment before
+        it lands in history. Keep this adapter small and deterministic so legacy
+        generic jobs simply expose nullable metadata fields.
+        """
         capture = (
             context.get("moment_capture")
             if isinstance(context.get("moment_capture"), dict)

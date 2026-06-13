@@ -431,6 +431,23 @@ def test_image_history_metadata_v2_and_filters(tmp_path) -> None:
         }:
             await asyncio.sleep(0.01)
 
+        read = service.get_job(job.job_id)
+        assert read.character_id == "char-mira"
+        assert read.session_id == "sess-1"
+        assert read.moment_capture_id == "mc_123"
+        assert read.scene_summary == "balcony · night · tender · holding hands"
+        assert read.prompt_hash == "abc12345def67890"
+        assert read.feedback_status == "pending"
+        assert read.review_status == "unreviewed"
+        assert read.canon_status == "not_requested"
+        latest_event = service._jobs[job.job_id].events[-1]
+        assert latest_event.character_id == "char-mira"
+        assert latest_event.moment_capture_id == "mc_123"
+        assert latest_event.scene_summary == "balcony · night · tender · holding hands"
+        assert latest_event.feedback_status == "pending"
+        assert latest_event.review_status == "unreviewed"
+        assert latest_event.canon_status == "not_requested"
+
         history = service.list_history("conv-moment", character_id="char-mira")
         assert len(history.items) == 1
         item = history.items[0]

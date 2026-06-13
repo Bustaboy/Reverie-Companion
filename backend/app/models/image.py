@@ -82,6 +82,14 @@ class ImageJobRead(BaseModel):
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
+    prompt_hash: str | None = None
+    feedback_status: str = "pending"
+    review_status: str = "unreviewed"
+    canon_status: str = "not_requested"
     saved_to_assets: bool = False
 
 
@@ -110,6 +118,14 @@ class ImageJobEvent(BaseModel):
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
+    prompt_hash: str | None = None
+    feedback_status: str = "pending"
+    review_status: str = "unreviewed"
+    canon_status: str = "not_requested"
     saved_to_assets: bool = False
 
 

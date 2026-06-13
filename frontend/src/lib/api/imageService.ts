@@ -44,6 +44,14 @@ export interface ImageJobRead {
   conversation_id?: string;
   source?: string | null;
   source_message_id?: string | null;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_status?: string;
+  review_status?: string;
+  canon_status?: string;
   saved_to_assets?: boolean;
 }
 
@@ -112,6 +120,14 @@ export interface ImageJobEvent {
   conversation_id?: string;
   source?: string | null;
   source_message_id?: string | null;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_status?: string;
+  review_status?: string;
+  canon_status?: string;
   saved_to_assets?: boolean;
 }
 
