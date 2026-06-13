@@ -82,7 +82,15 @@ class VisualTrait(BaseModel):
 
 
 class VisualIdentityProfile(BaseModel):
-    """Character-scoped visual canon and compact prompt source."""
+    """Character-scoped visual canon and compact prompt source.
+
+    The profile separates visual continuity into three prompt-safe categories:
+    identity anchors are stable, rarely changing facts that protect the
+    character's recognizable baseline; evolving traits are canon details that
+    may change through story events or user confirmation and keep provenance;
+    scene mutable traits are temporary per-scene presentation details such as
+    outfit, pose, expression, lighting, or camera framing.
+    """
 
     schema_version: Literal["visual_identity_profile.v1"] = (
         VISUAL_IDENTITY_PROFILE_VERSION
@@ -165,12 +173,6 @@ class VisualIdentityProfile(BaseModel):
             lines.append(
                 "Scene-mutable traits: "
                 + ", ".join(self.scene_mutable_traits[:max_items])
-                + "."
-            )
-        if self.rejected_traits:
-            lines.append(
-                "Avoid rejected visual traits: "
-                + ", ".join(self.rejected_traits[:max_items])
                 + "."
             )
         return lines[:6]

@@ -315,8 +315,38 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
             "Identity anchors: amber eyes, warm brown skin, same face.", visual_prompt
         )
         self.assertIn("Evolving traits: hair: black-violet waves.", visual_prompt)
-        self.assertIn("Avoid rejected visual traits: blue eyes.", visual_prompt)
+        self.assertNotIn("blue eyes", visual_prompt)
         self.assertLess(len(visual_prompt), 10000)
+
+    def test_prompt_compiler_excludes_rejected_traits_from_visual_summary(
+        self,
+    ) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+            visual_identity=VisualIdentityProfile(
+                identity_anchors=["amber eyes", "warm brown skin"],
+                evolving_traits=[
+                    VisualTrait(
+                        name="hair", value="black-violet waves", provenance="creator"
+                    )
+                ],
+                scene_mutable_traits=["velvet dress", "gentle smile"],
+                rejected_traits=["blue eyes", "silver hair"],
+                current_appearance="wearing her moon pendant",
+            ),
+        )
+
+        prompt = CharacterPromptCompiler().compile(
+            blueprint, include_visual_summary=True
+        )
+
+        self.assertIn("Identity anchors: amber eyes, warm brown skin.", prompt)
+        self.assertIn("Evolving traits: hair: black-violet waves.", prompt)
+        self.assertIn("Scene-mutable traits: velvet dress, gentle smile.", prompt)
+        self.assertNotIn("blue eyes", prompt)
+        self.assertNotIn("silver hair", prompt)
+        self.assertNotIn("Avoid rejected visual traits", prompt)
 
     def test_prompt_compiler_includes_full_runtime_fields_without_private_notes(
         self,
