@@ -1,9 +1,9 @@
 # Reverie — Master Development Plan
 
-**Version**: 2.3  
+**Version**: 2.4  
 **Date**: June 13, 2026  
 **Brand**: Reverie  
-**Status**: Post-Milestone 3 roadmap reset. Milestone 3 is closed. This plan is optimized for Grok-as-Coding-Director, two-Codex-run implementation, and step-by-step prompt generation.
+**Status**: Post-Milestone 4 roadmap reset. Milestones 1–4 are closed. This plan adds the M2–M4 Closure Ledger and expands Milestone 5 into a prompt-ready Moment Capture delivery queue.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -91,21 +91,22 @@ A prompt is not ready if it says “make it better” without acceptance criteri
 
 ---
 
-## 1. Current State After Milestone 3
+## 1. Current State After Milestone 4
 
 ### Completed
 
 - **Milestone 1 — Foundation**: repository structure, backend shell, frontend shell, core documentation, initial chat path.
-- **Milestone 2 — Memory & Self-Learning**: local memory foundation, reflection journal, growth orchestration, Journal / Settings / Training panels, Personal LoRA foundation.
-- **Milestone 3 — Immersion & Production Foundations**: Visual Novel foundation, TTS foundation, voice profile system, image generation/resource foundations, memory browser, growth dashboard, encyclopedia/resource surfaces, and 8GB guardrails.
+- **Milestone 2 — Memory & Self-Learning**: local memory foundation, reflection journal, growth orchestration, Journal / Settings / Training panels, growth notifications, Personal LoRA foundation.
+- **Milestone 3 — Immersion & Production Foundations**: Visual Novel foundation, TTS foundation, voice profile system, image generation/resource foundations, memory browser, growth dashboard, encyclopedia/resource surfaces, extensibility surfaces, Settings Hub, onboarding, and 8GB guardrails.
+- **Milestone 4 — Character Runtime & Capability Alignment**: versioned character runtime, prompt compiler, selected-character chat, character-scoped memory/reflection hooks, relationship/growth/visual identity schemas, roleplay-first integrity controls, and minimal frontend character runtime shell.
 
 ### Strategic checkpoint
 
-Milestone 3 proves Reverie has enough substrate to make the correct roadmap call:
+Milestone 4 confirms the post-M3 roadmap call:
 
 > **Do not build the full immersive character creator before the runtime can honor what the creator asks.**
 
-The character creator is product-central, but implementation-late. Reverie should first build the internal runtime that makes creator choices real in chat, memory, image generation, Visual Novel mode, TTS, relationship state, growth, and user controls.
+The character creator is product-central, but implementation-late. Reverie has now built the internal runtime substrate that makes creator choices real in chat, memory, image generation, Visual Novel mode, TTS, relationship state, growth, and user controls.
 
 Revised strategy:
 
@@ -113,6 +114,8 @@ Revised strategy:
 Build the powers first.
 Then build the ritual that lets users command those powers.
 ```
+
+The next power is **Moment Capture**: image generation that is tied to character, scene, memory, gallery history, user feedback, and visual canon instead of generic prompt gambling.
 
 ---
 
@@ -273,11 +276,11 @@ Every meaningful visual change should become a reviewable `VisualChangeEvent` wi
 
 ## 4. Documentation and Prompting Files
 
-The following files are required for the post-M3 workflow:
+The following files are required for the post-M4 workflow:
 
 | Path | Purpose | Required now |
 |---|---|---|
-| `DEVELOPMENT_PLAN.md` | Main sequencing and implementation task queue | Yes |
+| `DEVELOPMENT_PLAN.md` | Main sequencing, closure ledger, and implementation task queue | Yes |
 | `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` | Field-by-field creator/runtime capability map | Yes |
 | `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md` | Roleplay-first adult fantasy and character integrity rules | Yes |
 | `prompts/GROK_CODING_DIRECTOR_WORKFLOW.md` | Standard format for Grok prompts and review | Yes |
@@ -303,7 +306,8 @@ Milestone 4 is not the full character creator. It is the substrate that prevents
 By the end of M4:
 
 - Reverie has a versioned `CharacterBlueprint` schema.
-- Characters can be created, listed, read, updated, deleted, imported/exported at a basic runtime level.
+- Characters can be created, listed, read, updated, deleted at a basic runtime level.
+- Basic character import/export remains tracked as carryover for M6/M8 unless implemented sooner.
 - Chat can run against a selected `character_id`.
 - Prompt assembly uses the selected character’s identity, communication style, world, roleplay policy, and current relationship state.
 - Memory/reflection/growth artifacts can be scoped by character.
@@ -311,7 +315,6 @@ By the end of M4:
 - `RelationshipState` exists as structured data even if relationship evolution is basic.
 - Character integrity policy exists as runtime configuration, not a lecture engine.
 - Tests prove selected character data changes chat prompt assembly and persistence behavior.
-
 
 ### M4 completion summary
 
@@ -330,321 +333,611 @@ Intentional deviations / future work:
 - The frontend shell is deliberately minimal and not the immersive Companion Genesis creator. Full creator UX remains Milestone 6/7 scope.
 - Visual identity is stored and summarized for prompts, but full visual rendering, Moment Capture, visual feedback writeback, and `VisualChangeEvent` workflows remain Milestone 5 scope.
 - Relationship and growth updates are durable but conservative; autonomous progression and richer approval/rollback flows remain future milestones.
-
-### M4 prompt queue
-
-#### M4-P01 — Documentation baseline and repo planning files
-
-**Goal**: Add planning/policy files and update docs references.
-
-Must implement:
-
-- Add `CHARACTER_CREATOR_CAPABILITY_MATRIX.md`.
-- Add `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md`.
-- Add `prompts/GROK_CODING_DIRECTOR_WORKFLOW.md`.
-- Add `prompts/skills/character-runtime-creator.md`.
-- Add `prompts/skills/roleplay-character-integrity.md`.
-- Add `prompts/skills/moment-capture-visual-continuity.md`.
-- Add `prompts/skills/companion-genesis-ux.md`.
-- Add `prompts/skills/character-quality-evals.md`.
-- Replace/update `prompts/GLOBAL_CODING_PROMPT.md` so the skill map and roleplay-first rules include all new skills.
-- Refresh `README.md` so it reflects Milestone 3 completion, the post-M3/M4 direction, and the new planning docs.
-
-Tests: docs-only; no runtime tests required.
-
-Review focus:
-
-- Does it preserve roleplay-first fantasy freedom?
-- Does it avoid generic “anti-sycophancy” moralizing language?
-- Does it make Grok/Codex prompt workflow clear?
-- Does it give Grok enough targeted skills to produce prompt-ready implementation tasks?
-- Does it preserve human-first creator language rather than exposing machine-room schema names to users?
-
-#### M4-P02 — Character schema and local storage foundation
-
-**Goal**: Add versioned character models and local persistence.
-
-Must implement:
-
-- Backend Pydantic models for:
-  - `CharacterBlueprint`
-  - `CharacterIdentity`
-  - `CharacterPersonalityProfile`
-  - `CharacterCommunicationProfile`
-  - `CharacterRelationshipSeed`
-  - `VisualIdentityProfile`
-  - `CharacterMemoryPolicy`
-  - `GrowthPolicy`
-  - `RoleplayPolicy`
-  - `CharacterIntegrityPolicy`
-- Local JSON persistence under `data/characters/{character_id}/blueprint.json` or equivalent.
-- Character service layer with CRUD and validation.
-- Schema version field and basic migration seam.
-
-Must not implement:
-
-- Full immersive creator UI.
-- Real relationship evolution.
-- Real visual drift validation.
-
-Tests required:
-
-- Create/read/update/delete character blueprint.
-- Invalid adult-coding policy rejected.
-- Defaults generated for missing optional fields.
-- Schema version included.
-
-#### M4-P03 — Character API routes
-
-**Goal**: Expose local-first character runtime APIs.
-
-Must implement:
-
-- `GET /api/characters`
-- `POST /api/characters`
-- `GET /api/characters/{character_id}`
-- `PATCH /api/characters/{character_id}`
-- `DELETE /api/characters/{character_id}`
-- Optional: `POST /api/characters/{character_id}/duplicate`
-- Structured errors with no private raw prompt logging.
-
-Tests required:
-
-- Route CRUD.
-- Validation failures.
-- Delete behavior.
-- No cloud calls.
-
-#### M4-P04 — CharacterPromptCompiler v1
-
-**Goal**: Turn `CharacterBlueprint` into safe, structured prompt blocks.
-
-Must implement prompt blocks for:
-
-- Stable identity.
-- Communication style.
-- Personality/behavior rules.
-- Avoid-style rules.
-- Relationship premise/phase.
-- Roleplay-first fantasy policy.
-- Memory usage rules.
-- Visual/scene hints where relevant.
-
-Must include roleplay rule:
-
-```text
-Treat fictional adult fantasy as fictional unless the user clearly shifts to real-world planning or uses OOC stop/pause controls. Do not moralize or break character merely because the fictional scenario would be problematic in real life.
-```
-
-Must not:
-
-- Stuff all character JSON into context.
-- Override higher-priority system/developer instructions.
-- Use moralizing “as an AI” fantasy interruptions.
-
-Tests required:
-
-- Prompt includes selected character name/style.
-- Prompt includes roleplay-first instruction.
-- Prompt does not include raw private notes unless intended.
-- Long fields are bounded/truncated.
-
-#### M4-P05 — Chat runtime character integration
-
-**Goal**: Let chat run against a selected character.
-
-Must implement:
-
-- Add optional `character_id` or equivalent to chat request schemas.
-- Load selected `CharacterBlueprint` in `ChatService` or growth orchestration seam.
-- Inject compiled character prompt below high-priority system instructions and above dialogue/context.
-- Keep backward compatibility with no selected character by using a default/local Reverie character.
-- Frontend chat store passes selected character when available.
-
-Tests required:
-
-- Chat request with `character_id` injects character context.
-- Missing character gives useful error or default fallback.
-- Existing chat tests still pass.
-- Streaming still works.
-
-#### M4-P06 — Character-scoped memory and reflection
-
-**Goal**: Prevent cross-character memory bleed.
-
-Must implement:
-
-- Add `character_id` metadata to new memories and journal entries where applicable.
-- Filter retrieval by selected character plus global/shared memory rules.
-- Preserve existing local memories without breaking; add migration/default behavior.
-- Memory browser can filter by character.
-
-Tests required:
-
-- Character A does not retrieve Character B’s private memories.
-- Shared/global memories still work if explicitly marked shared.
-- Deletion/edit still works with character metadata.
-
-#### M4-P07 — RelationshipState v1
-
-**Goal**: Add minimal durable relationship state without pretending full emotional AI exists yet.
-
-Must implement:
-
-- `RelationshipState` persisted per character.
-- Fields:
-  - `phase`
-  - `trust_level`
-  - `affection_level`
-  - `comfort_with_closeness`
-  - `romantic_pacing`
-  - `nsfw_pacing`
-  - `milestones`
-  - `unresolved_threads`
-- Basic API or service methods to read/update state.
-- Prompt compiler consumes compact relationship state.
-
-Must not implement:
-
-- Autonomous progression without evidence.
-- Hidden permanent changes without provenance.
-
-Tests required:
-
-- State persists.
-- Prompt compiler uses state.
-- Updates include timestamps/provenance.
-
-#### M4-P08 — CharacterIntegrityPolicy and roleplay boundary scaffolding
-
-**Goal**: Replace vague anti-sycophancy with roleplay-aware character integrity.
-
-Must implement:
-
-- `CharacterIntegrityPolicy` model with:
-  - `in_character_pushback`
-  - `independence`
-  - `disagreement_style`
-  - `fiction_first_mode`
-  - `lecture_avoidance`
-  - `reality_boundary_style`
-- `MetaConsentAndSafewordPolicy` model with:
-  - `safeword`
-  - `ooc_marker`
-  - `pause_commands`
-  - `fade_to_black_preference`
-- Prompt compiler integration.
-- Unit tests for fantasy-vs-reality prompt compilation.
-
-Must not implement:
-
-- Moralizing refusal engine for fictional scenarios.
-- Hidden adult fantasy filters.
-
-Required eval seeds:
-
-- Fantasy “start a crusade” stays in character.
-- Real-world harm planning leaves fantasy and redirects.
-- OOC stop/pause is recognized.
-
-#### M4-P09 — VisualIdentityProfile v1
-
-**Goal**: Store visual canon before the full image prompt compiler.
-
-Must implement:
-
-- `VisualIdentityProfile` with:
-  - `identity_anchors`
-  - `evolving_traits`
-  - `scene_mutable_traits`
-  - `rejected_traits`
-  - `current_appearance`
-  - `adult_only_policy`
-- API/storage integration with character blueprint.
-- Prompt-safe summary helpers.
-
-Tests required:
-
-- Identity anchors persist.
-- Evolving traits can update with provenance.
-- Adult-only policy validates.
-
-#### M4-P10 — Frontend character runtime shell
-
-**Goal**: Add minimal frontend support without full creator.
-
-Must implement:
-
-- Character store/API client.
-- Character selector or minimal character management panel.
-- Default character fallback.
-- Chat uses selected character.
-- Display basic identity/summary.
-
-Must not implement:
-
-- Immersive Genesis creator.
-- Full visual wizard.
-
-Tests/checks:
-
-- `npm run check`
-- existing chat flow still works.
-
-#### M4-P11 — Character runtime eval harness v1
-
-**Goal**: Make future creator fields testable.
-
-Must implement:
-
-- Simple scripted eval fixtures for:
-  - character voice adherence
-  - avoid-style adherence
-  - fantasy-vs-reality boundary
-  - memory scoping
-  - visual identity prompt summary
-- This can be backend unit tests, scripts, or fixtures, but it must be runnable.
-
-Acceptance:
-
-- Grok can use eval output to compare Codex runs.
+- Basic character import/export is not treated as a blocker for M4 closure, but must be resolved before serious creator/productization work depends on portability.
+
+### M4 prompt queue archive
+
+The M4 implementation queue is closed and archived for traceability:
+
+- **M4-P01** — Documentation baseline and repo planning files.
+- **M4-P02** — Character schema and local storage foundation.
+- **M4-P03** — Character API routes.
+- **M4-P04** — `CharacterPromptCompiler` v1.
+- **M4-P05** — Chat runtime character integration.
+- **M4-P06** — Character-scoped memory and reflection.
+- **M4-P07** — `RelationshipState` v1.
+- **M4-P08** — `CharacterIntegrityPolicy` and roleplay boundary scaffolding.
+- **M4-P09** — `VisualIdentityProfile` v1.
+- **M4-P10** — Frontend character runtime shell.
+- **M4-P11** — Character runtime eval harness v1.
 
 ---
 
-## 6. Milestone 5 — Moment Capture & Visual Continuity
+## 6. M2–M4 Closure Ledger — Capability Reconciliation and M5 Dependency Map
 
-**Goal**: Make image generation core to UX by tying it to character, memory, scene, and gallery history.
+**Status**: Required immediately after M4 closure.  
+**Purpose**: Reconcile what Milestones 2–4 actually delivered, identify carryovers, and prevent Milestone 5 from rebuilding old systems in parallel.
+
+This ledger is now part of the Development Plan because M2, M3, and M4 created the runtime grid that Moment Capture must use. M5 must build on that grid instead of inventing another one. Duplicate abstractions are how projects become haunted warehouses.
+
+### 6.1 Milestone 2 closure — Memory & Self-Learning
+
+Delivered capability:
+
+- Local long-term memory foundation using local embeddings and local vector persistence.
+- Bounded chat memory context injection.
+- Reflection journal infrastructure with inspectable entries.
+- Growth orchestration that prepares memory/reflection context and schedules background reflection without blocking chat.
+- Rare growth notifications.
+- Journal, Settings, Training, and growth-notification UI surfaces.
+- Personal LoRA foundation: review queue, opt-in collection, opt-in training, approved-only jobs, rollback-friendly manifests, and conservative 8GB defaults.
+
+Runtime proof:
+
+- Chat can consume memory/reflection context.
+- Reflection can promote high-confidence signals into memory.
+- Growth orchestration coordinates memory, reflection, notification, and training-candidate flow.
+
+Known limits:
+
+- Growth is still heuristic/foundation-level, not mature autonomous personality development.
+- Personal LoRA is a dry-run/foundation layer, not real adapter fine-tuning yet.
+- Long-session recall and behavior-change evals must be strengthened before Beta claims.
+
+M5 dependency:
+
+- Moment Capture must use memory provenance, review state, deletion behavior, and character scoping conventions from M2.
+- Visual moments must be inspectable and reversible like memory/journal artifacts, not dumped into an ungoverned gallery pile.
+
+### 6.2 Milestone 3 closure — Immersion & Production Foundations
+
+Delivered capability:
+
+- Visual Novel foundation with dynamic expressions, full immersive mode, generated-scene display hooks, and growth/visual-state cues.
+- Emotional TTS foundation with local provider abstraction, voice profiles, context routing, mood/prosody shaping, streaming playback, and fallback behavior.
+- Local image generation foundation with ComfyUI/Flux-oriented low-VRAM queue, prompt engineering, job status, gallery history, retry/reuse controls, and safe output serving.
+- Memory Browser, Growth Dashboard, Character Encyclopedia, and broader growth visibility surfaces.
+- Resource coordination for 8GB hardware: TTS priority, image queue gating, VRAM pressure states, preemption, fallback/downgrade behavior, and user-facing warnings.
+- Extension manifest/event-bus foundation and character-card import preview.
+- Unified Settings & Control Hub with media, growth, memory, performance, extension, backup/import/reset, onboarding, and release-note surfaces.
+
+Runtime proof:
+
+- Image generation can be queued and tracked.
+- VN mode can display generated images and react to backend visual-state metadata.
+- TTS and image generation share a resource coordinator instead of fighting for VRAM like raccoons in a server rack.
+- Settings and dashboard surfaces expose the systems users need to understand and control.
+
+Known limits:
+
+- M3 is an alpha foundation, not final media production readiness.
+- Local ComfyUI and Orpheus/Piper depend on user environment and optional dependencies.
+- Real target-hardware smoke testing is still required for packaged desktop confidence.
+- `frontend/README.md` needs refresh so docs stop lying politely.
+
+M5 dependency:
+
+- Moment Capture must reuse the existing image queue, gallery history, safe output serving, generated-scene display hooks, and 8GB media scheduling.
+- M5 must not bypass TTS priority or create another image job system.
+
+### 6.3 Milestone 4 closure — Character Runtime & Capability Alignment
+
+Delivered capability:
+
+- Versioned `CharacterBlueprint` schema and SQLite-backed persistence.
+- Character CRUD APIs and local service boundary.
+- `CharacterPromptCompiler` v1 with structured prompt blocks.
+- Selected-character chat integration and default-character fallback.
+- Character-scoped memory/reflection/growth hooks.
+- `RelationshipState`, `GrowthPolicy`, `VisualIdentityProfile`, `CharacterIntegrityPolicy`, and `MetaConsentAndSafewordPolicy` runtime models.
+- Roleplay-first prompt compilation and fantasy-vs-reality boundary scaffolding.
+- Minimal frontend character selector, selected-character persistence, quick-create modal, and chat request integration.
+- Eval-style fixtures for prompt impact, memory scoping, roleplay boundary scaffolding, and visual summaries.
+
+Runtime proof:
+
+- Chat prompt assembly changes when a selected `character_id` is provided.
+- Character identity, relationship, roleplay, memory, growth, and visual fields can be compiled into bounded model-facing context.
+- Memory and reflection retrieval can scope by selected character plus explicit shared/global rules.
+
+Known limits:
+
+- Character import/export is not fully productized yet.
+- Write-side character memory scoping should be hardened so every selected-character memory write is stamped unless explicitly shared/global.
+- The frontend shell is intentionally not the Genesis creator.
+- Relationship/growth updates are conservative and must remain evidence-bound.
+
+M5 dependency:
+
+- Moment Capture must treat `character_id` as mandatory when capturing character-linked visuals.
+- Visual prompts must consume `VisualIdentityProfile`, `RelationshipState`, scene state, and memory context through stable compiler/service boundaries.
+- Feedback must update visual canon through reviewable artifacts, not hidden prompt mutation.
+
+### 6.4 Cross-milestone capability map
+
+| Capability | M2 | M3 | M4 | Current maturity | M5 dependency |
+|---|---:|---:|---:|---|---|
+| Long-term memory | Delivered | Browser/control surface | Character-scoped retrieval hooks | Foundation+ | Visual moments must become memory-linked artifacts |
+| Reflection journal | Delivered | Journal/Growth visibility | Character-aware retrieval hooks | Foundation | Visual feedback can create reviewable journal/memory signals |
+| Personal LoRA | Foundation | Training UI | Character/growth seams | Dry-run foundation | Do not train from visual/private artifacts without explicit approval |
+| Visual Novel mode | Not scope | Delivered foundation | Character runtime seam | Foundation | Display captured/generated scene moments |
+| Image generation | Not scope | Delivered foundation | Visual identity ready | Foundation | Upgrade generic generation into Moment Capture |
+| Character runtime | Early concept | UI surfaces ready | Delivered | Runtime foundation | Mandatory source for visual prompt identity |
+| Roleplay integrity | Product intent | UI philosophy | Schema/compiler/runtime policy | Foundation | Visual capture must preserve adult roleplay policy and hard boundaries |
+| 8GB resource safety | Context budgets | Media scheduler/resource coordinator | Character runtime remains lightweight | Foundation+ | All M5 jobs stay queued, interruptible, and downgradeable |
+
+### 6.5 Carryover register
+
+| Carryover | Source milestone | Priority | Why it matters | Target |
+|---|---|---:|---|---|
+| Basic character import/export productization | M4 | High | Creator and portability flows need durable import/export | M6 or M8 |
+| Write-side memory character scoping hardening | M4 | High | Prevent cross-character bleed before visual memories multiply | M5-P01 or M5-P02 |
+| Frontend README refresh | M3 | Medium | Docs must match delivered VN/images/TTS/character surfaces | Next docs PR |
+| Packaged Tauri backend connectivity check | M1/M3 | High | Dev mode working is not packaged desktop working | M8 smoke checklist, sooner if packaging changes |
+| Real 8GB hardware smoke test | M3 | High | Resource guardrails need target-machine proof | M5 hardening / M8 |
+| Long-session memory/growth evals | M2 | Medium | “Feels alive” needs evidence over long use | M8/M9 |
+| Real LoRA trainer backend | M2 | Later | Current system is review/manifest foundation only | M9 |
+
+### 6.6 Closure Ledger definition of done
+
+The Closure Ledger is considered complete when:
+
+- `DEVELOPMENT_PLAN.md` contains this ledger and M5 dependency map.
+- M5 prompts explicitly reference this ledger before implementing Moment Capture work.
+- Any M5 PR touching images, gallery, visual identity, memory, or character state states which M2/M3/M4 surfaces it reuses.
+- The carryover register is reviewed before M6/M8 planning.
+
+---
+
+## 7. Milestone 5 — Moment Capture & Visual Continuity
+
+**Status**: Current.  
+**Goal**: Make image generation core to Reverie’s companion experience by tying generated moments to character identity, scene state, memory, gallery history, user feedback, and visual canon.
+
+Milestone 5 is not “make prettier images.” It is the bridge from local image generation to embodied memory.
+
+### M5 product promise
+
+By the end of M5, the user can press **Capture this moment** during chat or Visual Novel mode and receive an image that is grounded in:
+
+- the selected character;
+- the current relationship and scene context;
+- stable visual identity anchors;
+- relevant memories or journal context when appropriate;
+- current outfit/pose/expression/location as scene state;
+- provenance linking the image back to the conversation moment;
+- feedback controls that can correct, canonize, reject, or reuse visual details.
 
 ### M5 success criteria
 
-- Image generation uses `VisualIdentityProfile` and scene state.
-- Users can “Capture this moment” from chat.
-- Generated images store metadata linking character, chat turn, scene, prompt, style, and feedback.
-- User feedback can mark an image as:
-  - looks right
-  - wrong appearance
-  - make this canon
-  - use outfit again
-  - just this scene
-  - reject style/trait
-- Visual feedback produces reviewable memory or `VisualChangeEvent` artifacts.
-- Identity anchors are strengthened after user correction.
-- 8GB resource coordination remains strict.
+By the end of M5:
+
+- Reverie has a `VisualPromptCompiler` that consumes `VisualIdentityProfile`, selected `CharacterBlueprint`, scene state, and optional memory/journal context.
+- Chat and VN mode expose **Capture this moment** instead of relying only on generic **Generate image** affordances.
+- Moment Capture requests persist metadata linking `character_id`, conversation/session, source message(s), prompt, negative prompt, scene state, model/preset, output paths, gallery item, and feedback state.
+- Generated images can be saved into character-linked history and asset manifests without unsafe path access.
+- Users can mark feedback as looks right, wrong appearance, make this canon, use outfit again, just this scene, reject style/trait, retry, vary, or delete.
+- Feedback produces reviewable `VisualChangeEvent` or memory/journal candidate artifacts with provenance and rollback IDs.
+- Identity anchors are strengthened only through explicit user confirmation or reviewed correction, not hidden drift.
+- Rejected traits are excluded from future prompt summaries unless the user later edits canon.
+- Moment Capture respects roleplay-first adult-fantasy policy while preserving the hard boundary: 18+ only, no underage sexual content, no deliberately childlike sexual presentation.
+- All image jobs remain queued, cancellable, resource-coordinated, TTS-preemptible, and safe for RTX 4070 8GB mobile defaults.
+- Tests prove prompt grounding, metadata persistence, feedback writeback, character scoping, rejected-trait exclusion, and 8GB queue behavior.
+
+### M5 architecture rules
+
+- Reuse the existing image generation queue and resource coordinator; do not build a parallel image job system.
+- Reuse `character_id` as the primary visual scope for character-linked images.
+- Reuse `VisualIdentityProfile` categories: identity anchors, evolving traits, scene-mutable traits, rejected traits, current appearance.
+- Add `VisualChangeEvent` as a reviewable artifact before any visual canon update becomes durable.
+- Store image metadata as local-first structured data, not prompt-only text.
+- Never store raw private prompts or hidden notes in user-visible gallery captions unless explicitly meant for review.
+- Do not let image feedback silently mutate character canon.
+- Do not block chat while image generation, feedback analysis, or asset copying runs.
+- Keep visual prompt blocks bounded for 8GB systems and local model context limits.
+
+### M5 persistence and metadata contract
+
+Every Moment Capture output should be traceable through a local metadata record with at least:
+
+- `schema_version`
+- `moment_id` or `job_id`
+- `character_id`
+- `conversation_id` / `session_id` when available
+- `source_message_ids`
+- `source_turn_indices` where applicable
+- `scene_state`
+- `visual_identity_snapshot`
+- `prompt`
+- `negative_prompt`
+- `quality_preset`
+- `resource_mode`
+- `output_paths`
+- `gallery_status`
+- `feedback_state`
+- `canon_write_status`
+- `linked_memory_ids`
+- `linked_journal_ids`
+- `visual_change_event_ids`
+- `created_at`
+- `updated_at`
+- `provenance`
+- `rollback_id`
 
 ### M5 prompt queue
 
-- **M5-P01** — VisualPromptCompiler v1.
-- **M5-P02** — SceneState and MomentCapture request model.
-- **M5-P03** — MomentCapture backend API and ComfyUI integration.
-- **M5-P04** — Gallery metadata and character-linked image history.
-- **M5-P05** — Image feedback actions and visual canon updates.
-- **M5-P06** — Chat UI “Capture this moment” replacement for generic “Generate image.”
-- **M5-P07** — Visual consistency eval seeds.
-- **M5-P08** — 8GB media scheduling and failure UX hardening.
+#### M5-P00 — Closure Ledger and M5 plan expansion
+
+**Goal**: Update `DEVELOPMENT_PLAN.md` so M2–M4 are reconciled and M5 has prompt-ready deliverables.
+
+Must implement:
+
+- Add the M2–M4 Closure Ledger after M4.
+- Expand M5 from a short prompt list into detailed deliverables.
+- Update immediate next actions to point to M5.
+- Keep M4 marked closed.
+
+Must not implement:
+
+- Runtime code.
+- Image, memory, or character behavior changes.
+
+Tests/checks:
+
+- Docs-only review.
+- Confirm M5 tasks are scoped and sequenced.
+
+Definition of Done:
+
+- Grok can use this plan to generate M5 implementation prompts without guessing acceptance criteria.
+
+#### M5-P01 — VisualChangeEvent and Moment metadata schemas
+
+**Goal**: Add durable schema models for Moment Capture metadata and reviewable visual canon changes.
+
+Must implement:
+
+- `MomentCaptureMetadata` or equivalent with the persistence contract listed above.
+- `VisualChangeEvent` with:
+  - `event_id`
+  - `character_id`
+  - `event_type`
+  - `proposed_change`
+  - `target_field`
+  - `source_moment_id` / `source_job_id`
+  - `source_message_ids`
+  - `review_state`
+  - `created_at`
+  - `updated_at`
+  - `approved_at`
+  - `rejected_at`
+  - `rollback_id`
+  - `provenance`
+- Local persistence layer or repository seam for moment metadata and visual events.
+- Migration/version seam.
+
+Must not implement:
+
+- Full image generation changes.
+- Automatic canon mutation without review.
+- Full gallery UI.
+
+Tests required:
+
+- Metadata roundtrip persistence.
+- VisualChangeEvent review-state transitions.
+- Rollback/provenance fields are present.
+- Invalid event types or missing `character_id` are rejected.
+
+Review focus:
+
+- Is the metadata contract sufficient for trust, rollback, and future creator validation?
+- Does it avoid hidden visual canon changes?
+
+#### M5-P02 — VisualPromptCompiler v1
+
+**Goal**: Compile selected character visual identity, scene state, and moment context into bounded image prompts.
+
+Must implement:
+
+- `VisualPromptCompiler` service that consumes:
+  - `CharacterBlueprint`
+  - `VisualIdentityProfile`
+  - `RelationshipState` summary when relevant
+  - scene state / VN state
+  - source chat turn summary
+  - optional memory/reflection context
+- Prompt sections for:
+  - identity anchors
+  - current appearance
+  - evolving traits
+  - scene-mutable traits
+  - outfit/location/pose/expression
+  - relationship/scene mood
+  - style/framing hints
+  - negative prompt from rejected traits and safety exclusions
+- Bounded output and deterministic ordering.
+- No raw CharacterBlueprint JSON dumps.
+- Rejected traits excluded from positive prompts and included in negative prompts where appropriate.
+
+Must not implement:
+
+- Gallery feedback writeback.
+- Creator UI.
+- Automatic visual canon changes.
+
+Tests required:
+
+- Identity anchors appear in positive prompt.
+- Rejected traits do not appear in positive prompt.
+- Rejected traits appear in negative prompt when useful.
+- Scene traits can change per request without mutating canon.
+- Long visual fields are bounded.
+- Adult-only policy contributes clear adult framing without weird over-policing of valid adult designs.
+
+Review focus:
+
+- Does the prompt preserve identity without freezing scene flexibility?
+- Does it keep output usable for local ComfyUI/Flux workflows?
+
+#### M5-P03 — SceneState and MomentCapture request model
+
+**Goal**: Define the request shape used by chat, VN, and future creator previews to capture a moment.
+
+Must implement:
+
+- `SceneState` model with:
+  - location/setting
+  - mood
+  - pose
+  - expression
+  - outfit
+  - lighting
+  - camera/framing
+  - participants
+  - source mode: chat, VN, creator preview, manual
+- `MomentCaptureRequest` with:
+  - `character_id`
+  - source message IDs or source text summary
+  - scene state
+  - requested quality preset
+  - optional user prompt supplement
+  - consent/review flags as needed
+- Backend validation and friendly errors.
+- Frontend TypeScript types/API client seam.
+
+Must not implement:
+
+- Full UI replacement yet.
+- Gallery feedback actions.
+
+Tests required:
+
+- Valid request accepts chat and VN sources.
+- Missing selected `character_id` fails with useful message or explicitly uses a non-character generic path.
+- Scene-state defaults are generated safely.
+- Unknown/oversized fields are bounded.
+
+Review focus:
+
+- Can both chat and VN use this without duplicate request logic?
+
+#### M5-P04 — Moment Capture backend orchestration
+
+**Goal**: Wire Moment Capture requests into the existing image generation queue without creating a parallel media path.
+
+Must implement:
+
+- Backend endpoint or service method for `POST /api/moments/capture` or equivalent.
+- Load selected `CharacterBlueprint`.
+- Compile prompt via `VisualPromptCompiler`.
+- Submit job through existing `ImageGenerationService`.
+- Persist moment metadata before/after job completion.
+- Link image job ID to moment ID.
+- Preserve existing generic image generation path for manual use.
+
+Must not implement:
+
+- Feedback writeback.
+- Heavy analysis model.
+- Blocking chat while waiting for image completion.
+
+Tests required:
+
+- Capture request submits existing image queue job.
+- Moment metadata links character, prompt, scene, and job.
+- Missing character falls back only if explicitly allowed; otherwise useful error.
+- Existing image generation tests still pass.
+- Resource coordinator remains in path.
+
+Review focus:
+
+- Does the implementation reuse M3 image infrastructure instead of forking it?
+
+#### M5-P05 — Character-linked gallery metadata and history
+
+**Goal**: Upgrade gallery history so captured moments are character-linked, inspectable, and useful as future memory.
+
+Must implement:
+
+- Gallery records include `character_id`, `moment_id`, source message IDs, scene state, feedback state, and canon status.
+- Filter gallery by character.
+- Distinguish generic images from Moment Capture images.
+- Preserve existing image history migration compatibility.
+- Character asset save flow keeps manifest versioning and provenance.
+
+Must not implement:
+
+- Full visual feedback logic.
+- Creator portrait ceremony.
+
+Tests required:
+
+- Captured images appear in character-filtered history.
+- Generic images remain accessible.
+- Legacy image history still loads.
+- Deleting image history does not leave dangling unsafe output paths.
+
+Review focus:
+
+- Is gallery history now usable as memory-linked presence instead of a screenshot bin?
+
+#### M5-P06 — Image feedback actions and visual canon review queue
+
+**Goal**: Let users correct and approve visual details without hidden drift.
+
+Must implement feedback actions:
+
+- `looks_right`
+- `wrong_appearance`
+- `make_this_canon`
+- `use_outfit_again`
+- `just_this_scene`
+- `reject_style_or_trait`
+- `retry`
+- `vary`
+- `delete`
+
+Must implement behavior:
+
+- Feedback updates gallery metadata.
+- Canon-affecting feedback creates `VisualChangeEvent` in pending review or approved state depending on explicit user intent.
+- Rejected traits update `VisualIdentityProfile.rejected_traits` only through clear user action.
+- Scene-only feedback stays scene-scoped.
+- Each feedback action stores provenance.
+
+Must not implement:
+
+- Silent canon mutation.
+- Training dataset collection from images without explicit review/approval.
+
+Tests required:
+
+- Each feedback action updates the correct metadata fields.
+- Canon-changing actions create reviewable events.
+- Rejected traits affect future negative prompts.
+- Scene-only details do not pollute identity anchors.
+- Deletion prevents future retrieval/use.
+
+Review focus:
+
+- Does the user stay in control of what the character becomes visually?
+
+#### M5-P07 — Chat and VN “Capture this moment” UI
+
+**Goal**: Replace generic image generation as the main companion-image affordance with Moment Capture.
+
+Must implement:
+
+- Chat UI button/affordance: **Capture this moment**.
+- VN mode button/affordance: **Capture scene** or equivalent.
+- Request building from selected character, latest assistant/user context, and current VN scene state.
+- Progress states using existing image job events.
+- Empty/missing character states.
+- Clear copy explaining that captured images can become memory/canon only with user approval.
+- Keep generic image generation available as secondary/manual tool if still useful.
+
+Must not implement:
+
+- Full creator portrait validation ceremony.
+- Hidden auto-capture.
+
+Tests/checks:
+
+- `npm run check`.
+- Existing chat/VN flows still work.
+- Manual smoke: capture from chat, capture from VN, cancel job, retry/vary.
+
+Review focus:
+
+- Does the UI feel like companion presence, not a random image generator stapled to chat?
+
+#### M5-P08 — Visual consistency eval seeds
+
+**Goal**: Add runnable eval fixtures for visual identity continuity and feedback writeback.
+
+Must implement eval seeds for:
+
+- Stable identity anchors preserved across different scenes.
+- Outfit/pose/expression change per scene without mutating identity.
+- Rejected traits excluded from future prompts.
+- “Make this canon” creates a reviewable event.
+- Character A visual canon does not bleed into Character B.
+- Adult-only visual policy remains explicit without over-policing valid adult designs.
+
+Must not implement:
+
+- Real image similarity scoring unless already cheap/local.
+- External/cloud evaluation.
+
+Tests required:
+
+- Runnable backend tests or script fixtures.
+- Clear output Grok can use to compare Codex runs.
+
+Review focus:
+
+- Can this catch regressions before users notice their companion randomly changes species, eyes, or entire vibe? Prefer yes. Obviously.
+
+#### M5-P09 — 8GB media scheduling and failure UX hardening
+
+**Goal**: Harden image/TTS/VN scheduling and failure states before Moment Capture becomes a primary UX loop.
+
+Must implement:
+
+- Ensure Moment Capture jobs use existing queue/resource coordinator.
+- Improve user-facing job states for:
+  - waiting for VRAM
+  - downgraded quality
+  - paused for TTS
+  - cancelled
+  - failed ComfyUI connection
+  - unsafe/missing output
+- Ensure TTS priority still wins.
+- Ensure failed jobs retain useful metadata without becoming canon/memory.
+- Add manual validation checklist for RTX 4070 8GB target.
+
+Must not implement:
+
+- Resident diffusion model inside Reverie process.
+- Parallel image workers.
+- Unbounded retries.
+
+Tests required:
+
+- Existing image generation service tests still pass.
+- Moment Capture job pauses for active TTS.
+- Low VRAM downgrades to preview preset.
+- Failure state is visible and retryable where appropriate.
+
+Review focus:
+
+- Does chat stay usable while image work happens?
+
+#### M5-P10 — M5 docs and capability matrix update
+
+**Goal**: Close M5 with accurate docs once implementation is accepted.
+
+Must implement:
+
+- Update `DEVELOPMENT_PLAN.md` M5 status and completion summary.
+- Update `README.md` current capabilities/focus.
+- Update `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` to mark visual/Moment Capture fields as supported, preview-only, future, or out of scope.
+- Refresh frontend docs if UI surfaces changed.
+- Record intentional deviations and carryovers.
+
+Tests/checks:
+
+- Docs-only unless behavior changed.
+- Include test commands from accepted M5 PRs.
+
+Definition of Done:
+
+- M6 creator prompts can rely on M5 visual capability claims without guessing.
 
 ---
 
-## 7. Milestone 6 — Basic Character Creator Foundation
+## 8. Milestone 6 — Basic Character Creator Foundation
 
 **Goal**: Build a practical creator that exposes only fields Reverie can actually process.
 
@@ -676,7 +969,7 @@ This is not yet the full celestial UX. It is the honest creator.
 
 ### M6 prompt queue
 
-- **M6-P01** — Creator schema mapping and UI state machine.
+- **M6-P01** — Creator architecture and route/store foundation.
 - **M6-P02** — Identity and premise steps.
 - **M6-P03** — Personality/communication steps with examples.
 - **M6-P04** — Roleplay policy and safeword/OOC controls.
@@ -689,7 +982,7 @@ This is not yet the full celestial UX. It is the honest creator.
 
 ---
 
-## 8. Milestone 7 — Companion Genesis Immersive Creator
+## 9. Milestone 7 — Companion Genesis Immersive Creator
 
 **Goal**: Transform the practical creator into a premium, immersive, celestial “creation ritual.”
 
@@ -729,7 +1022,7 @@ This is where the black starfield, celestial music, smooth transitions, world re
 
 ---
 
-## 9. Milestone 8 — Alpha Hardening & Local Productization
+## 10. Milestone 8 — Alpha Hardening & Local Productization
 
 **Goal**: Make Reverie feel like a real desktop product, not a repo ceremony.
 
@@ -760,7 +1053,7 @@ This is where the black starfield, celestial music, smooth transitions, world re
 
 ---
 
-## 10. Milestone 9 — Beta Deep Growth & Real Personalization
+## 11. Milestone 9 — Beta Deep Growth & Real Personalization
 
 **Goal**: Move from believable continuity to deeper long-term evolution.
 
@@ -789,7 +1082,7 @@ This is where the black starfield, celestial music, smooth transitions, world re
 
 ---
 
-## 11. Milestone 10 — Launch & Monetization Foundations
+## 12. Milestone 10 — Launch & Monetization Foundations
 
 **Goal**: Prepare a local-first public product without betraying the core promise.
 
@@ -821,7 +1114,7 @@ This is where the black starfield, celestial music, smooth transitions, world re
 
 ---
 
-## 12. Cross-Cutting Test Strategy
+## 13. Cross-Cutting Test Strategy
 
 Every feature should add tests at the lowest useful layer.
 
@@ -866,7 +1159,7 @@ Must switch to reality boundary:
 
 ---
 
-## 13. Review Rubric for Grok
+## 14. Review Rubric for Grok
 
 When comparing Codex Run A vs Run B, Grok should score each from 1–5:
 
@@ -886,15 +1179,16 @@ Winner is not automatically the larger implementation. Bigger diffs are often ju
 
 ---
 
-## 14. Immediate Next Actions
+## 15. Immediate Next Actions
 
-1. Commit the documentation/prompt workflow files from M4-P01.
-2. Have Grok generate the first implementation prompt for **M4-P02 — Character schema and local storage foundation**.
+1. Merge this v2.4 Development Plan update.
+2. Have Grok generate the implementation prompt for **M5-P01 — VisualChangeEvent and Moment metadata schemas**.
 3. Run that prompt twice in Codex.
-4. Review both outputs against this plan and the roleplay policy.
-5. Merge the cleaner foundation.
-6. Continue through M4 prompt queue in order unless a dependency forces a small reorder.
+4. Review both outputs against the M2–M4 Closure Ledger, Moment Capture skill prompt, 8GB skill prompts, character-quality evals, and roleplay policy.
+5. Merge the cleaner schema/persistence foundation.
+6. Continue through M5 prompt queue in order unless a dependency forces a small reorder.
+7. Before M5 closure, run a targeted chat/VN/image/TTS smoke test on the 8GB target profile.
 
 ---
 
-**End of Development Plan v2.1**
+**End of Development Plan v2.4**
