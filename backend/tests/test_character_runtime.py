@@ -13,6 +13,11 @@ from app.repositories.character_repo import CharacterRepository
 from app.schemas.growth_policy import GrowthPolicy
 from app.schemas.relationship_state import RelationshipPhase, RelationshipState
 from app.schemas.self_reflection_journal import SelfReflectionJournalEntry
+from app.schemas.visual_identity import (
+    AdultOnlyVisualPolicy,
+    VisualIdentityProfile,
+    VisualTrait,
+)
 from app.schemas.character_blueprint import (
     AdultAgeRange,
     CharacterBlueprint,
@@ -89,6 +94,63 @@ class CharacterBlueprintValidationTests(unittest.TestCase):
             )
 
 
+class VisualIdentityProfileTests(unittest.TestCase):
+    def test_visual_identity_defaults_are_versioned_and_adult_scoped(self) -> None:
+        profile = VisualIdentityProfile(
+            identity_anchors=["amber eyes", "amber eyes", "warm brown skin"],
+            scene_mutable_traits=["outfit", "pose"],
+            rejected_traits=["blue eyes"],
+            current_appearance="black-violet hair, soft confident smile",
+        )
+
+        self.assertEqual(profile.schema_version, "visual_identity_profile.v1")
+        self.assertEqual(profile.identity_anchors, ["amber eyes", "warm brown skin"])
+        self.assertTrue(profile.adult_only_policy.clearly_adult)
+        self.assertIn("clearly adult", profile.compact_prompt_summary()[0])
+
+    def test_evolving_trait_update_records_provenance_and_timestamp(self) -> None:
+        profile = VisualIdentityProfile().with_evolving_trait(
+            "hair style",
+            "long braid with violet ribbon",
+            provenance="user_confirmed_after_scene_12",
+            updated_at="2026-06-13T12:00:00+00:00",
+        )
+
+        self.assertEqual(len(profile.evolving_traits), 1)
+        self.assertEqual(profile.evolving_traits[0].name, "hair style")
+        self.assertEqual(
+            profile.evolving_traits[0].provenance, "user_confirmed_after_scene_12"
+        )
+        self.assertEqual(
+            profile.evolving_traits[0].updated_at, "2026-06-13T12:00:00+00:00"
+        )
+
+    def test_adult_only_policy_validation_rejects_non_adult_visuals(self) -> None:
+        with self.assertRaises(ValidationError):
+            AdultOnlyVisualPolicy(clearly_adult=False)
+        with self.assertRaises(ValidationError):
+            AdultOnlyVisualPolicy(disallow_underage_or_childlike_sexualization=False)
+
+    def test_visual_identity_is_integrated_into_blueprint(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(
+                display_name="Aria", adult_age_range="late_20s_adult"
+            ),
+            visual_identity=VisualIdentityProfile(
+                identity_anchors=["same face", "amber eyes"]
+            ),
+        )
+
+        self.assertEqual(
+            blueprint.visual_identity.adult_only_policy.adult_age_range,
+            "late_20s_adult",
+        )
+        self.assertEqual(
+            blueprint.visual_identity.identity_anchors, ["same face", "amber eyes"]
+        )
+
+
 class RelationshipGrowthJournalSchemaTests(unittest.TestCase):
     def test_relationship_growth_and_journal_are_versioned_and_scoped(self) -> None:
         relationship = RelationshipState(
@@ -142,6 +204,48 @@ class RelationshipGrowthJournalSchemaTests(unittest.TestCase):
 
 
 class CharacterServiceCrudTests(unittest.TestCase):
+
+    def test_visual_identity_persists_and_evolving_traits_update_through_service(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "characters.sqlite3"
+            service = CharacterService(CharacterRepository(db_path))
+            service.create(CharacterCreate(character_id="aria", display_name="Aria"))
+            service.update_visual_identity(
+                "aria",
+                {
+                    "identity_anchors": ["amber eyes", "warm brown skin", "same face"],
+                    "current_appearance": "black-violet hair and a moon pendant",
+                },
+            )
+            updated = service.update_visual_identity(
+                "aria",
+                {
+                    "evolving_trait": {
+                        "name": "hair",
+                        "value": "black-violet waves",
+                        "provenance": "user_confirmed_portrait",
+                        "updated_at": "2026-06-13T13:00:00+00:00",
+                    }
+                },
+            )
+
+            restarted = CharacterService(CharacterRepository(db_path))
+            loaded = restarted.load_by_id("aria")
+
+        self.assertEqual(
+            loaded.visual_identity.identity_anchors,
+            ["amber eyes", "warm brown skin", "same face"],
+        )
+        self.assertEqual(
+            updated.evolving_traits[0].provenance, "user_confirmed_portrait"
+        )
+        self.assertEqual(
+            loaded.visual_identity.evolving_traits[0].updated_at,
+            "2026-06-13T13:00:00+00:00",
+        )
+
     def test_crud_persists_across_repository_restarts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "characters.sqlite3"
@@ -182,6 +286,38 @@ class CharacterServiceCrudTests(unittest.TestCase):
 
 
 class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
+
+    def test_prompt_compiler_can_include_compact_visual_summary_when_requested(
+        self,
+    ) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+            visual_identity=VisualIdentityProfile(
+                identity_anchors=["amber eyes", "warm brown skin", "same face"],
+                evolving_traits=[
+                    VisualTrait(
+                        name="hair", value="black-violet waves", provenance="creator"
+                    )
+                ],
+                scene_mutable_traits=["outfit", "pose", "expression"],
+                rejected_traits=["blue eyes"],
+                current_appearance="wearing her moon pendant",
+            ),
+        )
+        compiler = CharacterPromptCompiler()
+
+        ordinary_prompt = compiler.compile(blueprint)
+        visual_prompt = compiler.compile(blueprint, include_visual_summary=True)
+
+        self.assertNotIn("Identity anchors: amber eyes", ordinary_prompt)
+        self.assertIn(
+            "Identity anchors: amber eyes, warm brown skin, same face.", visual_prompt
+        )
+        self.assertIn("Evolving traits: hair: black-violet waves.", visual_prompt)
+        self.assertIn("Avoid rejected visual traits: blue eyes.", visual_prompt)
+        self.assertLess(len(visual_prompt), 10000)
+
     def test_prompt_compiler_includes_full_runtime_fields_without_private_notes(
         self,
     ) -> None:
