@@ -1,9 +1,9 @@
 # Reverie — Source of Truth
 
-**Version:** 1.1
-**Date:** June 12, 2026
+**Version:** 1.2
+**Date:** June 13, 2026
 **Owner:** Vision Entertainment / Grok (Vision)
-**Status:** Milestone 3 complete — immersion and production foundations closed.
+**Status:** Milestone 4 complete — character runtime foundation closed.
 
 ---
 
@@ -26,9 +26,20 @@ Reverie is not a SillyTavern skin and does not depend on SillyTavern as a backen
 
 ---
 
-## 2. Milestone 3 Architecture Overview
+## 2. Milestone 4 Architecture Overview
 
-Milestone 3 completes Reverie's first production-grade immersion stack. It adds six major pillars around the Milestone 1/2 chat, memory, and growth foundation:
+Milestone 4 completes Reverie's character runtime foundation on top of the Milestone 3 immersion stack. Reverie now has versioned local character blueprints, selected-character chat grounding, character-scoped memory/reflection/growth hooks, and roleplay-first integrity policies that future creator UX can safely command.
+
+### Milestone 4 additions
+
+- Versioned `CharacterBlueprint` schemas with local CRUD persistence, migration seams, and API routes.
+- Structured `RelationshipState`, `GrowthPolicy`, `VisualIdentityProfile`, `CharacterIntegrityPolicy`, and `MetaConsentAndSafewordPolicy` runtime models.
+- Bounded `CharacterPromptCompiler` sections for identity, voice, behavior, avoid-style rules, relationship state, roleplay-first policy, memory use, growth, and visual/scene hints.
+- Chat requests can select `character_id`; missing or absent selections fall back to a local default without breaking existing chat.
+- Memory retrieval, reflection journal context, and growth orchestration can scope artifacts by character while preserving explicitly shared/global memories.
+- The frontend includes a minimal character runtime selector and quick-create shell; full Genesis creator UX remains future work.
+
+Milestone 3 completed Reverie's first production-grade immersion stack. It adds six major pillars around the Milestone 1/2 chat, memory, and growth foundation:
 
 1. **Visual Novel Foundation:** lightweight sprite/expression mode with reactive emotion state and full-immersive presentation.
 2. **Emotional TTS:** local voice profiles, context-aware routing, mood/prosody enrichment, streaming playback, and per-character tuning.

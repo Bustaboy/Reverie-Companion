@@ -29,7 +29,7 @@ The app prioritizes:
 
 ## Current Capabilities
 
-Milestones 1–3 are complete. Reverie currently includes:
+Milestones 1–4 are complete. Reverie currently includes:
 
 - FastAPI backend with Ollama chat, streaming SSE responses, and health diagnostics.
 - Local memory foundation using Ollama embeddings plus embedded LanceDB, with optional mem0 write-through.
@@ -38,24 +38,25 @@ Milestones 1–3 are complete. Reverie currently includes:
 - Unified Settings & Control Hub for memory, reflection, TTS, image generation, performance presets, extensions, backup/import/reset, and Milestone 3 release notes.
 - Training UI for Personal LoRA review: collection opt-in, training opt-in, pending candidate approval/rejection/deletion, and safe starter training jobs.
 - Visual Novel mode, emotional TTS playback, local image generation gallery, Growth Dashboard, Memory Browser, and Character Encyclopedia foundations.
+- Character runtime foundation: versioned `CharacterBlueprint` storage/APIs, selected-character chat grounding, prompt compilation, roleplay-first integrity policy, relationship/growth/visual identity structures, character-scoped memory/reflection hooks, and a minimal frontend character selector.
 - Tauri + Svelte desktop shell with warm dark styling, local backend integration, and first-run Milestone 3 onboarding.
 
 ---
 
 ## Current Development Focus
 
-Reverie is now entering **Milestone 4 — Character Runtime & Capability Alignment**.
+Reverie has closed **Milestone 4 — Character Runtime & Capability Alignment** and is ready for **Milestone 5 — Moment Capture & Visual Continuity**.
 
-The full immersive character creator is intentionally **not** being built first. The next phase builds the runtime that lets a future creator actually matter.
+The full immersive character creator is intentionally still **not** being built first. The completed M4 runtime makes future creator choices matter before the app exposes the full ritual.
 
-The post-M3 strategy:
+The post-M3/M4 strategy:
 
 ```text
 Build the powers first.
 Then build the ritual that lets users command those powers.
 ```
 
-Milestone 4 focuses on:
+Milestone 4 delivered:
 
 - `CharacterBlueprint` schema and local character storage
 - `VisualIdentityProfile`
@@ -70,7 +71,7 @@ Milestone 4 focuses on:
 - character-scoped memory/reflection
 - evals that prove creator/runtime fields actually change behavior
 
-Milestone 5 then elevates image generation into **Moment Capture & Visual Continuity**.
+Milestone 5 now elevates image generation into **Moment Capture & Visual Continuity**.
 
 Milestone 6 adds the practical creator foundation.
 

@@ -293,10 +293,22 @@ When a task touches character runtime or creator work, Grok should load `charact
 
 ## 5. Milestone 4 — Character Runtime & Capability Alignment
 
-**Status**: Current.  
+**Status**: Complete — closed June 13, 2026.
 **Goal**: Build the internal character runtime that lets future creator choices actually affect the app.
 
 Milestone 4 is not the full character creator. It is the substrate that prevents the future creator from lying.
+
+
+### M4 completion summary
+
+Milestone 4 is complete. Reverie now has the runtime substrate required before the full creator: versioned `CharacterBlueprint` persistence and CRUD APIs, structured `RelationshipState`, `GrowthPolicy`, `VisualIdentityProfile`, `CharacterIntegrityPolicy`, and `MetaConsentAndSafewordPolicy` models, a bounded `CharacterPromptCompiler`, selected-character chat integration, character-scoped memory/reflection/growth hooks, a minimal frontend character runtime selector/quick-create shell, and backend/frontend eval coverage for prompt assembly, persistence, chat payloads, roleplay boundaries, memory scoping, and visual summaries.
+
+Intentional deviations and future work:
+
+- Character persistence uses the local SQLite repository and migration seam already used by the backend rather than per-character JSON files; this keeps runtime CRUD/query behavior durable and still local-first.
+- The frontend intentionally remains a minimal runtime shell, not the full Genesis/immersive creator. Full creator UX, character gallery/import polish, visual identity rendering, Moment Capture, visual feedback writeback, and `VisualChangeEvent` review loops remain Milestone 5+ work.
+- Visual identity is stored and prompt-summarized in M4, but image generation does not fully consume it until Milestone 5.
+- Relationship and growth updates are conservative, provenance-oriented foundations; autonomous relationship evolution and richer approval UX remain future work.
 
 ### M4 success criteria
 
