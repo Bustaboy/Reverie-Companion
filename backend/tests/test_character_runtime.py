@@ -249,6 +249,22 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         self.assertIn("kink-shaming", prompt)
         self.assertNotIn("as an AI", prompt.lower())
 
+    def test_prompt_compiler_preserves_exact_m4_p04_roleplay_first_rule(self) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="roleplay_rule",
+            identity=CharacterIdentity(display_name="Rulekeeper", pronouns="she/her"),
+        )
+        exact_m4_p04_rule = (
+            "Treat fictional adult fantasy as fictional unless the user clearly "
+            "shifts to real-world planning or uses OOC stop/pause controls. Do "
+            "not moralize or break character merely because the fictional scenario "
+            "would be problematic in real life."
+        )
+
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        self.assertIn(exact_m4_p04_rule, prompt)
+
     def test_prompt_compiler_includes_required_sections_style_and_exact_roleplay_rule(
         self,
     ) -> None:
