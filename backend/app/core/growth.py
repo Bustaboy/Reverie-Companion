@@ -18,8 +18,10 @@ from app.core.reflection import (
     JournalEntry,
     ReflectionManager,
     ReflectionScheduler,
+    ReflectionSchedulerConfig,
     get_reflection_manager,
 )
+from app.services.character_service import CharacterService
 from app.models.chat import (
     MAX_MESSAGE_LENGTH,
     ChatMessage,
@@ -69,11 +71,13 @@ class GrowthOrchestrator:
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
         lora_trainer: PersonalLoRATrainer | None = None,
+        character_service: CharacterService | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
         self._lora_trainer = lora_trainer
+        self._character_service = character_service
         self._reflection_scheduler = ReflectionScheduler.from_settings(self._settings)
 
     @classmethod
@@ -197,7 +201,8 @@ class GrowthOrchestrator:
 
         if not self._settings.reflection_enabled or self._reflection_manager is None:
             return
-        decision = self._reflection_scheduler.evaluate(
+        scheduler = self._reflection_scheduler_for_request(request)
+        decision = scheduler.evaluate(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,
@@ -248,7 +253,9 @@ class GrowthOrchestrator:
         try:
             try:
                 entry = await asyncio.to_thread(
-                    self._reflection_manager.trigger_reflection, history, character_id=character_id
+                    self._reflection_manager.trigger_reflection,
+                    history,
+                    character_id=character_id,
                 )
             except TypeError:
                 entry = await asyncio.to_thread(
@@ -305,7 +312,9 @@ class GrowthOrchestrator:
             )
         try:
             job = self._lora_trainer.evaluate_auto_training()
-        except Exception as exc:  # pragma: no cover - auto training must not affect chat.
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - auto training must not affect chat.
             logger.warning(
                 "Automated personal LoRA training check skipped",
                 extra={"request_id": request_id, "error": str(exc)},
@@ -497,7 +506,8 @@ class GrowthOrchestrator:
         return sum(1 for message in request.messages if message.role == "user")
 
     def reflection_trigger_reason(self, request: ChatRequest) -> str | None:
-        decision = self._reflection_scheduler.evaluate(
+        scheduler = self._reflection_scheduler_for_request(request)
+        decision = scheduler.evaluate(
             request.messages,
             now=time.monotonic(),
             last_started_at=type(self)._last_reflection_started_at,
@@ -507,6 +517,34 @@ class GrowthOrchestrator:
 
     def should_trigger_reflection(self, request: ChatRequest) -> bool:
         return self.reflection_trigger_reason(request) is not None
+
+    def _reflection_scheduler_for_request(
+        self, request: ChatRequest
+    ) -> ReflectionScheduler:
+        if not request.character_id or self._character_service is None:
+            return self._reflection_scheduler
+        try:
+            policy = self._character_service.get_growth_policy(request.character_id)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - character lookup must not block chat.
+            logger.debug(
+                "Character growth policy unavailable; using global scheduler",
+                extra={"character_id": request.character_id, "error": str(exc)},
+            )
+            return self._reflection_scheduler
+        if not policy.character_scoped_growth:
+            return ReflectionScheduler(ReflectionSchedulerConfig(enabled=False))
+        return ReflectionScheduler(
+            ReflectionSchedulerConfig(
+                enabled=self._settings.reflection_enabled,
+                frequency=policy.reflection_frequency.value,
+                sensitivity=self._settings.reflection_sensitivity,
+                user_message_interval=policy.reflection_after_significant_turns,
+                min_interval_seconds=self._settings.reflection_min_interval_seconds,
+                min_user_messages=self._settings.reflection_min_user_messages,
+            )
+        )
 
     @classmethod
     def _get_reflection_lock(cls) -> asyncio.Lock:
@@ -577,7 +615,9 @@ class GrowthOrchestrator:
             payload = {"done": True}
 
         if growth_context.growth_notification is not None:
-            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+            payload["growth_notification"] = (
+                growth_context.growth_notification.model_dump()
+            )
 
         if request is not None:
             visual_state = emotion_inference_engine.infer_visual_state(

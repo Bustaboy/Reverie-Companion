@@ -96,5 +96,49 @@ class GrowthOrchestratorTests(unittest.TestCase):
             self.assertEqual(examples[0]["source_journal_id"], "journal_growth_loop")
 
 
+class CharacterGrowthPolicySchedulingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        GrowthOrchestrator._reflection_lock = None
+        GrowthOrchestrator._last_reflection_started_at = 0.0
+        GrowthOrchestrator._inflight_reflection_tasks.clear()
+
+    def test_character_growth_policy_controls_reflection_frequency(self) -> None:
+        class Policy:
+            character_scoped_growth = True
+            reflection_frequency = type("Frequency", (), {"value": "high"})()
+            reflection_after_significant_turns = 4
+
+        class CharacterServiceStub:
+            def get_growth_policy(self, character_id: str) -> Policy:
+                self.seen_character_id = character_id
+                return Policy()
+
+        character_service = CharacterServiceStub()
+        orchestrator = GrowthOrchestrator(
+            settings=Settings(
+                memory_enabled=False,
+                reflection_enabled=True,
+                reflection_min_interval_seconds=0,
+                reflection_min_user_messages=1,
+            ),
+            reflection_manager=FakeReflectionManager(),  # type: ignore[arg-type]
+            character_service=character_service,  # type: ignore[arg-type]
+        )
+        request = ChatRequest(
+            stream=False,
+            character_id="aria",
+            messages=[
+                ChatMessage(role="user", content="hello"),
+                ChatMessage(role="assistant", content="hi"),
+                ChatMessage(role="user", content="checking in"),
+            ],
+        )
+
+        self.assertEqual(
+            orchestrator.reflection_trigger_reason(request), "message_interval:2"
+        )
+        self.assertEqual(character_service.seen_character_id, "aria")
+
+
 if __name__ == "__main__":
     unittest.main()

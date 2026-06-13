@@ -142,7 +142,9 @@ class CharacterServiceCrudTests(unittest.TestCase):
             self.assertIsNone(restarted.get("lyra"))
             with self.assertRaises(CharacterNotFoundError) as error:
                 restarted.load_by_id("lyra")
-            self.assertIn("Want to create a new one together", error.exception.user_message)
+            self.assertIn(
+                "Want to create a new one together", error.exception.user_message
+            )
 
 
 class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
@@ -166,6 +168,29 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
 - Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
         self.assertEqual(prompt, expected)
+
+    def test_prompt_compiler_includes_recent_growth_guidance_when_provided(
+        self,
+    ) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+        )
+
+        prompt = CharacterPromptCompiler().compile(
+            blueprint,
+            growth_insights=[
+                {
+                    "id": "journal_7",
+                    "summary": "Keep reassurance steady without rushing the user past vulnerable moments.",
+                    "confidence": 0.82,
+                }
+            ],
+        )
+
+        self.assertIn("Recent growth guidance", prompt)
+        self.assertIn("journal_7; confidence=0.82", prompt)
+        self.assertIn("subordinate to stable canon", prompt)
 
     def test_adult_fantasy_roundtrip_prompt_includes_integrity_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

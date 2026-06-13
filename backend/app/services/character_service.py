@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -46,7 +47,12 @@ class ScopedMemoryHooks:
 class CharacterPromptCompiler:
     """Compile compact model-facing character context from a blueprint."""
 
-    def compile(self, blueprint: CharacterBlueprint) -> str:
+    def compile(
+        self,
+        blueprint: CharacterBlueprint,
+        *,
+        growth_insights: Iterable[Mapping[str, object]] | None = None,
+    ) -> str:
         identity = blueprint.identity
         relationship = blueprint.relationship
         personality = blueprint.personality
@@ -72,8 +78,35 @@ class CharacterPromptCompiler:
         # Per ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY, inject a compact
         # roleplay integrity block so fictional adult scenes stay in-character
         # while OOC stop controls and real-world harm boundaries still win.
+        growth_block = self._growth_guidance_block(growth_insights)
+        if growth_block:
+            lines.append(growth_block)
         lines.append(self._roleplay_integrity_block(roleplay))
         return "\n".join(lines)
+
+    def _growth_guidance_block(
+        self, growth_insights: Iterable[Mapping[str, object]] | None
+    ) -> str:
+        if not growth_insights:
+            return ""
+        lines = [
+            "- Recent growth guidance: concise journal-backed notes, subordinate to stable canon and the user’s latest message."
+        ]
+        for raw in list(growth_insights)[:3]:
+            summary = str(raw.get("summary") or "").strip()
+            if not summary:
+                continue
+            insight_id = str(raw.get("id") or raw.get("entry_id") or "journal_recent")[
+                :80
+            ]
+            confidence = raw.get("confidence")
+            confidence_text = (
+                f"; confidence={float(confidence):.2f}"
+                if isinstance(confidence, int | float)
+                else ""
+            )
+            lines.append(f"  - [{insight_id}{confidence_text}] {summary[:260]}")
+        return "\n".join(lines) if len(lines) > 1 else ""
 
     def _roleplay_integrity_block(self, roleplay) -> str:
         adult_mode = (
@@ -209,8 +242,15 @@ class CharacterService:
     def delete(self, character_id: str) -> bool:
         return self._repository.delete(character_id)
 
-    def compile_prompt(self, character_id: str) -> str:
-        return self._compiler.compile(self.load_by_id(character_id))
+    def compile_prompt(
+        self,
+        character_id: str,
+        *,
+        growth_insights: Iterable[Mapping[str, object]] | None = None,
+    ) -> str:
+        return self._compiler.compile(
+            self.load_by_id(character_id), growth_insights=growth_insights
+        )
 
     def scoped_memory_hooks(self, character_id: str | None) -> ScopedMemoryHooks:
         return ScopedMemoryHooks(character_id=character_id)
