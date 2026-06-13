@@ -428,6 +428,7 @@ class MemoryManager:
 
         normalized_text = self._normalize_text(text)
         normalized_metadata = self._normalize_metadata(metadata)
+        self._enforce_write_scope(normalized_metadata)
         user_id = str(normalized_metadata.get("user_id") or self._config.user_id)
         session_id = normalized_metadata.get("session_id") or self._config.session_id
         memory_type = str(normalized_metadata.get("memory_type") or "long_term")
@@ -625,9 +626,7 @@ class MemoryManager:
             session_id=merged_metadata.get("session_id") or self._config.session_id,
             memory_type=str(merged_metadata.get("memory_type") or "long_term"),
             source=str(
-                merged_metadata.get("source")
-                or existing.get("source")
-                or "reverie"
+                merged_metadata.get("source") or existing.get("source") or "reverie"
             ),
         )
         self._delete_from_lancedb(memory_id)
@@ -677,7 +676,9 @@ class MemoryManager:
 
         try:
             memories = self.search_memories(
-                query, limit=self._config.max_context_memories, character_id=character_id
+                query,
+                limit=self._config.max_context_memories,
+                character_id=character_id,
             )
         except MemoryError as exc:
             logger.warning(
@@ -730,7 +731,6 @@ class MemoryManager:
             used_chars = projected_chars
         return "\n".join(lines) if len(lines) > 1 else ""
 
-
     def _memory_matches_character_scope(
         self, memory: MemorySearchResult, character_id: str
     ) -> bool:
@@ -742,9 +742,39 @@ class MemoryManager:
             return True
         if metadata.get("memory_scope") in {"shared", "global"}:
             return True
-        if metadata.get("shared_across_characters") is True:
-            return True
         return False
+
+    def _enforce_write_scope(self, metadata: dict[str, Any]) -> None:
+        """Reject character-private writes that do not carry an explicit scope.
+
+        Visual feedback is character-private by default. Callers that truly intend
+        a cross-character record must say so with ``memory_scope=shared`` or
+        ``memory_scope=global``; otherwise a ``character_id`` is required before
+        the record can enter durable retrieval.
+        """
+
+        scope = metadata.get("memory_scope")
+        if scope in {"shared", "global"}:
+            return
+        if scope not in {None, "character_private"}:
+            raise ValueError(
+                "memory_scope must be character_private, shared, or global."
+            )
+
+        character_private = (
+            scope == "character_private"
+            or metadata.get("character_private") is True
+            or metadata.get("source")
+            in {"moment_capture", "visual_feedback", "visual_memory"}
+            or metadata.get("memory_type") in {"visual_memory", "character_memory"}
+        )
+        if character_private and not metadata.get("character_id"):
+            raise ValueError(
+                "Character-private memory writes require character_id unless "
+                "memory_scope is explicitly shared or global."
+            )
+        if character_private:
+            metadata["memory_scope"] = "character_private"
 
     def _try_mem0_add(self, record: MemoryRecord) -> None:
         """Best-effort mem0 write-through without compromising LanceDB durability."""

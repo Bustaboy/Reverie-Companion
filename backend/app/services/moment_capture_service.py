@@ -23,6 +23,8 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
+from app.core.memory import MemoryError, MemoryManager, get_memory_manager
+from app.core.reflection import ReflectionManager, get_reflection_manager
 from app.models.image import ImageGenerateRequest, ImageJobRead
 from app.schemas.moment_capture import (
     FeedbackState,
@@ -36,6 +38,7 @@ from app.schemas.moment_capture import (
     VisualFeedbackRequest,
     VisualFeedbackResponse,
     VisualFeedbackAction,
+    VisualMemoryArtifact,
     utc_now_iso,
 )
 from app.services.character_service import CharacterService
@@ -66,6 +69,8 @@ class MomentCaptureService:
         image_service: ImageGenerationService | None = None,
         prompt_compiler: VisualPromptCompiler | None = None,
         records_path: Path | None = None,
+        memory_manager: MemoryManager | None = None,
+        reflection_manager: ReflectionManager | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._character_service = character_service or CharacterService.from_settings(
@@ -75,6 +80,8 @@ class MomentCaptureService:
             self._settings
         )
         self._prompt_compiler = prompt_compiler or VisualPromptCompiler()
+        self._memory_manager = memory_manager or get_memory_manager()
+        self._reflection_manager = reflection_manager or get_reflection_manager()
         self._records_path = records_path or self._default_records_path(self._settings)
         self._events_path = self._records_path.with_name("visual_change_events.json")
         self._records_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +246,10 @@ class MomentCaptureService:
                 update={"metadata": metadata}
             )
             updated = self._records[capture_id]
+        if action in {VisualFeedbackAction.looks_right, VisualFeedbackAction.favorite}:
+            updated = self._write_visual_memory_artifact(
+                updated, request, action, review_state.value
+            )
         self._write_records()
         self._write_events()
         return VisualFeedbackResponse(record=updated, visual_change_event=event)
@@ -294,6 +305,15 @@ class MomentCaptureService:
             }
         )
         self._events[event_id] = updated
+        record = self._records.get(event.capture_id or "")
+        if record is not None and event.changed_trait != "rejected_trait":
+            self._write_visual_memory_artifact(
+                record,
+                None,
+                event.feedback_action or VisualFeedbackAction.make_canon,
+                updated.canon_status.value,
+                event=updated,
+            )
         self._write_events()
         return VisualChangeReviewResponse(event=updated, visual_identity=visual)
 
@@ -359,6 +379,141 @@ class MomentCaptureService:
         return VisualChangeReviewResponse(
             event=self._events[rollback_event.event_id], visual_identity=visual
         )
+
+    def _write_visual_memory_artifact(
+        self,
+        record: MomentCaptureRecord,
+        request: VisualFeedbackRequest | None,
+        action: VisualFeedbackAction,
+        review_state: str,
+        *,
+        event: VisualChangeEvent | None = None,
+    ) -> MomentCaptureRecord:
+        if not record.character_id:
+            raise ValueError("Visual memory writeback requires character_id.")
+        metadata = request.metadata if request is not None else {}
+        memory_scope = str(metadata.get("memory_scope") or "character_private")
+        if memory_scope not in {"character_private", "shared", "global"}:
+            raise ValueError(
+                "memory_scope must be character_private, shared, or global."
+            )
+        if memory_scope == "character_private" and not record.character_id:
+            raise ValueError("Character-private visual memory requires character_id.")
+        if metadata.get("private") is True or metadata.get("write_memory") is False:
+            return record
+        summary = self._visual_memory_summary(record, request, action, event)
+        provenance = {
+            "capture_id": record.capture_id,
+            "image_job_id": record.image_job_id,
+            "visual_change_event_id": event.event_id if event else None,
+            "prompt_hash": record.prompt_hash,
+        }
+        memory_metadata = {
+            "character_id": record.character_id,
+            "memory_scope": memory_scope,
+            "memory_type": "visual_memory",
+            "source": "visual_feedback",
+            "capture_id": record.capture_id,
+            "image_job_id": record.image_job_id,
+            "feedback_action": action.value,
+            "review_state": review_state,
+            "provenance": provenance,
+            "rollback_id": (event.rollback_id if event else record.rollback_id),
+            "training_eligible": False,
+            "training_policy": "disabled_without_explicit_collection_policy",
+            "tags": ["visual_memory", action.value],
+        }
+        try:
+            memory = self._memory_manager.add_memory(summary, memory_metadata)
+        except MemoryError as exc:
+            metadata = dict(record.metadata)
+            metadata["visual_memory_writeback"] = {
+                "state": "quarantined",
+                "reason": str(exc),
+                "character_id": record.character_id,
+                "memory_scope": memory_scope,
+                "capture_id": record.capture_id,
+            }
+            updated = record.model_copy(
+                update={"metadata": metadata, "updated_at": utc_now_iso()}
+            )
+            self._records[record.capture_id] = updated
+            return updated
+        artifact = VisualMemoryArtifact(
+            artifact_id=f"vma_{uuid4().hex}",
+            artifact_type="memory",
+            path=None,
+            memory_id=memory["id"],
+            training_candidate=False,
+            metadata={
+                "character_id": record.character_id,
+                "memory_scope": memory_scope,
+                "capture_id": record.capture_id,
+                "image_job_id": record.image_job_id,
+                "feedback_action": action.value,
+                "review_state": review_state,
+                "source": "visual_feedback",
+                "provenance": provenance,
+                "rollback_id": event.rollback_id if event else record.rollback_id,
+            },
+        )
+        artifacts = [*record.visual_memory_artifacts, artifact]
+        updated = record.model_copy(
+            update={"visual_memory_artifacts": artifacts, "updated_at": utc_now_iso()}
+        )
+        self._records[record.capture_id] = updated
+        if metadata.get("create_journal") is True:
+            self._reflection_manager.save_journal_entry(
+                {
+                    "entry_id": f"journal_visual_{uuid4().hex}",
+                    "created_at": utc_now_iso(),
+                    "status": "active",
+                    "conversation_window": {"capture_id": record.capture_id},
+                    "linked_memory_ids": [memory["id"]],
+                    "linked_journal_ids": [],
+                    "character_summary": summary,
+                    "structured_summary": {
+                        "visual_memory": artifact.model_dump(mode="json")
+                    },
+                    "insights": [],
+                    "emotional_valence": 0.0,
+                    "emotional_intensity": 0.0,
+                    "themes": ["visual_continuity"],
+                    "confidence": 0.8,
+                    "evidence_count": 1,
+                    "privacy_tags": ["local", "visual_feedback"],
+                    "sensitivity_tags": [],
+                    "training_eligibility": "not_eligible",
+                    "rollback_id": (
+                        event.rollback_id
+                        if event
+                        else record.rollback_id or f"rollback:{record.capture_id}"
+                    ),
+                    "growth_notification": None,
+                    "metadata": artifact.metadata,
+                }
+            )
+        return updated
+
+    def _visual_memory_summary(
+        self,
+        record: MomentCaptureRecord,
+        request: VisualFeedbackRequest | None,
+        action: VisualFeedbackAction,
+        event: VisualChangeEvent | None,
+    ) -> str:
+        pieces = [f"Approved visual feedback for this character: {action.value}."]
+        if event is not None:
+            pieces.append(
+                f"Visual trait '{event.changed_trait}' was approved as '{event.new_value}'."
+            )
+        elif request and request.note:
+            pieces.append(str(request.note))
+        elif record.scene_state.outfit:
+            pieces.append(f"Outfit detail: {record.scene_state.outfit}.")
+        if record.scene_state.location:
+            pieces.append(f"Scene context: {record.scene_state.location}.")
+        return " ".join(pieces)[:1000]
 
     @staticmethod
     def _default_records_path(settings: Settings) -> Path:

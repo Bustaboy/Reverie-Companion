@@ -371,3 +371,148 @@ def MomentCaptureRecordForTest(request: MomentCaptureRequest, image_job_id: str)
         image_job_id=image_job_id,
         output_paths=[f"/tmp/{image_job_id}.png"],
     )
+
+
+class FakeMemoryManager:
+    def __init__(self) -> None:
+        self.memories: list[dict[str, object]] = []
+
+    def add_memory(self, text: str, metadata: dict[str, object]) -> dict[str, object]:
+        if metadata.get("memory_scope") == "character_private" and not metadata.get(
+            "character_id"
+        ):
+            raise ValueError("missing character_id")
+        memory = {
+            "id": f"mem-{len(self.memories) + 1}",
+            "text": text,
+            "metadata": metadata,
+            "source": metadata.get("source", "test"),
+        }
+        self.memories.append(memory)
+        return memory
+
+    def search_memories(
+        self, query: str, limit: int = 10, *, character_id: str | None = None
+    ):
+        results = []
+        for memory in self.memories:
+            metadata = memory["metadata"]
+            if character_id and not (
+                metadata.get("character_id") == character_id
+                or metadata.get("memory_scope") in {"shared", "global"}
+            ):
+                continue
+            results.append(memory)
+        return results[:limit]
+
+    def delete_memory(self, memory_id: str) -> bool:
+        before = len(self.memories)
+        self.memories = [m for m in self.memories if m["id"] != memory_id]
+        return len(self.memories) != before
+
+
+class FakeReflectionManager:
+    def __init__(self) -> None:
+        self.entries = []
+
+    def save_journal_entry(self, entry):
+        self.entries.append(entry)
+        return entry
+
+
+def _service_with_memory(tmp_path, memory: FakeMemoryManager):
+    return MomentCaptureService(
+        character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+        memory_manager=memory,  # type: ignore[arg-type]
+        reflection_manager=FakeReflectionManager(),  # type: ignore[arg-type]
+    )
+
+
+def test_approved_visual_feedback_writes_character_scoped_visual_memory(
+    tmp_path,
+) -> None:
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    memory = FakeMemoryManager()
+    service = _service_with_memory(tmp_path, memory)
+    record = MomentCaptureRecordForTest(_request(), "job-memory")
+    service._records[record.capture_id] = record
+
+    response = service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.looks_right,
+            note="Keep the moon pendant and gentle balcony mood.",
+        ),
+    )
+
+    assert len(memory.memories) == 1
+    metadata = memory.memories[0]["metadata"]
+    assert metadata["character_id"] == "aria"
+    assert metadata["memory_scope"] == "character_private"
+    assert metadata["capture_id"] == record.capture_id
+    assert metadata["image_job_id"] == "job-memory"
+    assert metadata["feedback_action"] == "looks_right"
+    assert metadata["source"] == "visual_feedback"
+    assert metadata["training_eligible"] is False
+    assert response.record.visual_memory_artifacts[0].memory_id == "mem-1"
+    assert memory.search_memories("pendant", character_id="aria")
+    assert memory.search_memories("pendant", character_id="other") == []
+
+
+def test_shared_visual_memory_is_explicitly_cross_character_and_deletable(
+    tmp_path,
+) -> None:
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    memory = FakeMemoryManager()
+    service = _service_with_memory(tmp_path, memory)
+    record = MomentCaptureRecordForTest(_request(), "job-shared")
+    service._records[record.capture_id] = record
+
+    service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.looks_right,
+            metadata={"memory_scope": "shared"},
+        ),
+    )
+
+    assert memory.search_memories("balcony", character_id="aria")
+    assert memory.search_memories("balcony", character_id="other")
+    assert memory.delete_memory("mem-1") is True
+    assert memory.search_memories("balcony", character_id="aria") == []
+
+
+def test_rejected_private_and_pending_feedback_do_not_create_visual_memory(
+    tmp_path,
+) -> None:
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    memory = FakeMemoryManager()
+    service = _service_with_memory(tmp_path, memory)
+    record = MomentCaptureRecordForTest(_request(), "job-no-memory")
+    service._records[record.capture_id] = record
+
+    service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.reject_style_trait,
+            trait_value="blue eyes",
+        ),
+    )
+    service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.looks_right,
+            metadata={"private": True},
+        ),
+    )
+
+    assert memory.memories == []

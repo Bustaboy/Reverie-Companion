@@ -158,7 +158,9 @@ class MemoryApiTests(unittest.TestCase):
         self.assertEqual(delete_response.status_code, 204)
         self.assertIsNone(self.fake_manager.get_memory("mem_trust"))
 
-        self.fake_manager.memories.append({"id": "mem_old", "text": "Old note", "metadata": {}})
+        self.fake_manager.memories.append(
+            {"id": "mem_old", "text": "Old note", "metadata": {}}
+        )
         bulk_response = self.client.post(
             "/memory/memories/bulk-delete", json={"ids": ["mem_old"]}
         )
@@ -168,3 +170,54 @@ class MemoryApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MemoryManagerScopeHardeningTests(unittest.TestCase):
+    def test_visual_private_write_without_character_id_is_refused(self) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        with self.assertRaises(ValueError):
+            manager._enforce_write_scope(  # type: ignore[attr-defined]
+                {"source": "visual_feedback", "memory_type": "visual_memory"}
+            )
+
+    def test_explicit_shared_or_global_scope_does_not_require_character_id(
+        self,
+    ) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        shared = {"source": "visual_feedback", "memory_scope": "shared"}
+        global_memory = {"source": "visual_feedback", "memory_scope": "global"}
+        manager._enforce_write_scope(shared)  # type: ignore[attr-defined]
+        manager._enforce_write_scope(global_memory)  # type: ignore[attr-defined]
+        self.assertEqual(shared["memory_scope"], "shared")
+        self.assertEqual(global_memory["memory_scope"], "global")
+
+    def test_character_filter_excludes_other_private_visual_memories(self) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        self.assertTrue(
+            manager._memory_matches_character_scope(  # type: ignore[attr-defined]
+                {
+                    "metadata": {
+                        "character_id": "aria",
+                        "memory_scope": "character_private",
+                    }
+                },
+                "aria",
+            )
+        )
+        self.assertFalse(
+            manager._memory_matches_character_scope(  # type: ignore[attr-defined]
+                {
+                    "metadata": {
+                        "character_id": "bryn",
+                        "memory_scope": "character_private",
+                    }
+                },
+                "aria",
+            )
+        )
+        self.assertTrue(
+            manager._memory_matches_character_scope(  # type: ignore[attr-defined]
+                {"metadata": {"memory_scope": "shared"}},
+                "aria",
+            )
+        )
