@@ -191,7 +191,7 @@ button {
 
 .chat-window {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100%;
   overflow: hidden;
   border-radius: 1.8rem;
@@ -5349,5 +5349,128 @@ textarea:disabled {
 @media (prefers-reduced-motion: reduce) {
   .milestone-welcome-actions button {
     transition: none;
+  }
+}
+
+.character-selector {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  gap: 0.85rem;
+  width: min(54rem, calc(100% - 3rem));
+  margin: 1rem auto 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.character-selector-control {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+}
+
+.character-selector-control label {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.character-selector-control select {
+  width: 100%;
+  min-height: 2.45rem;
+  padding: 0 0.75rem;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.85rem;
+  outline: none;
+  background: #211927;
+}
+
+.character-selector-control select:focus {
+  border-color: rgba(240, 154, 159, 0.55);
+  box-shadow: 0 0 0 4px rgba(240, 154, 159, 0.1);
+}
+
+.character-identity-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid rgba(240, 154, 159, 0.15);
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(240, 154, 159, 0.08), rgba(122, 74, 132, 0.07));
+}
+
+.character-identity-card.fallback {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.character-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.9rem;
+  background: linear-gradient(135deg, rgba(240, 154, 159, 0.95), rgba(122, 74, 132, 0.95));
+  font-weight: 900;
+}
+
+.character-identity-card strong,
+.character-identity-card span,
+.character-identity-card p,
+.character-identity-card small {
+  display: block;
+}
+
+.character-identity-card strong {
+  color: var(--text);
+}
+
+.character-identity-card span,
+.character-identity-card small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.character-identity-card p {
+  margin: 0.16rem 0;
+  color: #eadde9;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.character-selector-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.6rem 0.7rem;
+  color: #ffe3df;
+  border: 1px solid rgba(255, 176, 166, 0.18);
+  border-radius: 0.85rem;
+  background: rgba(255, 176, 166, 0.07);
+  font-size: 0.86rem;
+}
+
+.character-selector-error button {
+  color: #ffe3df;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .character-selector {
+    grid-template-columns: 1fr;
   }
 }

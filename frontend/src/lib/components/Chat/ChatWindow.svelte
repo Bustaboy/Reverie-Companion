@@ -2,6 +2,7 @@
   import MessageInput from './MessageInput.svelte';
   import { AudioPlayer } from '$lib/components/TTS';
   import MessageList from './MessageList.svelte';
+  import CharacterSelector from './CharacterSelector.svelte';
   import { chatStore } from '$lib/stores/chatStore';
   import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
   import { ttsStore } from '$lib/stores/ttsStore.svelte';
@@ -66,6 +67,8 @@
       </div>
     </div>
   </header>
+
+  <CharacterSelector />
 
   <MessageList messages={$chatStore.messages} generationState={$chatStore.generationState} />
 

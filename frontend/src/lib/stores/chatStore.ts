@@ -5,6 +5,7 @@ import { settingsStore } from '$lib/stores/settingsStore';
 import { imageGenerationStore } from '$lib/stores/imageGenerationStore.svelte';
 import { ttsStore } from '$lib/stores/ttsStore.svelte';
 import { visualNovelStore } from '$lib/stores/visualNovelStore';
+import { selectedCharacterIdForChat } from '$lib/stores/characterStore';
 import type { ChatMessage, GrowthNotification, MemoryContext, MessageTTSMetadata } from '$lib/types/chat';
 import type { VisualStateMetadata } from '$lib/types/visualNovel';
 
@@ -197,6 +198,7 @@ function createChatStore() {
       // Capture history before appending the optimistic messages so the backend
       // receives exactly the conversation the user saw before pressing Send.
       const history = toServiceHistory(currentState.messages);
+      const characterId = get(selectedCharacterIdForChat);
       const userMessage = createChatMessage('user', trimmedContent);
       const assistantMessage = createAssistantPlaceholder();
       const controller = new AbortController();
@@ -210,7 +212,10 @@ function createChatStore() {
       }));
 
       try {
-        for await (const event of chatService.sendMessageStream(trimmedContent, history, { signal: controller.signal })) {
+        for await (const event of chatService.sendMessageStream(trimmedContent, history, {
+          signal: controller.signal,
+          characterId
+        })) {
           if (event.event === 'message') {
             if (!event.content && !event.memoryContext?.used && !event.visualState) continue;
 
