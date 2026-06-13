@@ -142,7 +142,7 @@ class CharacterServiceCrudTests(unittest.TestCase):
             self.assertIsNone(restarted.get("lyra"))
             with self.assertRaises(CharacterNotFoundError) as error:
                 restarted.load_by_id("lyra")
-            self.assertIn("local library", error.exception.user_message)
+            self.assertIn("Want to create a new one together", error.exception.user_message)
 
 
 class CharacterPromptCompilerSnapshotTests(unittest.TestCase):

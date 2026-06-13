@@ -42,4 +42,14 @@ CREATE INDEX IF NOT EXISTS idx_character_blueprints_relationship_phase
 CREATE INDEX IF NOT EXISTS idx_character_blueprints_updated_at
     ON character_blueprints(updated_at);
 
+-- M4-02 runtime tables are queried by active companion. These indexes keep
+-- relationship, journal, and growth lookups cheap on 8GB machines once those
+-- normalized tables are present in the character runtime database.
+CREATE INDEX IF NOT EXISTS idx_relationship_state_character_id
+    ON relationship_state(character_id);
+CREATE INDEX IF NOT EXISTS idx_self_reflection_journal_character_id
+    ON self_reflection_journal(character_id);
+CREATE INDEX IF NOT EXISTS idx_growth_policy_character_id
+    ON growth_policy(character_id);
+
 COMMIT;
