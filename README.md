@@ -17,7 +17,7 @@ Reverie is built around one product promise:
 The app prioritizes:
 
 - **True long-term memory** with local LanceDB persistence, Ollama embeddings, bounded prompt context, and user-editable recall.
-- **Character continuity** through a planned `CharacterBlueprint`, relationship state, visual identity, roleplay policy, prompt compiler, and character-scoped memory.
+- **Character continuity** through a versioned `CharacterBlueprint`, relationship state, visual identity, roleplay policy, prompt compiler, selected-character chat, and character-scoped memory/reflection.
 - **Moment Capture**: image generation as companion presence, using character identity, scene state, memory, and gallery feedback instead of generic prompt gambling.
 - **Genuine self-learning and growth** through reflection, first-person journaling, growth notices, reviewable visual changes, and future user-approved training artifacts.
 - **Roleplay-first adult freedom**: fictional adult fantasy stays in-character by default, without moralizing interruptions or hidden adult-content filters.
@@ -29,7 +29,7 @@ The app prioritizes:
 
 ## Current Capabilities
 
-Milestones 1–3 are complete. Reverie currently includes:
+Milestones 1–4 are complete. Reverie currently includes:
 
 - FastAPI backend with Ollama chat, streaming SSE responses, and health diagnostics.
 - Local memory foundation using Ollama embeddings plus embedded LanceDB, with optional mem0 write-through.
@@ -44,33 +44,16 @@ Milestones 1–3 are complete. Reverie currently includes:
 
 ## Current Development Focus
 
-Reverie is now entering **Milestone 4 — Character Runtime & Capability Alignment**.
+Reverie has closed **Milestone 4 — Character Runtime & Capability Alignment**. The app now has the runtime substrate that lets future creator choices affect prompt assembly, selected-character chat, local persistence, character-scoped memory/reflection, relationship state, visual identity summaries, and roleplay-first integrity controls.
 
-The full immersive character creator is intentionally **not** being built first. The next phase builds the runtime that lets a future creator actually matter.
-
-The post-M3 strategy:
+The full immersive character creator is still intentionally **not** being built before the runtime can honor its choices. The guiding strategy remains:
 
 ```text
 Build the powers first.
 Then build the ritual that lets users command those powers.
 ```
 
-Milestone 4 focuses on:
-
-- `CharacterBlueprint` schema and local character storage
-- `VisualIdentityProfile`
-- `RelationshipState`
-- `CharacterMemoryPolicy`
-- `GrowthPolicy`
-- `RoleplayPolicy`
-- `CharacterIntegrityPolicy`
-- `CharacterPromptCompiler`
-- character APIs
-- selected-character chat integration
-- character-scoped memory/reflection
-- evals that prove creator/runtime fields actually change behavior
-
-Milestone 5 then elevates image generation into **Moment Capture & Visual Continuity**.
+The current focus moves to **Milestone 5 — Moment Capture & Visual Continuity**, which elevates image generation into character-linked embodied memory.
 
 Milestone 6 adds the practical creator foundation.
 
@@ -145,7 +128,8 @@ Key skill prompts for Grok/Codex:
 - ✅ **Milestone 1 — Foundation**: repository structure, backend shell, frontend shell, core documentation, initial chat path.
 - ✅ **Milestone 2 — Memory & Self-Learning**: memory context, reflection journal, growth orchestration, Journal/Settings/Training UI, growth notifications, and Personal LoRA foundation.
 - ✅ **Milestone 3 — Immersion & Production Foundations**: Visual Novel foundation, emotional TTS, local image generation, growth visibility, extensibility, 8GB resource guardrails, Settings Hub, onboarding, and release documentation.
-- 🚧 **Milestone 4 — Character Runtime & Capability Alignment**: current focus.
+- ✅ **Milestone 4 — Character Runtime & Capability Alignment**: CharacterBlueprint runtime, selected-character chat, character-scoped memory/reflection, relationship/growth/visual identity schemas, roleplay-first policy, and minimal frontend shell.
+- 🚧 **Milestone 5 — Moment Capture & Visual Continuity**: current focus.
 
 ---
 

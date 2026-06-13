@@ -647,9 +647,9 @@ These are the fields most worth building runtime support for before the full imm
 
 # 6. Suggested Development Order From This Matrix
 
-## M4: Character Runtime & Capability Alignment
+## M4: Character Runtime & Capability Alignment — Complete
 
-Build:
+Delivered:
 
 1. `CharacterBlueprint`
 2. `VisualIdentityProfile`
@@ -660,7 +660,7 @@ Build:
 7. per-character memory scoping
 8. capability matrix doc committed to repo
 
-Expose only a developer/simple editor, not full Genesis.
+Exposed only a minimal runtime shell/simple editor, not full Genesis. Full Moment Capture/visual feedback and immersive creator work remain future milestones.
 
 ## M5: Moment Capture & Visual Continuity
 
