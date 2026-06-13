@@ -35,6 +35,7 @@ interface QueueImageInput {
   context?: Record<string, unknown>;
   qualityPreset?: ImageQualityPreset;
   conversationId?: string;
+  characterId?: string;
 }
 
 const MAX_VISIBLE_JOBS = 8;
@@ -89,6 +90,14 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   vram_required_mb: event.vram_required_mb,
   updated_at: event.timestamp,
   saved_to_assets: event.saved_to_assets,
+  character_id: event.character_id,
+  session_id: event.session_id,
+  moment_capture_id: event.moment_capture_id,
+  scene_summary: event.scene_summary,
+  prompt_hash: event.prompt_hash,
+  feedback_status: event.feedback_status,
+  review_status: event.review_status,
+  canon_status: event.canon_status,
   pressure: event.pressure,
   warning: event.warning,
   imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
@@ -138,6 +147,7 @@ class ImageGenerationStore {
   autoGenerateOnAssistant = $state(settingsStore.getSnapshot().imageAutoGenerateOnAssistant);
   defaultPreset = $state<ImageQualityPreset>(settingsStore.getSnapshot().imageDefaultPreset);
   currentConversationId = $state(DEFAULT_CONVERSATION_ID);
+  currentCharacterFilter = $state<string | undefined>(undefined);
 
   private controllers = new Map<string, AbortController>();
 
@@ -256,12 +266,13 @@ class ImageGenerationStore {
     });
   }
 
-  async loadGallery(conversationId = this.currentConversationId) {
+  async loadGallery(conversationId = this.currentConversationId, characterId = this.currentCharacterFilter) {
     this.galleryLoading = true;
     this.error = null;
     this.currentConversationId = conversationId;
+    this.currentCharacterFilter = characterId;
     try {
-      const response = await imageService.listHistory(conversationId);
+      const response = await imageService.listHistory(conversationId, { characterId });
       this.gallery = response.items.slice(0, 80).map(galleryItemFromHistory);
       this.announcement = this.gallery.length ? `Loaded ${this.gallery.length} saved images.` : 'No saved images for this conversation yet.';
     } catch (error) {
@@ -349,7 +360,7 @@ class ImageGenerationStore {
         source: input.source,
         source_message_id: input.sourceMessageId,
         prompt,
-        context: input.context,
+        context: input.characterId ? { ...(input.context ?? {}), character: { ...((input.context?.character as Record<string, unknown> | undefined) ?? {}), id: input.characterId } } : input.context,
         quality_preset: input.qualityPreset ?? this.defaultPreset
       });
       const job = jobFromRead(response.job, { ...input, prompt });

@@ -92,8 +92,10 @@ class MomentCaptureService:
         prompt_hash = str(
             prompt_bundle.metadata.get("prompt_hash") or request.prompt_hash
         )
+        capture_id = f"mc_{uuid4().hex}"
         context = self._job_context(
             request=request,
+            capture_id=capture_id,
             capture_intent=capture_intent,
             prompt_bundle=prompt_bundle,
             prompt_hash=prompt_hash,
@@ -111,7 +113,7 @@ class MomentCaptureService:
             )
         )
         record = MomentCaptureRecord(
-            capture_id=f"mc_{uuid4().hex}",
+            capture_id=capture_id,
             character_id=request.character_id,
             conversation_id=request.conversation_id,
             session_id=request.session_id,
@@ -156,6 +158,7 @@ class MomentCaptureService:
         self,
         *,
         request: MomentCaptureRequest,
+        capture_id: str,
         capture_intent: str,
         prompt_bundle: VisualPromptBundle,
         prompt_hash: str,
@@ -164,6 +167,7 @@ class MomentCaptureService:
         return {
             "moment_capture": {
                 "schema_version": request.schema_version,
+                "capture_id": capture_id,
                 "character_id": request.character_id,
                 "conversation_id": request.conversation_id,
                 "session_id": request.session_id,

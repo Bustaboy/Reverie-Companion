@@ -34,6 +34,21 @@
   const handleLightboxKeydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') closeLightbox();
   };
+
+  const characterLabel = (item: ImageGalleryItem): string | null => {
+    const name = typeof item.metadata?.character_name === 'string' ? item.metadata.character_name : null;
+    return name ?? item.character_id ?? null;
+  };
+
+  const statusChips = (item: ImageGalleryItem): string[] => {
+    const chips: string[] = [];
+    if (item.moment_capture_id) chips.push('Moment Capture');
+    if (item.feedback_status && item.feedback_status !== 'pending') chips.push(`Feedback: ${item.feedback_status.replaceAll('_', ' ')}`);
+    if (item.review_status && item.review_status !== 'unreviewed') chips.push(`Review: ${item.review_status.replaceAll('_', ' ')}`);
+    if (item.canon_status && item.canon_status !== 'not_requested') chips.push(`Canon: ${item.canon_status.replaceAll('_', ' ')}`);
+    if (item.saved_to_assets) chips.push('Saved asset');
+    return chips;
+  };
 </script>
 
 <section class:compact class="image-gallery-panel" aria-label="Image history gallery">
@@ -82,6 +97,19 @@
           <div class="gallery-card-copy">
             <strong>{item.prompt_summary}</strong>
             <span>{item.active_preset.replace('_', ' ')}{item.fallback_used ? ' · 8GB fallback' : ''}{item.saved_to_assets ? ' · saved' : ''}</span>
+            {#if characterLabel(item)}
+              <small>Character: {characterLabel(item)}</small>
+            {/if}
+            <small>Source: {item.source ?? 'generated'}{item.source_message_id ? ` · message ${item.source_message_id}` : ''}{item.session_id ? ` · session ${item.session_id}` : ''}</small>
+            {#if item.scene_summary}
+              <small>Scene: {item.scene_summary}</small>
+            {/if}
+            {#if item.prompt_hash}
+              <small>Prompt hash: {item.prompt_hash}</small>
+            {/if}
+            {#if statusChips(item).length}
+              <small>{statusChips(item).join(' · ')}</small>
+            {/if}
             {#if imageUnavailable(item)}
               <small>Output file is not available from the local image service. Regenerate or reopen ComfyUI, then retry.</small>
             {/if}
@@ -114,6 +142,10 @@
       <div>
         <strong>{selected.prompt_summary}</strong>
         <p>{selected.prompt}</p>
+        {#if characterLabel(selected)}<p>Character: {characterLabel(selected)}</p>{/if}
+        {#if selected.scene_summary}<p>Scene: {selected.scene_summary}</p>{/if}
+        <p>Source: {selected.source ?? 'generated'}{selected.source_message_id ? ` · message ${selected.source_message_id}` : ''}{selected.moment_capture_id ? ` · capture ${selected.moment_capture_id}` : ''}</p>
+        {#if statusChips(selected).length}<p>{statusChips(selected).join(' · ')}</p>{/if}
         <div class="gallery-actions">
           <button type="button" onclick={() => imageGenerationStore.regenerate(selected!)}>Regenerate</button>
           <button type="button" onclick={() => imageGenerationStore.vary(selected!)}>Create variation</button>

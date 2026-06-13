@@ -148,6 +148,14 @@ class ImageJob:
     conversation_id: str
     source: str | None
     source_message_id: str | None
+    character_id: str | None
+    session_id: str | None
+    moment_capture_id: str | None
+    scene_summary: str | None
+    prompt_hash: str | None
+    feedback_status: str
+    review_status: str
+    canon_status: str
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -195,6 +203,14 @@ class ImageJob:
             conversation_id=self.conversation_id,
             source=self.source,
             source_message_id=self.source_message_id,
+            character_id=self.character_id,
+            session_id=self.session_id,
+            moment_capture_id=self.moment_capture_id,
+            scene_summary=self.scene_summary,
+            prompt_hash=self.prompt_hash,
+            feedback_status=self.feedback_status,
+            review_status=self.review_status,
+            canon_status=self.canon_status,
             saved_to_assets=self.saved_to_assets,
         )
 
@@ -263,9 +279,7 @@ class ComfyUIFluxAdapter:
 
     def _open_json(self, request: urllib.request.Request) -> dict[str, Any]:
         try:
-            with urllib.request.urlopen(
-                request, timeout=10.0
-            ) as response:  # noqa: S310 - local ComfyUI URL from settings.
+            with urllib.request.urlopen(request, timeout=10.0) as response:  # noqa: S310 - local ComfyUI URL from settings.
                 return json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.URLError as exc:
             raise ImageGenerationError(
@@ -380,6 +394,7 @@ class ImageGenerationService:
             "detected_scene_tags": engineered.detected_scene_tags,
             "deterministic": True,
         }
+        metadata_v2 = self._image_metadata_from_context(enriched_context)
         job = ImageJob(
             job_id=job_id,
             prompt=engineered.prompt,
@@ -388,6 +403,14 @@ class ImageGenerationService:
             conversation_id=request.conversation_id,
             source=request.source,
             source_message_id=request.source_message_id,
+            character_id=metadata_v2.get("character_id"),
+            session_id=metadata_v2.get("session_id"),
+            moment_capture_id=metadata_v2.get("moment_capture_id"),
+            scene_summary=metadata_v2.get("scene_summary"),
+            prompt_hash=metadata_v2.get("prompt_hash"),
+            feedback_status=metadata_v2.get("feedback_status", "pending"),
+            review_status=metadata_v2.get("review_status", "unreviewed"),
+            canon_status=metadata_v2.get("canon_status", "not_requested"),
             requested_preset=request.quality_preset,
             active_preset=request.quality_preset,
         )
@@ -401,17 +424,25 @@ class ImageGenerationService:
     def get_job(self, job_id: str) -> ImageJobRead:
         return self._require_job(job_id).to_read()
 
-    def list_history(self, conversation_id: str = "default") -> ImageHistoryResponse:
+    def list_history(
+        self,
+        conversation_id: str | None = "default",
+        *,
+        character_id: str | None = None,
+        include_deleted: bool = False,
+    ) -> ImageHistoryResponse:
         items = [
             item
             for item in self._history.values()
-            if item.conversation_id == conversation_id
+            if (conversation_id is None or item.conversation_id == conversation_id)
+            and (character_id is None or item.character_id == character_id)
+            and (include_deleted or not item.is_deleted)
         ]
         items.sort(key=lambda item: item.completed_at, reverse=True)
         return ImageHistoryResponse(items=items)
 
     async def delete_history_item(self, job_id: str) -> ImageHistoryResponse:
-        item = self._history.pop(job_id, None)
+        item = self._history.get(job_id)
         if item is None:
             raise ImageGenerationError(
                 "Image was not found in this gallery.",
@@ -419,6 +450,22 @@ class ImageGenerationService:
                 retryable=False,
                 details={"job_id": job_id},
             )
+        tombstone = item.model_copy(
+            update={
+                "is_deleted": True,
+                "deleted_at": datetime.now(timezone.utc),
+                "feedback_status": "deleted",
+                "review_status": "deleted",
+                "output_paths": [],
+                "thumbnail_paths": [],
+                "metadata": {
+                    **item.metadata,
+                    "deleted": True,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+        )
+        self._history[job_id] = tombstone
         try:
             self._write_history(raise_on_error=True)
         except ImageGenerationError:
@@ -501,6 +548,7 @@ class ImageGenerationService:
             ) from exc
         updated = item.model_copy(
             update={
+                "character_id": item.character_id or safe_character_id,
                 "saved_to_assets": True,
                 "asset_manifest_path": str(manifest_path),
                 "metadata": {
@@ -756,7 +804,8 @@ class ImageGenerationService:
                 phase="low_vram",
                 resource_mode="waiting_for_vram",
                 progress=0.03,
-                message=status.warning or "Waiting for enough free VRAM before starting image generation.",
+                message=status.warning
+                or "Waiting for enough free VRAM before starting image generation.",
             )
             await asyncio.sleep(self._settings.image_generation_resume_poll_seconds)
 
@@ -787,8 +836,13 @@ class ImageGenerationService:
                     message="Image job cancelled.",
                 )
                 return
-            status = self._resource_status(reserved_mb=PRESET_CONFIGS[job.active_preset].min_free_vram_mb)
-            if status.pressure == ResourcePressure.critical and job.active_preset != ImageQualityPreset.preview_8gb:
+            status = self._resource_status(
+                reserved_mb=PRESET_CONFIGS[job.active_preset].min_free_vram_mb
+            )
+            if (
+                status.pressure == ResourcePressure.critical
+                and job.active_preset != ImageQualityPreset.preview_8gb
+            ):
                 job.active_preset = ImageQualityPreset.preview_8gb
                 job.fallback_used = True
                 self._update(
@@ -797,7 +851,8 @@ class ImageGenerationService:
                     phase="critical_vram_downgrade",
                     resource_mode="degraded",
                     progress=0.10,
-                    message=status.warning or "VRAM is tight; downgrading image generation to preview quality.",
+                    message=status.warning
+                    or "VRAM is tight; downgrading image generation to preview quality.",
                 )
             preset = PRESET_CONFIGS[job.active_preset]
             self._update(
@@ -932,7 +987,11 @@ class ImageGenerationService:
         headroom_mb = None
         if snapshot.free_mb is not None:
             headroom_mb = snapshot.free_mb - reserved_mb
-            pressure = ResourcePressure.normal if headroom_mb > 1200 else ResourcePressure.critical
+            pressure = (
+                ResourcePressure.normal
+                if headroom_mb > 1200
+                else ResourcePressure.critical
+            )
             if pressure == ResourcePressure.critical:
                 warning = "GPU memory is critically low; Reverie is waiting before starting image generation."
         return ResourceStatus(
@@ -1013,7 +1072,11 @@ class ImageGenerationService:
         if job.warning and not error:
             logger.info(
                 "Image job running under resource pressure",
-                extra={"job_id": job.job_id, "pressure": job.pressure, "warning": job.warning},
+                extra={
+                    "job_id": job.job_id,
+                    "pressure": job.pressure,
+                    "warning": job.warning,
+                },
             )
         self._emit(job, event=f"job.{job.status.value}", message=job.message)
 
@@ -1037,6 +1100,14 @@ class ImageGenerationService:
             conversation_id=job.conversation_id,
             source=job.source,
             source_message_id=job.source_message_id,
+            character_id=job.character_id,
+            session_id=job.session_id,
+            moment_capture_id=job.moment_capture_id,
+            scene_summary=job.scene_summary,
+            prompt_hash=job.prompt_hash,
+            feedback_status=job.feedback_status,
+            review_status=job.review_status,
+            canon_status=job.canon_status,
             saved_to_assets=job.saved_to_assets,
         )
         job.events.append(payload)
@@ -1078,13 +1149,23 @@ class ImageGenerationService:
     def _record_history_item(self, job: ImageJob) -> None:
         if not job.output_paths:
             return
+        metadata_v2 = self._history_metadata_from_job(job)
         item = ImageHistoryItem(
             job_id=job.job_id,
             conversation_id=job.conversation_id,
             source=job.source,
             source_message_id=job.source_message_id,
+            character_id=metadata_v2.get("character_id"),
+            session_id=metadata_v2.get("session_id"),
+            moment_capture_id=metadata_v2.get("moment_capture_id"),
+            scene_summary=metadata_v2.get("scene_summary"),
+            prompt_hash=metadata_v2.get("prompt_hash"),
+            feedback_status=metadata_v2.get("feedback_status", "pending"),
+            review_status=metadata_v2.get("review_status", "unreviewed"),
+            canon_status=metadata_v2.get("canon_status", "not_requested"),
             prompt=job.prompt,
-            prompt_summary=self._summarize_prompt(job.prompt),
+            prompt_summary=metadata_v2.get("prompt_summary")
+            or self._summarize_prompt(job.prompt),
             negative_prompt=job.negative_prompt,
             requested_preset=job.requested_preset,
             active_preset=job.active_preset,
@@ -1095,6 +1176,7 @@ class ImageGenerationService:
             fallback_used=job.fallback_used,
             saved_to_assets=job.saved_to_assets,
             metadata={
+                **metadata_v2,
                 "resource_mode": job.resource_mode,
                 "vram_free_mb": job.vram_free_mb,
                 "vram_required_mb": job.vram_required_mb,
@@ -1103,6 +1185,70 @@ class ImageGenerationService:
         )
         self._history[job.job_id] = item
         self._write_history()
+
+    def _history_metadata_from_job(self, job: ImageJob) -> dict[str, Any]:
+        metadata = self._image_metadata_from_context(job.context or {})
+        metadata.update(
+            {
+                "character_id": job.character_id,
+                "session_id": job.session_id,
+                "moment_capture_id": job.moment_capture_id,
+                "scene_summary": job.scene_summary,
+                "prompt_hash": job.prompt_hash,
+                "feedback_status": job.feedback_status,
+                "review_status": job.review_status,
+                "canon_status": job.canon_status,
+            }
+        )
+        return metadata
+
+    def _image_metadata_from_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Extract stable image metadata once for jobs, events, and history.
+
+        Gallery metadata v2 should not exist only at persistence time: active job
+        reads and SSE events need the same character/capture context so API
+        consumers can connect an in-flight image to its companion moment before
+        it lands in history. Keep this adapter small and deterministic so legacy
+        generic jobs simply expose nullable metadata fields.
+        """
+        capture = (
+            context.get("moment_capture")
+            if isinstance(context.get("moment_capture"), dict)
+            else {}
+        )
+        character = (
+            context.get("character")
+            if isinstance(context.get("character"), dict)
+            else {}
+        )
+        scene_state = (
+            capture.get("scene_state")
+            if isinstance(capture.get("scene_state"), dict)
+            else {}
+        )
+        scene_bits = [
+            scene_state.get("location"),
+            scene_state.get("time_of_day"),
+            scene_state.get("mood") or scene_state.get("emotional_tone"),
+            scene_state.get("pose"),
+            scene_state.get("outfit"),
+        ]
+        scene_summary = " · ".join(str(bit) for bit in scene_bits if bit) or None
+        return {
+            "character_id": capture.get("character_id") or character.get("id"),
+            "character_name": character.get("name"),
+            "session_id": capture.get("session_id"),
+            "moment_capture_id": capture.get("capture_id"),
+            "source_turn_index": capture.get("source_turn_index"),
+            "scene_summary": scene_summary,
+            "scene_state": scene_state or None,
+            "prompt_hash": capture.get("prompt_hash"),
+            "prompt_summary": capture.get("capture_intent"),
+            "feedback_status": "pending",
+            "review_status": "unreviewed",
+            "canon_status": "not_requested",
+            "capture_status": "from_moment_capture" if capture else "generated",
+        }
 
     def _load_history(self) -> dict[str, ImageHistoryItem]:
         raw = self._read_json_file(self._history_path, default={})
@@ -1245,11 +1391,8 @@ class ImageGenerationService:
             "saved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-
     def _safe_slug(self, value: str) -> str:
-        slug = (
-            re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
-        )
+        slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
         return slug or "default"
 
     def _summarize_prompt(self, prompt: str) -> str:
