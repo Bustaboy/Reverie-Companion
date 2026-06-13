@@ -127,9 +127,16 @@ class GrowthOrchestrator:
         if not query:
             return ""
         try:
-            context = await asyncio.to_thread(
-                self._memory_manager.get_relevant_context, query
-            )
+            if request.character_id:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context,
+                    query,
+                    character_id=request.character_id,
+                )
+            else:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context, query
+                )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
                 "Memory retrieval failed; continuing chat",

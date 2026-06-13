@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.routes.characters import router as characters_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.extensions import router as extensions_router
 from app.api.routes.growth import router as growth_router
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(chat_router)
+    app.include_router(characters_router)
     app.include_router(extensions_router)
     app.include_router(journal_router)
     app.include_router(memory_router)

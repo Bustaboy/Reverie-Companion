@@ -6,7 +6,8 @@ The backend is intentionally modular so chat, memory, reflection, journaling, Pe
 
 ## Current Capabilities
 
-- **Chat service**: non-streaming and SSE streaming chat through Ollama with bounded memory/reflection context injection.
+- **Chat service**: non-streaming and SSE streaming chat through Ollama with bounded character, memory, and reflection context injection.
+- **Character runtime**: versioned `CharacterBlueprint` schemas, SQLite persistence, CRUD routes, compact prompt compilation, and character-scoped memory hooks.
 - **Long-term memory**: `app.core.memory.MemoryManager` stores normalized memories in embedded LanceDB under `REVERIE_MEMORY_DB_PATH`, generates local Ollama embeddings, and can write through mem0 when available.
 - **Reflection journal**: `app.core.reflection.ReflectionManager` writes local, inspectable journal entries from bounded conversation windows and can promote high-confidence insights into memory.
 - **Growth orchestration**: `app.core.growth.GrowthOrchestrator` coordinates memory retrieval, journal context, rare growth notifications, background reflection scheduling, and optional Personal LoRA candidate collection.
@@ -17,11 +18,12 @@ The backend is intentionally modular so chat, memory, reflection, journaling, Pe
 
 The chat path stays responsive by using already persisted growth artifacts and scheduling heavier work after prompt preparation:
 
-1. `ChatService` receives a chat request and delegates growth preparation to `GrowthOrchestrator`.
-2. The orchestrator retrieves compact memory context from `MemoryManager` and recent journal context from `ReflectionManager` in bounded background threads.
-3. The prepared prompt receives memory first, then reflection context, so durable facts remain clearer than tentative growth hypotheses.
-4. After prompt preparation, the orchestrator schedules reflection only when cadence, cooldown, and meaningful-turn gates allow it.
-5. Reflection output may become journal-only, promote a high-confidence memory, surface a rare growth notification on a later turn, or enter the Personal LoRA review queue if collection is explicitly enabled.
+1. `ChatService` receives a chat request, optionally loads the selected `character_id`, and compiles compact CharacterBlueprint identity/relationship context.
+2. The service delegates growth preparation to `GrowthOrchestrator`.
+3. The orchestrator retrieves compact character-scoped memory context from `MemoryManager` and recent journal context from `ReflectionManager` in bounded background threads.
+4. The prepared prompt receives character identity first, memory next, then reflection context, so durable facts remain clearer than tentative growth hypotheses.
+5. After prompt preparation, the orchestrator schedules reflection only when cadence, cooldown, and meaningful-turn gates allow it.
+6. Reflection output may become journal-only, promote a high-confidence memory, surface a rare growth notification on a later turn, or enter the Personal LoRA review queue if collection is explicitly enabled.
 
 This keeps the active token path free of training, unbounded scans, and hidden cloud calls.
 
@@ -43,6 +45,10 @@ Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 - `REVERIE_OLLAMA_HOST`: local Ollama host, default `http://localhost:11434`
 - `REVERIE_OLLAMA_MODEL`: chat model, default `llama3.1:8b`
 - `REVERIE_DEFAULT_TEMPERATURE`, `REVERIE_DEFAULT_TOP_P`, `REVERIE_DEFAULT_NUM_PREDICT`: generation defaults
+
+### Characters
+
+- `REVERIE_CHARACTER_DB_PATH`: local SQLite path for durable CharacterBlueprint storage, default `./data/characters/characters.sqlite3`
 
 ### Memory
 
@@ -131,7 +137,17 @@ Streaming response events:
 - `done`: final completion marker
 - `error`: meaningful stream failure details if Ollama fails after streaming starts
 
-For a non-streaming response, set `"stream": false`.
+For a non-streaming response, set `"stream": false`. Include `"character_id": "..."` to ground chat in a saved companion and scope memory retrieval to that character plus explicitly shared memories.
+
+### Character runtime
+
+- `POST /api/characters`: creates a local versioned CharacterBlueprint from high-priority identity, relationship, and personality fields.
+- `GET /api/characters`: lists saved companions for selection.
+- `GET /api/characters/{character_id}`: loads one full blueprint.
+- `PATCH /api/characters/{character_id}`: updates basic runtime fields without introducing a full creator wizard.
+- `DELETE /api/characters/{character_id}`: removes a local blueprint.
+
+The M4 migration stub lives at `app/migrations/versions/0001_character_blueprints.sql`; the repository also creates the same lightweight SQLite table/indexes on first use for local-first development.
 
 ### `GET /journal/entries`
 
@@ -159,7 +175,9 @@ backend/
 │   ├── api/routes/          # Thin FastAPI route modules
 │   ├── core/                # Memory, reflection, growth, LoRA, Ollama clients
 │   ├── models/              # Pydantic request/response schemas
-│   └── services/            # Chat orchestration service
+│   ├── repositories/        # SQLite/file persistence boundaries
+│   ├── schemas/             # Durable versioned Pydantic schemas
+│   └── services/            # Chat and character orchestration services
 ├── tests/                   # Backend service and route tests
 ├── requirements.txt
 └── README.md

@@ -22,6 +22,7 @@ from app.models.chat import (
     GrowthNotification,
 )
 from app.models.tts import TTSEmotionMetadata, TTSContext
+from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.emotion_engine import emotion_engine
 from app.services.tts_context_router import TTSContextRouter
 from app.services.voice_manager import VoiceManager, VoiceManagerError
@@ -60,6 +61,7 @@ class ChatService:
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
         growth_orchestrator: GrowthOrchestrator | None = None,
+        character_service: CharacterService | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
@@ -85,6 +87,7 @@ class ChatService:
         self._voice_manager = VoiceManager(settings)
         self._context_router = TTSContextRouter(self._voice_manager)
         self._emotion_engine = emotion_engine
+        self._character_service = character_service
         self._growth_orchestrator = growth_orchestrator or GrowthOrchestrator(
             settings=settings,
             memory_manager=memory_manager,
@@ -221,6 +224,9 @@ class ChatService:
         # above dialogue. Memory is inserted before reflection so durable facts
         # remain clearer than tentative character-growth hypotheses.
         context_messages: list[ChatMessage] = []
+        character_context = self._compile_character_context(request, request_id=request_id)
+        if character_context:
+            context_messages.append(ChatMessage(role="system", content=character_context))
         if memory_context:
             context_messages.append(
                 ChatMessage(
@@ -255,6 +261,32 @@ class ChatService:
             request.model_copy(update={"messages": enriched_messages}),
             growth_context,
         )
+
+    def _compile_character_context(
+        self, request: ChatRequest, *, request_id: str | None
+    ) -> str:
+        """Load selected character identity without making chat depend on storage."""
+
+        if not request.character_id or self._character_service is None:
+            return ""
+        try:
+            return self._character_service.compile_prompt(request.character_id)
+        except CharacterNotFoundError:
+            logger.warning(
+                "Selected character was not found; continuing without character context",
+                extra={
+                    "request_id": request_id,
+                    "character_id": request.character_id,
+                    "chat_continues": True,
+                },
+            )
+            return ""
+        except Exception as exc:  # pragma: no cover - defensive graceful degradation.
+            logger.warning(
+                "Character prompt compilation failed; continuing without character context",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return ""
 
     async def _retrieve_memory_context(
         self,

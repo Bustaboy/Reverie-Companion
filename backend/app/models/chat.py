@@ -53,6 +53,12 @@ class ChatRequest(BaseModel):
     stream: bool = Field(
         default=True, description="Whether to stream tokens using Server-Sent Events."
     )
+    character_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        description="Optional selected companion identity used for scoped memory and prompt grounding.",
+    )
     tts_context: TTSContext | None = Field(
         default=None,
         description="Optional TTS routing context supplied by chat or VN state.",
@@ -79,6 +85,15 @@ class ChatRequest(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("Model override cannot be empty.")
         return value
+
+    @field_validator("character_id")
+    @classmethod
+    def character_id_must_not_be_blank(cls, value: str | None) -> str | None:
+        """Keep selected character IDs stable and intentional."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Choose a companion before starting this memory thread.")
+        return value.strip() if value is not None else None
 
 
 class GrowthNotification(BaseModel):

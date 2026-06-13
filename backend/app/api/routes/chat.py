@@ -12,6 +12,8 @@ from app.core.memory import MemoryManager, get_memory_manager
 from app.core.ollama_client import OllamaClient, OllamaClientError
 from app.core.reflection import ReflectionManager
 from app.models.chat import ChatRequest, ChatResponse
+from app.api.routes.characters import get_character_service
+from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ def get_chat_service(
     settings: Annotated[Settings, Depends(get_settings)],
     ollama_client: Annotated[OllamaClient, Depends(get_ollama_client)],
     memory_manager: Annotated[MemoryManager, Depends(get_memory_manager)],
+    character_service: Annotated[CharacterService, Depends(get_character_service)],
 ) -> ChatService:
     """Provide the service that assembles chat prompts and calls Ollama."""
 
@@ -39,6 +42,7 @@ def get_chat_service(
         ollama_client=ollama_client,
         memory_manager=memory_manager,
         reflection_manager=reflection_manager,
+        character_service=character_service,
     )
 
 
