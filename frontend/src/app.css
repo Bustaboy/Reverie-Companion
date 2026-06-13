@@ -5492,3 +5492,109 @@ textarea:disabled {
   background: rgba(255, 179, 138, 0.12);
   color: var(--accent-warm, #ffb38a);
 }
+
+.gallery-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.gallery-feedback-actions button,
+.visual-review-panel button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gallery-feedback-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.gallery-status-chips {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.gallery-card.review-pending,
+.visual-review-card.review-pending {
+  border-color: rgba(248, 196, 113, 0.65);
+  box-shadow: 0 0 0 1px rgba(248, 196, 113, 0.15);
+}
+
+.gallery-card.review-approved,
+.visual-review-card.review-approved {
+  border-color: rgba(82, 196, 154, 0.55);
+}
+
+.gallery-card.review-rejected,
+.visual-review-card.review-rejected {
+  border-color: rgba(255, 112, 112, 0.55);
+  opacity: 0.92;
+}
+
+.visual-review-panel {
+  margin-top: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: rgba(10, 8, 18, 0.52);
+  padding: 1rem;
+}
+
+.review-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.visual-review-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.visual-review-card {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.85rem;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gallery-feedback-actions .secondary {
+  opacity: 0.82;
+}
+
+.gallery-trait-feedback {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gallery-trait-feedback label {
+  display: grid;
+  gap: 0.25rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+}
+
+.gallery-trait-feedback input,
+.gallery-trait-feedback textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.65rem;
+  background: rgba(8, 7, 14, 0.72);
+  color: inherit;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}

@@ -9,6 +9,8 @@
   let { compact = false }: Props = $props();
   let selected: ImageGalleryItem | null = $state(null);
   let unavailableImages = $state<string[]>([]);
+  let expandedTraitFeedbackFor = $state<string | null>(null);
+  let traitFeedback = $state<Record<string, { name: string; value: string; note: string }>>({});
 
   onMount(() => {
     void imageGenerationStore.loadGallery();
@@ -38,6 +40,54 @@
   const characterLabel = (item: ImageGalleryItem): string | null => {
     const name = typeof item.metadata?.character_name === 'string' ? item.metadata.character_name : null;
     return name ?? item.character_id ?? null;
+  };
+
+  const reviewClass = (status?: string): string => {
+    if (status === 'canonized' || status === 'accepted' || status === 'looks_right') return 'approved';
+    if (status === 'rejected' || status === 'wrong_appearance') return 'rejected';
+    if (status === 'canon_requested' || status === 'proposed') return 'pending';
+    return 'neutral';
+  };
+
+  const askTrait = (fallback: string): string | null => {
+    const value = globalThis.prompt?.('Which appearance/style trait should Reverie remember?', fallback);
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  const traitDraft = (jobId: string) => traitFeedback[jobId] ?? { name: '', value: '', note: '' };
+
+  const updateTraitDraft = (jobId: string, patch: Partial<{ name: string; value: string; note: string }>) => {
+    traitFeedback = { ...traitFeedback, [jobId]: { ...traitDraft(jobId), ...patch } };
+  };
+
+  const toggleTraitFeedback = (jobId: string) => {
+    expandedTraitFeedbackFor = expandedTraitFeedbackFor === jobId ? null : jobId;
+  };
+
+  const sendDetailedTraitFeedback = (item: ImageGalleryItem, action: 'wrong_appearance' | 'reject_style_trait') => {
+    const draft = traitDraft(item.job_id);
+    const traitName = draft.name.trim();
+    const traitValue = draft.value.trim();
+    const note = draft.note.trim();
+    const fallback = action === 'wrong_appearance' ? 'appearance mismatch' : 'style trait to avoid';
+    const usableTrait = traitValue || traitName;
+    if (!usableTrait) return;
+    void imageGenerationStore.submitGalleryFeedback(item, action, {
+      traitName: traitName || fallback,
+      traitValue: usableTrait,
+      note: note || undefined
+    });
+  };
+
+  const sendFeedback = (item: ImageGalleryItem, action: Parameters<typeof imageGenerationStore.submitGalleryFeedback>[1]) => {
+    if (action === 'wrong_appearance' || action === 'reject_style_trait') {
+      const trait = askTrait(action === 'wrong_appearance' ? 'appearance mismatch' : 'style trait to avoid');
+      if (!trait) return;
+      void imageGenerationStore.submitGalleryFeedback(item, action, { traitName: trait, traitValue: trait });
+      return;
+    }
+    void imageGenerationStore.submitGalleryFeedback(item, action);
   };
 
   const statusChips = (item: ImageGalleryItem): string[] => {
@@ -86,7 +136,7 @@
   {:else}
     <div class="gallery-grid">
       {#each imageGenerationStore.gallery as item (item.job_id)}
-        <article class:output-missing={imageUnavailable(item)} class="gallery-card">
+        <article class:output-missing={imageUnavailable(item)} class={`gallery-card review-${reviewClass(item.review_status ?? item.canon_status ?? item.feedback_status)}`}>
           <button type="button" class="gallery-thumb" onclick={() => openItem(item)} aria-label={`Open generated image: ${item.prompt_summary}`}>
             {#if imageUnavailable(item)}
               <span class="gallery-thumb-fallback" aria-hidden="true">✦</span>
@@ -108,12 +158,43 @@
               <small>Prompt hash: {item.prompt_hash}</small>
             {/if}
             {#if statusChips(item).length}
-              <small>{statusChips(item).join(' · ')}</small>
+              <small class="gallery-status-chips">{statusChips(item).join(' · ')}</small>
+            {:else}
+              <small class="gallery-status-chips">Review: unreviewed · Canon: not requested</small>
             {/if}
             {#if imageUnavailable(item)}
               <small>Output file is not available from the local image service. Regenerate or reopen ComfyUI, then retry.</small>
             {/if}
           </div>
+          <div class="gallery-feedback-actions" aria-label="Visual continuity feedback">
+            <button type="button" onclick={() => sendFeedback(item, 'looks_right')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Looks Right</button>
+            <button type="button" onclick={() => sendFeedback(item, 'use_outfit_again')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Use Outfit Again</button>
+            <button type="button" onclick={() => sendFeedback(item, 'wrong_appearance')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Wrong Appearance</button>
+            <button type="button" onclick={() => sendFeedback(item, 'make_canon')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Make Canon</button>
+            <button type="button" onclick={() => sendFeedback(item, 'just_this_scene')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Just This Scene</button>
+            <button type="button" onclick={() => sendFeedback(item, 'reject_style_trait')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Reject Style Trait</button>
+            <button type="button" class="secondary" onclick={() => toggleTraitFeedback(item.job_id)} disabled={!item.moment_capture_id}>{expandedTraitFeedbackFor === item.job_id ? 'Hide Details' : 'Trait Details'}</button>
+          </div>
+          {#if expandedTraitFeedbackFor === item.job_id}
+            <div class="gallery-trait-feedback" aria-label="Detailed trait feedback">
+              <label>
+                <span>Trait</span>
+                <input type="text" value={traitDraft(item.job_id).name} placeholder="Hair color, eye color, outfit, style…" oninput={(event) => updateTraitDraft(item.job_id, { name: event.currentTarget.value })} />
+              </label>
+              <label>
+                <span>Correction</span>
+                <input type="text" value={traitDraft(item.job_id).value} placeholder="What should Reverie remember or avoid?" oninput={(event) => updateTraitDraft(item.job_id, { value: event.currentTarget.value })} />
+              </label>
+              <label>
+                <span>Optional note</span>
+                <textarea rows="2" value={traitDraft(item.job_id).note} placeholder="Add context for review…" oninput={(event) => updateTraitDraft(item.job_id, { note: event.currentTarget.value })}></textarea>
+              </label>
+              <div class="gallery-actions">
+                <button type="button" onclick={() => sendDetailedTraitFeedback(item, 'wrong_appearance')} disabled={!traitDraft(item.job_id).name.trim() && !traitDraft(item.job_id).value.trim()}>Submit Wrong Appearance</button>
+                <button type="button" onclick={() => sendDetailedTraitFeedback(item, 'reject_style_trait')} disabled={!traitDraft(item.job_id).name.trim() && !traitDraft(item.job_id).value.trim()}>Submit Reject Trait</button>
+              </div>
+            </div>
+          {/if}
           <div class="gallery-actions" aria-label="Image controls">
             <button type="button" onclick={() => imageGenerationStore.regenerate(item)}>Regenerate</button>
             <button type="button" onclick={() => imageGenerationStore.vary(item)}>Vary</button>
@@ -124,6 +205,41 @@
       {/each}
     </div>
   {/if}
+
+  <aside class="visual-review-panel" aria-label="Pending visual canon changes">
+    <div class="review-panel-header">
+      <div>
+        <p class="eyebrow">Visual review</p>
+        <strong>Pending canon changes</strong>
+      </div>
+      <button type="button" class="ghost-button" onclick={() => imageGenerationStore.loadVisualChanges()} disabled={imageGenerationStore.visualChangesLoading}>
+        {imageGenerationStore.visualChangesLoading ? 'Checking…' : 'Refresh review'}
+      </button>
+    </div>
+    {#if imageGenerationStore.visualChanges.length === 0}
+      <p>No pending visual changes. Make Canon or Use Outfit Again from a Moment Capture to review one here.</p>
+    {:else}
+      <div class="visual-review-list">
+        {#each imageGenerationStore.visualChanges as event (event.event_id)}
+          <article class={`visual-review-card review-${reviewClass(event.canon_status)}`}>
+            <strong>{event.changed_trait.replaceAll('_', ' ')}</strong>
+            <span>{event.new_value}</span>
+            <small>Status: {event.canon_status.replaceAll('_', ' ')} · Character: {event.character_id}</small>
+            <small>{event.reason}</small>
+            <div class="gallery-actions">
+              {#if event.canon_status === 'proposed'}
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'approve')}>Approve</button>
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'reject')}>Reject</button>
+              {/if}
+              {#if event.canon_status === 'canonized' && event.rollback_available}
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'rollback')}>Rollback</button>
+              {/if}
+            </div>
+          </article>
+        {/each}
+      </div>
+    {/if}
+  </aside>
 </section>
 
 {#if selected}
