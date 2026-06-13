@@ -40,6 +40,29 @@
     return name ?? item.character_id ?? null;
   };
 
+  const reviewClass = (status?: string): string => {
+    if (status === 'canonized' || status === 'accepted' || status === 'looks_right') return 'approved';
+    if (status === 'rejected' || status === 'wrong_appearance') return 'rejected';
+    if (status === 'canon_requested' || status === 'proposed') return 'pending';
+    return 'neutral';
+  };
+
+  const askTrait = (fallback: string): string | null => {
+    const value = globalThis.prompt?.('Which appearance/style trait should Reverie remember?', fallback);
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  const sendFeedback = (item: ImageGalleryItem, action: Parameters<typeof imageGenerationStore.submitGalleryFeedback>[1]) => {
+    if (action === 'wrong_appearance' || action === 'reject_style_trait') {
+      const trait = askTrait(action === 'wrong_appearance' ? 'appearance mismatch' : 'style trait to avoid');
+      if (!trait) return;
+      void imageGenerationStore.submitGalleryFeedback(item, action, { traitName: trait, traitValue: trait });
+      return;
+    }
+    void imageGenerationStore.submitGalleryFeedback(item, action);
+  };
+
   const statusChips = (item: ImageGalleryItem): string[] => {
     const chips: string[] = [];
     if (item.moment_capture_id) chips.push('Moment Capture');
@@ -86,7 +109,7 @@
   {:else}
     <div class="gallery-grid">
       {#each imageGenerationStore.gallery as item (item.job_id)}
-        <article class:output-missing={imageUnavailable(item)} class="gallery-card">
+        <article class:output-missing={imageUnavailable(item)} class={`gallery-card review-${reviewClass(item.review_status ?? item.canon_status ?? item.feedback_status)}`}>
           <button type="button" class="gallery-thumb" onclick={() => openItem(item)} aria-label={`Open generated image: ${item.prompt_summary}`}>
             {#if imageUnavailable(item)}
               <span class="gallery-thumb-fallback" aria-hidden="true">✦</span>
@@ -108,11 +131,21 @@
               <small>Prompt hash: {item.prompt_hash}</small>
             {/if}
             {#if statusChips(item).length}
-              <small>{statusChips(item).join(' · ')}</small>
+              <small class="gallery-status-chips">{statusChips(item).join(' · ')}</small>
+            {:else}
+              <small class="gallery-status-chips">Review: unreviewed · Canon: not requested</small>
             {/if}
             {#if imageUnavailable(item)}
               <small>Output file is not available from the local image service. Regenerate or reopen ComfyUI, then retry.</small>
             {/if}
+          </div>
+          <div class="gallery-feedback-actions" aria-label="Visual continuity feedback">
+            <button type="button" onclick={() => sendFeedback(item, 'looks_right')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Looks Right</button>
+            <button type="button" onclick={() => sendFeedback(item, 'use_outfit_again')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Use Outfit Again</button>
+            <button type="button" onclick={() => sendFeedback(item, 'wrong_appearance')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Wrong Appearance</button>
+            <button type="button" onclick={() => sendFeedback(item, 'make_canon')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Make Canon</button>
+            <button type="button" onclick={() => sendFeedback(item, 'just_this_scene')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Just This Scene</button>
+            <button type="button" onclick={() => sendFeedback(item, 'reject_style_trait')} disabled={!item.moment_capture_id || imageGenerationStore.feedbackSubmitting[item.job_id]}>Reject Style Trait</button>
           </div>
           <div class="gallery-actions" aria-label="Image controls">
             <button type="button" onclick={() => imageGenerationStore.regenerate(item)}>Regenerate</button>
@@ -124,6 +157,41 @@
       {/each}
     </div>
   {/if}
+
+  <aside class="visual-review-panel" aria-label="Pending visual canon changes">
+    <div class="review-panel-header">
+      <div>
+        <p class="eyebrow">Visual review</p>
+        <strong>Pending canon changes</strong>
+      </div>
+      <button type="button" class="ghost-button" onclick={() => imageGenerationStore.loadVisualChanges()} disabled={imageGenerationStore.visualChangesLoading}>
+        {imageGenerationStore.visualChangesLoading ? 'Checking…' : 'Refresh review'}
+      </button>
+    </div>
+    {#if imageGenerationStore.visualChanges.length === 0}
+      <p>No pending visual changes. Make Canon or Use Outfit Again from a Moment Capture to review one here.</p>
+    {:else}
+      <div class="visual-review-list">
+        {#each imageGenerationStore.visualChanges as event (event.event_id)}
+          <article class={`visual-review-card review-${reviewClass(event.canon_status)}`}>
+            <strong>{event.changed_trait.replaceAll('_', ' ')}</strong>
+            <span>{event.new_value}</span>
+            <small>Status: {event.canon_status.replaceAll('_', ' ')} · Character: {event.character_id}</small>
+            <small>{event.reason}</small>
+            <div class="gallery-actions">
+              {#if event.canon_status === 'proposed'}
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'approve')}>Approve</button>
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'reject')}>Reject</button>
+              {/if}
+              {#if event.canon_status === 'canonized' && event.rollback_available}
+                <button type="button" onclick={() => imageGenerationStore.reviewVisualChange(event, 'rollback')}>Rollback</button>
+              {/if}
+            </div>
+          </article>
+        {/each}
+      </div>
+    {/if}
+  </aside>
 </section>
 
 {#if selected}

@@ -1,3 +1,5 @@
+import type { VisualChangeCanonStatus, VisualChangeEvent, VisualChangeReviewRequest, VisualChangeReviewResponse, VisualFeedbackRequest, VisualFeedbackResponse } from '$lib/types/momentCapture';
+
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
@@ -270,6 +272,40 @@ export class ImageService {
     const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);
     if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
     return body as ImageHistoryResponse;
+  }
+
+
+  async submitMomentCaptureFeedback(captureId: string, request: VisualFeedbackRequest): Promise<VisualFeedbackResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/moment-capture/${encodeURIComponent(captureId)}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(request)
+    });
+    const body = await this.parseJsonResponse<VisualFeedbackResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as VisualFeedbackResponse;
+  }
+
+  async listVisualChanges(filters: { characterId?: string; status?: VisualChangeCanonStatus } = {}): Promise<VisualChangeEvent[]> {
+    const params = new URLSearchParams();
+    if (filters.characterId) params.set('character_id', filters.characterId);
+    if (filters.status) params.set('status_filter', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await this.fetcher(`${this.baseUrl}/api/moment-capture/visual-changes${query}`, { headers: { Accept: 'application/json' } });
+    const body = await this.parseJsonResponse<VisualChangeEvent[] | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as VisualChangeEvent[];
+  }
+
+  async reviewVisualChange(eventId: string, action: 'approve' | 'reject' | 'rollback', request: VisualChangeReviewRequest): Promise<VisualChangeReviewResponse> {
+    const response = await this.fetcher(`${this.baseUrl}/api/moment-capture/visual-changes/${encodeURIComponent(eventId)}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(request)
+    });
+    const body = await this.parseJsonResponse<VisualChangeReviewResponse | BackendErrorBody>(response);
+    if (!response.ok) throw this.toServiceError(response, body as BackendErrorBody);
+    return body as VisualChangeReviewResponse;
   }
 
   async saveToCharacterAssets(jobId: string, input: { characterId?: string; assetLabel?: string; outputIndex?: number } = {}): Promise<ImageSaveToAssetsResponse> {
