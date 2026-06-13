@@ -144,16 +144,43 @@ class SceneState(BaseModel):
 
 
 class VisualMemoryArtifact(BaseModel):
-    """Future link between a reviewed capture and memory/training artifacts."""
+    """Optional link from a capture to future memory or training artifacts.
+
+    This model is intentionally a pointer, not a storage layer. Deleting a
+    ``MomentCaptureRecord`` should not blindly delete linked memories or
+    training candidates; callers should first inspect these references and
+    either tombstone, detach, or explicitly remove each downstream artifact.
+    """
 
     schema_version: Literal["visual_memory_artifact.v1"] = (
         VISUAL_MEMORY_ARTIFACT_SCHEMA_VERSION
     )
-    artifact_id: str = Field(..., min_length=1, max_length=120)
-    artifact_type: str = Field(default="moment_capture", min_length=1, max_length=80)
-    path: str | None = Field(default=None, max_length=500)
-    memory_id: str | None = Field(default=None, max_length=120)
-    training_candidate: bool = False
+    artifact_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=120,
+        description="Stable local identifier for the linked memory/training artifact.",
+    )
+    artifact_type: str = Field(
+        default="moment_capture",
+        min_length=1,
+        max_length=80,
+        description="Small type tag such as moment_capture, thumbnail, memory, or training_candidate.",
+    )
+    path: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Optional local path or asset URL; never implies ownership for deletion by itself.",
+    )
+    memory_id: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Optional memory-store identifier when this capture is promoted to visual memory.",
+    )
+    training_candidate: bool = Field(
+        default=False,
+        description="Marks whether this artifact may be offered to later opt-in training review.",
+    )
     created_at: str = Field(default_factory=utc_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -242,10 +269,16 @@ _ALLOWED_REVIEW_TRANSITIONS: dict[ReviewState, set[ReviewState]] = {
 class MomentCaptureRecord(BaseModel):
     """Durable reviewed capture metadata for gallery, memory, and rollback.
 
-    Records should be deleted via a tombstone/review transition before file
-    cleanup. ``rollback_id`` links to a VisualChangeEvent or prior record that
-    can reverse user-approved canon changes; it should not imply image files are
-    automatically removed.
+    Deletion is a two-step semantic operation: first transition
+    ``review_state``/``feedback_state`` to ``deleted`` so gallery, memory, and
+    training queues stop treating the record as active; only then may a storage
+    service decide whether local files in ``output_paths`` are safe to remove.
+
+    ``rollback_id`` is a pointer to a reversible visual change, usually a
+    ``VisualChangeEvent.event_id`` or application-defined rollback receipt. It
+    is not a delete marker and should never silently mutate
+    ``VisualIdentityProfile``. Rollback services should use it to locate the
+    prior canon value and create an explicit rolled-back change event.
     """
 
     schema_version: Literal["moment_capture.v1"] = MOMENT_CAPTURE_SCHEMA_VERSION
@@ -257,21 +290,55 @@ class MomentCaptureRecord(BaseModel):
     source_turn_index: int = Field(..., ge=0)
     scene_state: SceneState
     relationship_phase_snapshot: RelationshipPhase | str
-    visual_identity_version: str = Field(..., min_length=1, max_length=80)
-    visual_identity_updated_at: str = Field(..., min_length=1, max_length=80)
-    prompt_hash: str = Field(..., min_length=8, max_length=80)
+    visual_identity_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=80,
+        description="Schema/version label of the VisualIdentityProfile snapshot used for this capture.",
+    )
+    visual_identity_updated_at: str = Field(
+        ...,
+        min_length=1,
+        max_length=80,
+        description="Timestamp from the visual identity snapshot so reviewers can detect stale captures.",
+    )
+    prompt_hash: str = Field(
+        ...,
+        min_length=8,
+        max_length=80,
+        description="Stable hash of prompt-relevant inputs; avoids storing raw prompt text on the main record.",
+    )
     image_job_id: str = Field(..., min_length=1, max_length=120)
     output_paths: list[str] = Field(..., min_length=1)
-    feedback_state: FeedbackState = FeedbackState.pending
-    review_state: ReviewState = ReviewState.unreviewed
-    review_transition_from: ReviewState | None = None
+    feedback_state: FeedbackState = Field(
+        default=FeedbackState.pending,
+        description="Latest lightweight user feedback outcome for gallery filtering and future writeback decisions.",
+    )
+    review_state: ReviewState = Field(
+        default=ReviewState.unreviewed,
+        description="Explicit review lifecycle state; services must validate transitions before canon writeback.",
+    )
+    review_transition_from: ReviewState | None = Field(
+        default=None,
+        description="Previous review state used to validate a proposed transition on model construction.",
+    )
     feedback_actions: list[VisualFeedbackAction] = Field(default_factory=list)
     visual_memory_artifacts: list[VisualMemoryArtifact] = Field(default_factory=list)
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
-    rollback_id: str | None = Field(default=None, max_length=120)
-    legacy_image_history: dict[str, Any] = Field(default_factory=dict)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    rollback_id: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Pointer to the VisualChangeEvent or rollback receipt that can reverse a canonized visual change.",
+    )
+    legacy_image_history: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Lossless copy of a normalized legacy ImageHistoryItem for safe migration/audit.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Non-canonical service metadata; do not place raw prompt text here unless explicitly needed.",
+    )
 
     @field_validator("output_paths")
     @classmethod
@@ -367,7 +434,16 @@ class MomentCaptureRecord(BaseModel):
 
 
 class VisualChangeEvent(BaseModel):
-    """Reversible visual canon/change event linked to a reviewed capture."""
+    """Reversible visual canon/change event linked to a reviewed capture.
+
+    This event records what changed, why it changed, and whether it became
+    canon. It is the audit trail for user-confirmed visual updates; constructing
+    one should not itself mutate ``VisualIdentityProfile``. For rollback, create
+    a new event with ``canon_status='rolled_back'`` and ``rollback_id`` pointing
+    at the event being reversed (or at an application-defined rollback receipt).
+    Deleting a capture should not delete change events automatically because
+    canon history may still need the audit trail.
+    """
 
     schema_version: Literal["visual_change_event.v1"] = (
         VISUAL_CHANGE_EVENT_SCHEMA_VERSION
@@ -376,13 +452,34 @@ class VisualChangeEvent(BaseModel):
     character_id: str = Field(..., min_length=1, max_length=120)
     capture_id: str | None = Field(default=None, max_length=120)
     changed_trait: str = Field(..., min_length=1, max_length=120)
-    previous_value: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
-    new_value: str = Field(..., min_length=1, max_length=MAX_MEDIUM_TEXT)
-    reason: str = Field(..., min_length=1, max_length=MAX_MEDIUM_TEXT)
+    previous_value: str | None = Field(
+        default=None,
+        max_length=MAX_MEDIUM_TEXT,
+        description="Prior canon/scene value; required for automated rollback availability.",
+    )
+    new_value: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MEDIUM_TEXT,
+        description="Proposed or accepted visual value after user feedback/review.",
+    )
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MEDIUM_TEXT,
+        description="Human-readable reason/provenance for the visual change.",
+    )
     feedback_action: VisualFeedbackAction | None = None
     canon_status: VisualChangeCanonStatus = VisualChangeCanonStatus.proposed
-    rollback_id: str | None = Field(default=None, max_length=120)
-    rollback_available: bool = True
+    rollback_id: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Identifier of the event/receipt this event rolls back, or a receipt to use for future rollback.",
+    )
+    rollback_available: bool = Field(
+        default=True,
+        description="False when the event lacks enough previous-value data for an automated rollback.",
+    )
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
