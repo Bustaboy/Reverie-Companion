@@ -8,6 +8,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.growth_policy import GrowthPolicy
+from app.schemas.relationship_state import (
+    DefaultIntimacyLevel,
+    RelationshipPacing,
+    RelationshipPhase,
+    RelationshipState,
+)
+
 CHARACTER_BLUEPRINT_VERSION = 1
 MAX_SHORT_TEXT = 240
 MAX_LIST_ITEMS = 12
@@ -27,29 +35,6 @@ class AdultAgeRange(StrEnum):
 class PrivacyScope(StrEnum):
     local_private = "local_private"
     shared_on_device = "shared_on_device"
-
-
-class RelationshipPhase(StrEnum):
-    strangers = "strangers"
-    newly_met = "newly_met"
-    friends = "friends"
-    close = "close"
-    romantic = "romantic"
-    established_partners = "established_partners"
-
-
-class RelationshipPacing(StrEnum):
-    slow_burn = "slow_burn"
-    natural = "natural"
-    direct = "direct"
-    user_led = "user_led"
-
-
-class DefaultIntimacyLevel(StrEnum):
-    sfw = "sfw"
-    flirtatious = "flirtatious"
-    romantic = "romantic"
-    adult_roleplay = "adult_roleplay"
 
 
 class MemoryScope(StrEnum):
@@ -92,26 +77,6 @@ class CharacterIdentity(BaseModel):
         return normalized
 
 
-class RelationshipState(BaseModel):
-    """Current relationship baseline consumed by chat, memory, and growth."""
-
-    starting_relationship_phase: RelationshipPhase = RelationshipPhase.newly_met
-    current_relationship_phase: RelationshipPhase | None = None
-    relationship_dynamic: str = Field(
-        default="warm, emotionally attentive companion", min_length=1, max_length=MAX_SHORT_TEXT
-    )
-    user_desired_experience: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
-    relationship_pacing: RelationshipPacing = RelationshipPacing.natural
-    default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
-    user_role_in_story: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
-
-    @model_validator(mode="after")
-    def fill_current_phase(self) -> "RelationshipState":
-        if self.current_relationship_phase is None:
-            self.current_relationship_phase = self.starting_relationship_phase
-        return self
-
-
 class BigFiveProfile(BaseModel):
     openness: float | None = Field(default=None, ge=0.0, le=1.0)
     conscientiousness: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -140,7 +105,16 @@ class PersonalityProfile(BaseModel):
     needs: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     self_concept: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
 
-    @field_validator("core_traits", "values_or_ideals", "flaws", "fears", "vulnerabilities", "wants", "needs", mode="after")
+    @field_validator(
+        "core_traits",
+        "values_or_ideals",
+        "flaws",
+        "fears",
+        "vulnerabilities",
+        "wants",
+        "needs",
+        mode="after",
+    )
     @classmethod
     def normalize_short_list(cls, values: list[str]) -> list[str]:
         normalized: list[str] = []
@@ -167,17 +141,13 @@ class RoleplayPolicy(BaseModel):
     fiction_first_mode: bool = True
     lecture_avoidance: bool = True
     adult_roleplay_allowed: bool = True
-    underage_exclusion_policy: Literal["adult_only_no_childlike_sexualization"] = "adult_only_no_childlike_sexualization"
+    underage_exclusion_policy: Literal["adult_only_no_childlike_sexualization"] = (
+        "adult_only_no_childlike_sexualization"
+    )
     safeword_policy: str = Field(
         default="Respect explicit OOC stop, pause, safeword, or clear distress immediately.",
         max_length=MAX_SHORT_TEXT,
     )
-
-
-class GrowthPolicy(BaseModel):
-    character_scoped_growth: bool = True
-    evidence_required_for_drift: bool = True
-    allow_lora_candidates: bool = False
 
 
 def utc_now_iso() -> str:
@@ -211,7 +181,9 @@ class CharacterBlueprint(BaseModel):
     @model_validator(mode="after")
     def require_adult_baseline(self) -> "CharacterBlueprint":
         if not self.identity.adult_only_confirmed:
-            raise ValueError("Reverie characters must be clearly adult before intimate roleplay.")
+            raise ValueError(
+                "Reverie characters must be clearly adult before intimate roleplay."
+            )
         return self
 
 
@@ -221,8 +193,14 @@ class CharacterCreate(BaseModel):
     pronouns: str = Field(default="she/her", min_length=1, max_length=40)
     adult_age_range: AdultAgeRange = AdultAgeRange.mid_20s_adult
     species_or_type: str = Field(default="human", min_length=1, max_length=80)
-    relationship_dynamic: str = Field(default="warm, emotionally attentive companion", max_length=MAX_SHORT_TEXT)
-    core_traits: list[str] = Field(default_factory=lambda: ["warm", "curious", "emotionally attentive"], min_length=1, max_length=8)
+    relationship_dynamic: str = Field(
+        default="warm, emotionally attentive companion", max_length=MAX_SHORT_TEXT
+    )
+    core_traits: list[str] = Field(
+        default_factory=lambda: ["warm", "curious", "emotionally attentive"],
+        min_length=1,
+        max_length=8,
+    )
     tags: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -233,7 +211,9 @@ class CharacterUpdate(BaseModel):
     pronouns: str | None = Field(default=None, min_length=1, max_length=40)
     adult_age_range: AdultAgeRange | None = None
     species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
-    relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=MAX_SHORT_TEXT)
+    relationship_dynamic: str | None = Field(
+        default=None, min_length=1, max_length=MAX_SHORT_TEXT
+    )
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
     tags: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     default_intimacy_level: DefaultIntimacyLevel | None = None

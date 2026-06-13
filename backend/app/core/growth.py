@@ -159,10 +159,17 @@ class GrowthOrchestrator:
             return []
         query = self.build_memory_query(request)
         try:
-            entries = await asyncio.to_thread(
-                self._reflection_manager.get_recent_journal_entries,
-                self._settings.reflection_context_entry_limit,
-            )
+            try:
+                entries = await asyncio.to_thread(
+                    self._reflection_manager.get_recent_journal_entries,
+                    self._settings.reflection_context_entry_limit,
+                    character_id=request.character_id,
+                )
+            except TypeError:
+                entries = await asyncio.to_thread(
+                    self._reflection_manager.get_recent_journal_entries,
+                    self._settings.reflection_context_entry_limit,
+                )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
                 "Reflection context retrieval failed; continuing chat",
@@ -212,6 +219,7 @@ class GrowthOrchestrator:
                 self.reflection_history_window(request.messages),
                 request_id=request_id,
                 trigger_reason=decision.reason or "scheduled",
+                character_id=request.character_id,
                 min_interval_seconds=decision.min_interval_seconds,
             )
         )
@@ -224,6 +232,7 @@ class GrowthOrchestrator:
         *,
         request_id: str | None,
         trigger_reason: str,
+        character_id: str | None,
         min_interval_seconds: float,
     ) -> None:
         lock = self._get_reflection_lock()
@@ -237,9 +246,16 @@ class GrowthOrchestrator:
         if self._reflection_manager is None:
             return
         try:
-            entry = await asyncio.to_thread(
-                self._reflection_manager.trigger_reflection, history
-            )
+            try:
+                entry = await asyncio.to_thread(
+                    self._reflection_manager.trigger_reflection,
+                    history,
+                    character_id=character_id,
+                )
+            except TypeError:
+                entry = await asyncio.to_thread(
+                    self._reflection_manager.trigger_reflection, history
+                )
         except Exception as exc:  # pragma: no cover - defensive background path.
             logger.warning(
                 "Background reflection failed; chat was not affected",
@@ -291,7 +307,9 @@ class GrowthOrchestrator:
             )
         try:
             job = self._lora_trainer.evaluate_auto_training()
-        except Exception as exc:  # pragma: no cover - auto training must not affect chat.
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - auto training must not affect chat.
             logger.warning(
                 "Automated personal LoRA training check skipped",
                 extra={"request_id": request_id, "error": str(exc)},
@@ -563,7 +581,9 @@ class GrowthOrchestrator:
             payload = {"done": True}
 
         if growth_context.growth_notification is not None:
-            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+            payload["growth_notification"] = (
+                growth_context.growth_notification.model_dump()
+            )
 
         if request is not None:
             visual_state = emotion_inference_engine.infer_visual_state(

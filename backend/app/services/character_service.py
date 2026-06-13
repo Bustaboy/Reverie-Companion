@@ -14,10 +14,10 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
-    RelationshipState,
     PersonalityProfile,
     utc_now_iso,
 )
+from app.schemas.relationship_state import RelationshipState
 
 
 class CharacterNotFoundError(KeyError):
@@ -57,6 +57,8 @@ class CharacterPromptCompiler:
             "Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):",
             f"- Name: {identity.display_name} ({identity.pronouns}); clearly adult: {identity.adult_age_range.value}; type: {identity.species_or_type}.",
             f"- Relationship: {relationship.current_relationship_phase or relationship.starting_relationship_phase}; dynamic: {relationship.relationship_dynamic}; pacing: {relationship.relationship_pacing.value}; default intimacy: {relationship.default_intimacy_level.value}.",
+            f"- Relationship pulse: affection={relationship.affection_level:.2f}, trust={relationship.trust_level:.2f}, familiarity={relationship.familiarity_level:.2f}; tags: {self._join_or_none(relationship.dynamic_tags)}.",
+            f"- Growth policy: character-scoped={blueprint.growth_policy.character_scoped_growth}; learning_rate={blueprint.growth_policy.learning_rate:.2f}; reflection_frequency={blueprint.growth_policy.reflection_frequency}.",
             f"- Core traits: {', '.join(personality.core_traits)}.",
             f"- Agency: independence={personality.independence:.2f}, devotion={personality.devotion:.2f}, initiative={personality.dominance_or_initiative:.2f}.",
         ]
@@ -70,6 +72,9 @@ class CharacterPromptCompiler:
             lines.append(f"- Values: {', '.join(personality.values_or_ideals)}.")
         lines.append(self._roleplay_integrity_block(roleplay))
         return "\n".join(lines)
+
+    def _join_or_none(self, values: list[str]) -> str:
+        return ", ".join(values) if values else "none yet"
 
     def _roleplay_integrity_block(self, roleplay) -> str:
         adult_mode = (
@@ -119,6 +124,7 @@ class CharacterService:
                 creator_notes=data.creator_notes,
             ),
             relationship=RelationshipState(
+                character_id=character_id,
                 relationship_dynamic=data.relationship_dynamic,
                 default_intimacy_level=data.default_intimacy_level,
             ),

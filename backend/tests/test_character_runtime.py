@@ -17,6 +17,7 @@ from app.schemas.character_blueprint import (
     CharacterIdentity,
     CharacterUpdate,
 )
+from app.schemas.self_reflection_journal import SelfReflectionJournalEntry
 from app.services.character_service import (
     CharacterNotFoundError,
     CharacterPromptCompiler,
@@ -106,6 +107,8 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         expected = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
 - Name: Aria (she/her); clearly adult: early_20s_adult; type: human.
 - Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
+- Relationship pulse: affection=0.35, trust=0.35, familiarity=0.20; tags: none yet.
+- Growth policy: character-scoped=True; learning_rate=0.35; reflection_frequency=balanced.
 - Core traits: warm, curious, emotionally attentive.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
 - Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
@@ -134,6 +137,8 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         expected_snapshot = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
 - Name: Seraphina (she/her); clearly adult: ageless_adult; type: succubus muse.
 - Relationship: newly_met; dynamic: intense adult fantasy devotion with playful dominance; pacing: natural; default intimacy: adult_roleplay.
+- Relationship pulse: affection=0.35, trust=0.35, familiarity=0.20; tags: none yet.
+- Growth policy: character-scoped=True; learning_rate=0.35; reflection_frequency=balanced.
 - Core traits: sensual, possessive, tender.
 - Agency: independence=0.55, devotion=0.60, initiative=0.45.
 - Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
@@ -141,6 +146,57 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         self.assertIn("adult fantasy", prompt)
         self.assertIn("kink-shaming", prompt)
         self.assertNotIn("as an AI", prompt.lower())
+
+
+class CharacterGrowthJournalSchemaTests(unittest.TestCase):
+    def test_relationship_growth_and_journal_roundtrip_are_character_scoped(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = CharacterService(
+                CharacterRepository(Path(tmpdir) / "characters.sqlite3")
+            )
+            created = service.create(
+                CharacterCreate(character_id="mira", display_name="Mira")
+            )
+            updated = created.model_copy(
+                update={
+                    "relationship": created.relationship.model_copy(
+                        update={
+                            "character_id": "mira",
+                            "affection_level": 0.72,
+                            "trust_level": 0.66,
+                            "dynamic_tags": ["Slow Burn", "Trust"],
+                            "last_interaction": "2026-06-13T00:00:00+00:00",
+                        }
+                    ),
+                    "growth_policy": created.growth_policy.model_copy(
+                        update={
+                            "learning_rate": 0.5,
+                            "reflection_frequency": "high",
+                        }
+                    ),
+                }
+            )
+            saved = service.save(updated)
+            loaded = service.load_by_id("mira")
+
+            self.assertEqual(saved.relationship.character_id, "mira")
+            self.assertEqual(loaded.relationship.dynamic_tags, ["slow_burn", "trust"])
+            self.assertEqual(loaded.growth_policy.reflection_frequency, "high")
+
+            journal = SelfReflectionJournalEntry(
+                entry_id="journal_mira_1",
+                character_id="mira",
+                insight="Mira should remember that trust is becoming warmer.",
+                linked_memory_id="mem_mira_1",
+                linked_memory_ids=["mem_mira_1"],
+                themes=["trust", "affection"],
+                confidence=0.81,
+            )
+            self.assertEqual(journal.schema_version, "self_reflection_journal.v1")
+            self.assertEqual(journal.character_id, "mira")
+            self.assertEqual(journal.linked_memory_id, "mem_mira_1")
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):

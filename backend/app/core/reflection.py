@@ -473,7 +473,9 @@ class ReflectionManager:
         self._config = config or ReflectionManagerConfig.from_settings()
         self._memory_manager = memory_manager or get_memory_manager()
 
-    def trigger_reflection(self, conversation_history: Any) -> JournalEntry:
+    def trigger_reflection(
+        self, conversation_history: Any, *, character_id: str | None = None
+    ) -> JournalEntry:
         """Generate insights from recent conversation history and journal them.
 
         Args:
@@ -537,6 +539,7 @@ class ReflectionManager:
             metadata={
                 "user_id": self._config.user_id,
                 "session_id": self._config.session_id,
+                "character_id": character_id,
                 "source": "ReflectionManager",
                 "local_first": True,
                 "lora_ready": True,
@@ -674,14 +677,17 @@ class ReflectionManager:
             ) from exc
         return normalized
 
-    def get_recent_journal_entries(self, limit: int = 5) -> list[JournalEntry]:
-        """Return the newest active journal entries, newest first."""
+    def get_recent_journal_entries(
+        self, limit: int = 5, *, character_id: str | None = None
+    ) -> list[JournalEntry]:
+        """Return newest active journal entries, optionally scoped to a character."""
 
         safe_limit = self._safe_limit(limit)
         entries = [
             entry
             for entry in self._read_journal_entries()
             if entry.get("status", "active") == "active"
+            and self._entry_matches_character_scope(entry, character_id)
         ]
         return list(reversed(entries[-safe_limit:]))
 
@@ -740,6 +746,14 @@ class ReflectionManager:
             reverse=True,
         )
         return [entries_by_id[entry_id] for entry_id in ranked_ids[:5]]
+
+    def _entry_matches_character_scope(
+        self, entry: JournalEntry, character_id: str | None
+    ) -> bool:
+        if character_id is None:
+            return True
+        metadata = entry.get("metadata", {}) or {}
+        return metadata.get("character_id") == character_id
 
     def _normalize_history(self, conversation_history: Any) -> list[ConversationTurn]:
         if conversation_history is None:
@@ -1040,6 +1054,12 @@ class ReflectionManager:
                 {
                     "user_id": self._config.user_id,
                     "session_id": self._config.session_id,
+                    "character_id": entry.get("metadata", {}).get("character_id"),
+                    "memory_scope": (
+                        "character_private"
+                        if entry.get("metadata", {}).get("character_id")
+                        else "shared"
+                    ),
                     "memory_type": "reflection",
                     "source": "reflection_journal",
                     "journal_entry_id": entry.get("entry_id"),
@@ -1118,6 +1138,7 @@ class ReflectionManager:
             {
                 "user_id": self._config.user_id,
                 "session_id": self._config.session_id,
+                "character_id": None,
                 "source": "ReflectionManager",
                 "local_first": True,
             },
