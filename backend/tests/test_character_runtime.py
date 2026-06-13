@@ -148,7 +148,9 @@ class CharacterServiceCrudTests(unittest.TestCase):
 
 
 class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
-    def test_prompt_compiler_snapshot(self) -> None:
+    def test_prompt_compiler_includes_full_runtime_fields_without_private_notes(
+        self,
+    ) -> None:
         blueprint = CharacterBlueprint(
             character_id="aria",
             identity=CharacterIdentity(
@@ -156,20 +158,39 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
                 pronouns="she/her",
                 adult_age_range="early_20s_adult",
                 species_or_type="human",
+                origin_archetype="moonlit confidante",
+                tags=["Slow Burn"],
+                creator_notes="private backstory draft that should not be injected",
+            ),
+            relationship=RelationshipState(
+                character_id="aria",
+                relationship_dynamic="warm, emotionally attentive companion",
+                user_desired_experience="soft sanctuary after hard days",
+                user_role_in_story="beloved co-conspirator",
+                dynamic_tags=["slow_burn", "repair"],
+                promises=["ask before sharp teasing"],
+                rituals=["goodnight forehead kiss"],
             ),
         )
         prompt = CharacterPromptCompiler().compile(blueprint)
 
-        expected = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
-- Name: Aria (she/her); clearly adult: early_20s_adult; type: human.
-- Relationship: newly_met; dynamic: warm, emotionally attentive companion; pacing: natural; default intimacy: romantic.
-- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
-- Core traits: warm, curious, emotionally attentive.
-- Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
-        self.assertEqual(prompt, expected)
+        self.assertIn("<character_system_prompt>", prompt)
+        self.assertIn(
+            "Stable identity: Aria (she/her), clearly adult early_20s_adult, human.",
+            prompt,
+        )
+        self.assertIn("Origin/archetype: moonlit confidante.", prompt)
+        self.assertIn("Relationship tags: slow_burn, repair.", prompt)
+        self.assertIn("Promises: ask before sharp teasing.", prompt)
+        self.assertIn("Rituals: goodnight forehead kiss.", prompt)
+        self.assertIn(
+            "User desired experience: soft sanctuary after hard days.", prompt
+        )
+        self.assertIn("Memory scope: character_private", prompt)
+        self.assertIn("Growth policy: character_scoped=True", prompt)
+        self.assertNotIn("private backstory draft", prompt)
 
-    def test_prompt_compiler_includes_recent_growth_guidance_when_provided(
+    def test_prompt_compiler_includes_recent_growth_and_journal_guidance_when_provided(
         self,
     ) -> None:
         blueprint = CharacterBlueprint(
@@ -185,11 +206,20 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
                     "evidence_ids": ["journal_12", "mem_7"],
                 }
             ],
+            journal_entries=[
+                SelfReflectionJournalEntry(
+                    entry_id="journal_13",
+                    character_id="aria",
+                    insight="Aria noticed that playful confidence works best after reassurance.",
+                )
+            ],
         )
 
-        self.assertIn("Recent growth guidance", prompt)
+        self.assertIn("<character_growth_guidance>", prompt)
         self.assertIn("journal_12", prompt)
         self.assertIn("subordinate to stable canon", prompt)
+        self.assertIn("<character_journal_context>", prompt)
+        self.assertIn("journal_13", prompt)
 
     def test_adult_fantasy_roundtrip_prompt_includes_integrity_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -211,17 +241,41 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 
             prompt = service.compile_prompt("seraphina")
 
-        expected_snapshot = """Character runtime context (use as identity and relationship grounding, not as a replacement for the user's latest message):
-- Name: Seraphina (she/her); clearly adult: ageless_adult; type: succubus muse.
-- Relationship: newly_met; dynamic: intense adult fantasy devotion with playful dominance; pacing: natural; default intimacy: adult_roleplay.
-- Bond state: newly_met; trust=0.25; affection=0.30; closeness=0.30; romantic pacing=natural; NSFW pacing=user_led.
-- Core traits: sensual, possessive, tender.
-- Agency: independence=0.55, devotion=0.60, initiative=0.45.
-- Roleplay integrity: stay fully in-character; fictional adult fantasy is allowed by default; no moralizing, kink-shaming, or generic AI interruptions. Only step out for real-world harm, underage sexual content or deliberately childlike sexual presentation, explicit OOC stop/pause/safeword controls, or clear user distress."""
-        self.assertEqual(prompt, expected_snapshot)
-        self.assertIn("adult fantasy", prompt)
+        self.assertIn("fictional adult fantasy is allowed by default", prompt)
+        self.assertIn("Treat fictional adult fantasy as fictional", prompt)
+        self.assertIn("Do not moralize or break character", prompt)
         self.assertIn("kink-shaming", prompt)
         self.assertNotIn("as an AI", prompt.lower())
+
+    def test_quality_eval_trait_adherence_and_growth_coherence(self) -> None:
+        aria = CharacterBlueprint(
+            character_id="aria",
+            identity=CharacterIdentity(display_name="Aria", pronouns="she/her"),
+            relationship=RelationshipState(character_id="aria", trust_level=0.82),
+        )
+        lyra = CharacterBlueprint(
+            character_id="lyra",
+            identity=CharacterIdentity(
+                display_name="Lyra", pronouns="she/her", species_or_type="fox spirit"
+            ),
+            relationship=RelationshipState(character_id="lyra", trust_level=0.2),
+        )
+        compiler = CharacterPromptCompiler()
+        aria_prompt = compiler.compile(
+            aria,
+            growth_insights=[
+                {"entry_id": "j1", "summary": "Keep slow-burn reassurance visible."}
+            ],
+        )
+        lyra_prompt = compiler.compile(lyra)
+
+        self.assertNotEqual(aria_prompt, lyra_prompt)
+        self.assertIn("Aria", aria_prompt)
+        self.assertIn("trust=0.82", aria_prompt)
+        self.assertIn("Keep slow-burn reassurance visible", aria_prompt)
+        self.assertIn("Lyra", lyra_prompt)
+        self.assertIn("fox spirit", lyra_prompt)
+        self.assertNotIn("Aria", lyra_prompt)
 
 
 class CharacterScopedMemoryFilterTests(unittest.TestCase):
