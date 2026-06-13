@@ -793,6 +793,17 @@ Definition of Done:
 ---
 
 #### M5-P01 — VisualPromptCompiler v1
+**Status:** ✅ Completed (PR #138 merged)
+
+**Delivered:**
+- `VisualPromptCompiler` service + `VisualPromptBundle` Pydantic model
+- Structured positive/negative prompt generation using `VisualIdentityProfile`
+- Strict separation: identity anchors in positive prompts, rejected traits + wrong appearance in negative prompts only
+- Stable SHA256 `prompt_hash` + audit metadata (`identity_anchors_used`, `rejected_traits_excluded`, `wrong_appearance_excluded`)
+- Comprehensive tests validating identity consistency, rejection logic, and prompt bounding
+- Follows `CharacterPromptCompiler` patterns and M2–M4 Closure Ledger rules (single source of truth for visual identity, no parallel abstractions)
+
+**Next dependent tasks:** M5-P02, M5-P03, M5-P07
 
 **Goal**: Compile `VisualIdentityProfile`, selected character context, scene state, and user capture intent into bounded image prompt data.
 
