@@ -1315,44 +1315,55 @@ Definition of Done:
 ---
 
 #### M5-P08 — Visual consistency eval harness v1
+**Status:** ✅ Completed (PR #159 merged)
 
-**Goal**: Make Moment Capture quality measurable enough for Grok to compare Codex runs.
+**Delivered:**
+- New eval harness in `backend/tests/test_visual_consistency_evals.py`
+- `VisualEvalResult` structured output (pass/fail per contract + readable evidence)
+- Runnable fixtures covering:
+  - Identity anchor inclusion
+  - Rejected-trait exclusion from positive prompts
+  - Scene trait mutability without affecting identity
+  - Same-character consistency across scenes
+  - Distinct character differentiation
+  - Feedback-driven prompt behavior changes
+  - Wrong appearance correction
+  - Make-canon approval flow
+  - Outfit reuse safety
+  - Character-scoped visual memory
+  - 8GB queue behavior under pressure
+- Uses fake adapters/services for deterministic, local-only execution (no external/CLIP/cloud dependencies)
+- Clear failure reporting that identifies which visual contract broke
+- Output format suitable for automated Grok comparison of Codex runs
+- Passing tests when run standalone and integrated with related suites
+- Added usage documentation to `backend/README.md`
+
+**Next dependent tasks:** M5-P09, M5-P10, M5-P11
+
+**Goal**: Make Moment Capture quality measurable enough for Grok to compare Codex runs on visual contracts.
 
 Context files to read:
 
+- `backend/tests/test_visual_consistency_evals.py`
 - `backend/tests/test_character_runtime.py`
 - `backend/tests/test_image_generation_service.py`
 - `prompts/skills/character-quality-evals.md`
 - `prompts/skills/moment-capture-visual-continuity.md`
 
-Must implement runnable eval/test fixtures for:
+Must implement:
 
-- Identity anchor inclusion.
-- Rejected-trait exclusion.
-- Scene trait mutability.
-- Same character across different scenes.
-- Two visually distinct characters.
-- Feedback changing future prompt behavior.
-- Wrong appearance correction.
-- Make-canon approval.
-- Outfit reuse without identity overwrite.
-- Character-scoped visual memory.
-- 8GB queue behavior under pressure.
+- Runnable eval fixtures for the listed visual contracts
+- Structured, comparable output (pass/fail + evidence)
+- Local/deterministic execution without heavy external dependencies
 
 Must not implement:
 
-- Full CLIP/image similarity scoring unless it is lightweight and optional.
-- External/cloud evaluation.
-
-Tests required:
-
-- Evals run in backend test suite or a documented script.
-- Output is readable by Grok for Run A vs Run B comparison.
-- Failures identify which visual contract broke.
+- Full/heavy CLIP or image similarity scoring (unless lightweight + optional)
+- External or cloud evaluation services
 
 Definition of Done:
 
-- Future visual prompt/capture changes cannot silently regress identity continuity.
+- Future visual prompt/capture changes cannot silently regress identity continuity or other core visual contracts. Grok can reliably use these evals to compare Codex implementations.
 
 ---
 
