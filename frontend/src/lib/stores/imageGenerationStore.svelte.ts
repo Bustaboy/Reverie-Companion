@@ -20,6 +20,9 @@ export interface ImageGenerationJob extends ImageJobRead {
   displayPrompt: string;
   imageUrls: string[];
   submittedAt: Date;
+  characterLabel?: string;
+  contextLabel?: string;
+  captureLabel?: string;
 }
 
 export interface ImageGalleryItem extends ImageHistoryItem {
@@ -35,6 +38,7 @@ interface QueueImageInput {
   context?: Record<string, unknown>;
   qualityPreset?: ImageQualityPreset;
   conversationId?: string;
+  characterId?: string;
 }
 
 const MAX_VISIBLE_JOBS = 8;
@@ -72,7 +76,10 @@ const jobFromRead = (job: ImageJobRead, input: QueueImageInput): ImageGeneration
   sourceLabel: input.sourceLabel,
   displayPrompt: input.prompt,
   imageUrls: job.output_paths.map((_, index) => imageService.resolveOutputUrl(job.job_id, index)).filter(Boolean),
-  submittedAt: new Date()
+  submittedAt: new Date(),
+  characterLabel: metadataCharacterLabel(job.character_id),
+  contextLabel: contextLabel({ ...job, conversation_id: job.conversation_id ?? DEFAULT_CONVERSATION_ID }),
+  captureLabel: captureLabel(job)
 });
 
 const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): ImageGenerationJob => ({
@@ -93,6 +100,18 @@ const jobFromEvent = (existing: ImageGenerationJob, event: ImageJobEvent): Image
   warning: event.warning,
   imageUrls: event.output_paths.map((_, index) => imageService.resolveOutputUrl(event.job_id, index)).filter(Boolean)
 });
+
+const metadataCharacterLabel = (characterId?: string | null, item?: { metadata?: Record<string, unknown> } | null): string | undefined => {
+  const name = item?.metadata?.character_name ?? (item?.metadata?.character as { name?: string } | undefined)?.name;
+  if (typeof name === 'string' && name.trim()) return name.trim();
+  return characterId ? `Character ${characterId}` : undefined;
+};
+
+const contextLabel = (item: Pick<ImageHistoryItem, 'scene_summary' | 'conversation_id' | 'source_message_id' | 'source'>): string =>
+  item.scene_summary || [item.source ?? 'gallery', item.source_message_id ? `message ${item.source_message_id}` : null, `conversation ${item.conversation_id}`].filter(Boolean).join(' · ');
+
+const captureLabel = (item: Pick<ImageHistoryItem, 'moment_capture_id' | 'source'>): string | undefined =>
+  item.moment_capture_id ? `Moment Capture ${item.moment_capture_id}` : item.source === 'moment_capture' ? 'Moment Capture' : undefined;
 
 const galleryItemFromHistory = (item: ImageHistoryItem): ImageGalleryItem => ({
   ...item,
@@ -349,7 +368,7 @@ class ImageGenerationStore {
         source: input.source,
         source_message_id: input.sourceMessageId,
         prompt,
-        context: input.context,
+        context: { ...(input.context ?? {}), character_id: input.characterId ?? (input.context?.character_id as string | undefined) },
         quality_preset: input.qualityPreset ?? this.defaultPreset
       });
       const job = jobFromRead(response.job, { ...input, prompt });

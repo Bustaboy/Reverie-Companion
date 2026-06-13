@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from app.core.config import Settings, get_settings
@@ -81,8 +81,12 @@ async def generate_image(
 async def get_image_history(
     conversation_id: str,
     service: Annotated[ImageGenerationService, Depends(get_images_service)],
+    character_id: str | None = Query(default=None, min_length=1, max_length=120),
+    session_id: str | None = Query(default=None, min_length=1, max_length=120),
 ) -> ImageHistoryResponse:
-    return service.list_history(conversation_id)
+    return service.list_history(
+        conversation_id, character_id=character_id, session_id=session_id
+    )
 
 
 @router.delete("/history/{job_id}", response_model=ImageHistoryResponse)
@@ -94,9 +98,7 @@ async def delete_image_history_item(
         return await service.delete_history_item(job_id)
     except ImageGenerationError as exc:
         status_code = (
-            status.HTTP_404_NOT_FOUND
-            if not exc.retryable
-            else status.HTTP_409_CONFLICT
+            status.HTTP_404_NOT_FOUND if not exc.retryable else status.HTTP_409_CONFLICT
         )
         raise _image_http_exception(exc, status_code=status_code) from exc
 
@@ -116,9 +118,7 @@ async def save_image_to_character_assets(
         )
     except ImageGenerationError as exc:
         status_code = (
-            status.HTTP_404_NOT_FOUND
-            if not exc.retryable
-            else status.HTTP_409_CONFLICT
+            status.HTTP_404_NOT_FOUND if not exc.retryable else status.HTTP_409_CONFLICT
         )
         raise _image_http_exception(exc, status_code=status_code) from exc
 

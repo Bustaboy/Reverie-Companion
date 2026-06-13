@@ -92,8 +92,10 @@ class MomentCaptureService:
         prompt_hash = str(
             prompt_bundle.metadata.get("prompt_hash") or request.prompt_hash
         )
+        capture_id = f"mc_{uuid4().hex}"
         context = self._job_context(
             request=request,
+            capture_id=capture_id,
             capture_intent=capture_intent,
             prompt_bundle=prompt_bundle,
             prompt_hash=prompt_hash,
@@ -111,7 +113,7 @@ class MomentCaptureService:
             )
         )
         record = MomentCaptureRecord(
-            capture_id=f"mc_{uuid4().hex}",
+            capture_id=capture_id,
             character_id=request.character_id,
             conversation_id=request.conversation_id,
             session_id=request.session_id,
@@ -156,14 +158,30 @@ class MomentCaptureService:
         self,
         *,
         request: MomentCaptureRequest,
+        capture_id: str,
         capture_intent: str,
         prompt_bundle: VisualPromptBundle,
         prompt_hash: str,
         character_name: str,
     ) -> dict[str, Any]:
+        scene_summary = _summarize_scene_state(
+            request.scene_state.model_dump(mode="json")
+        )
         return {
+            "character_id": request.character_id,
+            "conversation_id": request.conversation_id,
+            "session_id": request.session_id,
+            "source_message_id": request.source_message_id,
+            "source_turn_index": request.source_turn_index,
+            "moment_capture_id": capture_id,
+            "scene_summary": scene_summary,
+            "prompt_hash": prompt_hash,
+            "feedback_state": "pending",
+            "review_state": "unreviewed",
+            "canon_status": "not_canon",
             "moment_capture": {
                 "schema_version": request.schema_version,
+                "capture_id": capture_id,
                 "character_id": request.character_id,
                 "conversation_id": request.conversation_id,
                 "session_id": request.session_id,
@@ -212,3 +230,14 @@ class MomentCaptureService:
         self._records_path.write_text(
             json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
         )
+
+
+def _summarize_scene_state(scene_state: dict[str, Any]) -> str:
+    parts = [
+        scene_state.get("location"),
+        scene_state.get("time_of_day"),
+        scene_state.get("emotional_tone"),
+        scene_state.get("summary"),
+    ]
+    text = " · ".join(str(part).strip() for part in parts if part)
+    return text[:240] if text else "Moment capture"

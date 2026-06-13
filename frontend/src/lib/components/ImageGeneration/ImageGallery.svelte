@@ -23,6 +23,23 @@
     if (!unavailableImages.includes(item.job_id)) unavailableImages = [...unavailableImages, item.job_id];
   };
 
+  const characterLabel = (item: ImageGalleryItem): string | null => {
+    const metadataName = item.metadata?.character_name;
+    if (typeof metadataName === 'string' && metadataName.trim()) return metadataName.trim();
+    return item.character_id ? `Character ${item.character_id}` : null;
+  };
+
+  const contextLabel = (item: ImageGalleryItem): string =>
+    item.scene_summary || [item.source ?? 'gallery', item.source_message_id ? `message ${item.source_message_id}` : null, `conversation ${item.conversation_id}`].filter(Boolean).join(' · ');
+
+  const captureLabel = (item: ImageGalleryItem): string | null =>
+    item.moment_capture_id ? `Moment Capture ${item.moment_capture_id}` : item.source === 'moment_capture' ? 'Moment Capture' : null;
+
+  const statusText = (item: ImageGalleryItem): string =>
+    [item.feedback_state ?? 'pending feedback', item.review_state ?? 'unreviewed', item.canon_status ?? 'not canon', item.saved_to_assets ? 'saved asset' : null]
+      .filter(Boolean)
+      .join(' · ');
+
   const openItem = (item: ImageGalleryItem) => {
     selected = item;
   };
@@ -81,6 +98,9 @@
           </button>
           <div class="gallery-card-copy">
             <strong>{item.prompt_summary}</strong>
+            <span>{characterLabel(item) ?? 'Unlinked character'} · {contextLabel(item)}</span>
+            {#if captureLabel(item)}<small>{captureLabel(item)}</small>{/if}
+            <small>{statusText(item)}</small>
             <span>{item.active_preset.replace('_', ' ')}{item.fallback_used ? ' · 8GB fallback' : ''}{item.saved_to_assets ? ' · saved' : ''}</span>
             {#if imageUnavailable(item)}
               <small>Output file is not available from the local image service. Regenerate or reopen ComfyUI, then retry.</small>
@@ -114,6 +134,8 @@
       <div>
         <strong>{selected.prompt_summary}</strong>
         <p>{selected.prompt}</p>
+        <p>{characterLabel(selected) ?? 'Unlinked character'} · {contextLabel(selected)}</p>
+        <p>{statusText(selected)}{selected.asset_manifest_path ? ` · manifest ${selected.asset_manifest_path}` : ''}</p>
         <div class="gallery-actions">
           <button type="button" onclick={() => imageGenerationStore.regenerate(selected!)}>Regenerate</button>
           <button type="button" onclick={() => imageGenerationStore.vary(selected!)}>Create variation</button>

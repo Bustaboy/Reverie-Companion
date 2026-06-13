@@ -51,6 +51,9 @@
     return job.message;
   });
 
+  const provenanceLabel = $derived([job.characterLabel ?? (job.character_id ? `Character ${job.character_id}` : null), job.captureLabel, job.contextLabel].filter(Boolean).join(' · '));
+  const reviewLabel = $derived([job.feedback_state ?? 'pending feedback', job.review_state ?? 'unreviewed', job.canon_status ?? 'not canon', job.saved_to_assets ? 'saved asset' : null].filter(Boolean).join(' · '));
+
   const stateClass = $derived(
     isPausedForTTS
       ? 'paused-for-tts'
@@ -89,6 +92,11 @@
       </div>
     {/if}
   </div>
+
+  {#if provenanceLabel}
+    <small class="image-job-note">{provenanceLabel}</small>
+    <small class="image-job-note">{reviewLabel}</small>
+  {/if}
 
   {#if isActive}
     <div class="image-job-progress-row">

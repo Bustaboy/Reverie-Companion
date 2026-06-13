@@ -23,6 +23,7 @@ telemetry:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -196,6 +197,17 @@ class ImageJob:
             source=self.source,
             source_message_id=self.source_message_id,
             saved_to_assets=self.saved_to_assets,
+            character_id=_context_str(self.context, "character_id"),
+            session_id=_context_str(self.context, "session_id"),
+            moment_capture_id=_context_str(
+                self.context, "moment_capture_id", "capture_id"
+            ),
+            scene_summary=_scene_summary(self.context),
+            prompt_summary=_context_str(self.context, "prompt_summary"),
+            prompt_hash=_context_str(self.context, "prompt_hash"),
+            feedback_state=_context_str(self.context, "feedback_state") or "pending",
+            review_state=_context_str(self.context, "review_state") or "unreviewed",
+            canon_status=_context_str(self.context, "canon_status") or "not_canon",
         )
 
 
@@ -401,11 +413,19 @@ class ImageGenerationService:
     def get_job(self, job_id: str) -> ImageJobRead:
         return self._require_job(job_id).to_read()
 
-    def list_history(self, conversation_id: str = "default") -> ImageHistoryResponse:
+    def list_history(
+        self,
+        conversation_id: str | None = "default",
+        *,
+        character_id: str | None = None,
+        session_id: str | None = None,
+    ) -> ImageHistoryResponse:
         items = [
             item
             for item in self._history.values()
-            if item.conversation_id == conversation_id
+            if (conversation_id is None or item.conversation_id == conversation_id)
+            and (character_id is None or item.character_id == character_id)
+            and (session_id is None or item.session_id == session_id)
         ]
         items.sort(key=lambda item: item.completed_at, reverse=True)
         return ImageHistoryResponse(items=items)
@@ -501,10 +521,23 @@ class ImageGenerationService:
             ) from exc
         updated = item.model_copy(
             update={
+                "character_id": item.character_id or safe_character_id,
                 "saved_to_assets": True,
                 "asset_manifest_path": str(manifest_path),
+                "canon_status": (
+                    item.canon_status
+                    if item.canon_status != "not_canon"
+                    else "saved_asset"
+                ),
                 "metadata": {
                     **item.metadata,
+                    "character_id": item.character_id or safe_character_id,
+                    "canon_status": (
+                        item.canon_status
+                        if item.canon_status != "not_canon"
+                        else "saved_asset"
+                    ),
+                    "asset_manifest_path": str(manifest_path),
                     "last_saved_asset_path": str(asset_path),
                     "last_saved_asset_id": asset_entry["asset_id"],
                 },
@@ -756,7 +789,8 @@ class ImageGenerationService:
                 phase="low_vram",
                 resource_mode="waiting_for_vram",
                 progress=0.03,
-                message=status.warning or "Waiting for enough free VRAM before starting image generation.",
+                message=status.warning
+                or "Waiting for enough free VRAM before starting image generation.",
             )
             await asyncio.sleep(self._settings.image_generation_resume_poll_seconds)
 
@@ -787,8 +821,13 @@ class ImageGenerationService:
                     message="Image job cancelled.",
                 )
                 return
-            status = self._resource_status(reserved_mb=PRESET_CONFIGS[job.active_preset].min_free_vram_mb)
-            if status.pressure == ResourcePressure.critical and job.active_preset != ImageQualityPreset.preview_8gb:
+            status = self._resource_status(
+                reserved_mb=PRESET_CONFIGS[job.active_preset].min_free_vram_mb
+            )
+            if (
+                status.pressure == ResourcePressure.critical
+                and job.active_preset != ImageQualityPreset.preview_8gb
+            ):
                 job.active_preset = ImageQualityPreset.preview_8gb
                 job.fallback_used = True
                 self._update(
@@ -797,7 +836,8 @@ class ImageGenerationService:
                     phase="critical_vram_downgrade",
                     resource_mode="degraded",
                     progress=0.10,
-                    message=status.warning or "VRAM is tight; downgrading image generation to preview quality.",
+                    message=status.warning
+                    or "VRAM is tight; downgrading image generation to preview quality.",
                 )
             preset = PRESET_CONFIGS[job.active_preset]
             self._update(
@@ -932,7 +972,11 @@ class ImageGenerationService:
         headroom_mb = None
         if snapshot.free_mb is not None:
             headroom_mb = snapshot.free_mb - reserved_mb
-            pressure = ResourcePressure.normal if headroom_mb > 1200 else ResourcePressure.critical
+            pressure = (
+                ResourcePressure.normal
+                if headroom_mb > 1200
+                else ResourcePressure.critical
+            )
             if pressure == ResourcePressure.critical:
                 warning = "GPU memory is critically low; Reverie is waiting before starting image generation."
         return ResourceStatus(
@@ -1013,7 +1057,11 @@ class ImageGenerationService:
         if job.warning and not error:
             logger.info(
                 "Image job running under resource pressure",
-                extra={"job_id": job.job_id, "pressure": job.pressure, "warning": job.warning},
+                extra={
+                    "job_id": job.job_id,
+                    "pressure": job.pressure,
+                    "warning": job.warning,
+                },
             )
         self._emit(job, event=f"job.{job.status.value}", message=job.message)
 
@@ -1083,8 +1131,17 @@ class ImageGenerationService:
             conversation_id=job.conversation_id,
             source=job.source,
             source_message_id=job.source_message_id,
+            character_id=_context_str(job.context, "character_id"),
+            session_id=_context_str(job.context, "session_id"),
+            moment_capture_id=_context_str(
+                job.context, "moment_capture_id", "capture_id"
+            ),
+            scene_summary=_scene_summary(job.context),
             prompt=job.prompt,
-            prompt_summary=self._summarize_prompt(job.prompt),
+            prompt_summary=_context_str(job.context, "prompt_summary")
+            or self._summarize_prompt(job.prompt),
+            prompt_hash=_context_str(job.context, "prompt_hash")
+            or _stable_prompt_hash(job.prompt, job.job_id),
             negative_prompt=job.negative_prompt,
             requested_preset=job.requested_preset,
             active_preset=job.active_preset,
@@ -1094,7 +1151,11 @@ class ImageGenerationService:
             thumbnail_paths=list(job.output_paths[:1]),
             fallback_used=job.fallback_used,
             saved_to_assets=job.saved_to_assets,
+            feedback_state=_context_str(job.context, "feedback_state") or "pending",
+            review_state=_context_str(job.context, "review_state") or "unreviewed",
+            canon_status=_context_str(job.context, "canon_status") or "not_canon",
             metadata={
+                **(job.context or {}),
                 "resource_mode": job.resource_mode,
                 "vram_free_mb": job.vram_free_mb,
                 "vram_required_mb": job.vram_required_mb,
@@ -1239,17 +1300,18 @@ class ImageGenerationService:
             "source_prompt": item.prompt,
             "negative_prompt": item.negative_prompt,
             "prompt_summary": item.prompt_summary,
+            "prompt_hash": item.prompt_hash,
             "requested_preset": item.requested_preset.value,
             "active_preset": item.active_preset.value,
             "fallback_used": item.fallback_used,
+            "feedback_state": item.feedback_state,
+            "review_state": item.review_state,
+            "canon_status": item.canon_status,
             "saved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-
     def _safe_slug(self, value: str) -> str:
-        slug = (
-            re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
-        )
+        slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value.strip()).strip(".-_").lower()
         return slug or "default"
 
     def _summarize_prompt(self, prompt: str) -> str:
@@ -1267,3 +1329,38 @@ def get_image_generation_service(settings: Settings) -> ImageGenerationService:
     if _image_service is None or _image_service._settings is not settings:
         _image_service = ImageGenerationService(settings)
     return _image_service
+
+
+def _context_str(context: dict[str, Any] | None, *keys: str) -> str | None:
+    if not isinstance(context, dict):
+        return None
+    for key in keys:
+        value = context.get(key)
+        if value is None and isinstance(context.get("metadata"), dict):
+            value = context["metadata"].get(key)
+        if value is not None:
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+def _scene_summary(context: dict[str, Any] | None) -> str | None:
+    explicit = _context_str(context, "scene_summary", "scene")
+    if explicit:
+        return explicit[:240]
+    scene_state = context.get("scene_state") if isinstance(context, dict) else None
+    if isinstance(scene_state, dict):
+        parts = [
+            scene_state.get("location"),
+            scene_state.get("time_of_day"),
+            scene_state.get("emotional_tone"),
+            scene_state.get("summary"),
+        ]
+        summary = " · ".join(str(part).strip() for part in parts if part)
+        return summary[:240] or None
+    return None
+
+
+def _stable_prompt_hash(prompt: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}:{prompt}".encode("utf-8")).hexdigest()[:16]

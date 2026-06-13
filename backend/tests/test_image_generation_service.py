@@ -283,7 +283,9 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         adapter = FakeAdapter()
         service = make_service(tmp_path, coordinator, adapter)
 
-        job = await service.submit(ImageGenerateRequest(conversation_id="conv-a", prompt="asset portrait"))
+        job = await service.submit(
+            ImageGenerateRequest(conversation_id="conv-a", prompt="asset portrait")
+        )
         while service.get_job(job.job_id).status not in {
             ImageJobStatus.completed,
             ImageJobStatus.failed,
@@ -293,18 +295,26 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
         output_file = tmp_path / "images" / f"{job.job_id}.png"
         output_file.write_bytes(b"fake png")
 
-        saved = await service.save_to_character_assets(job.job_id, character_id="Mira", asset_label="Portrait")
+        saved = await service.save_to_character_assets(
+            job.job_id, character_id="Mira", asset_label="Portrait"
+        )
         assert saved.item.saved_to_assets is True
         assert "mira" in saved.asset_path
         assert "manifest.json" in saved.manifest_path
-        manifest = json.loads((tmp_path / "characters" / "mira" / "assets" / "manifest.json").read_text())
+        manifest = json.loads(
+            (tmp_path / "characters" / "mira" / "assets" / "manifest.json").read_text()
+        )
         assert manifest["schema_version"] == 2
         assert manifest["character_id"] == "mira"
         assert manifest["images"][0]["asset_id"] == f"image:{job.job_id}:0"
         assert manifest["images"][0]["path"] == f"images/{job.job_id}_0.png"
 
-        saved_again = await service.save_to_character_assets(job.job_id, character_id="Mira", asset_label="Portrait")
-        manifest = json.loads((tmp_path / "characters" / "mira" / "assets" / "manifest.json").read_text())
+        saved_again = await service.save_to_character_assets(
+            job.job_id, character_id="Mira", asset_label="Portrait"
+        )
+        manifest = json.loads(
+            (tmp_path / "characters" / "mira" / "assets" / "manifest.json").read_text()
+        )
         assert saved_again.item.saved_to_assets is True
         assert len(manifest["images"]) == 1
 
@@ -314,7 +324,6 @@ def test_image_history_delete_and_save_asset_manifest(tmp_path) -> None:
     asyncio.run(run_test())
 
 
-
 def test_image_history_reloads_legacy_flat_items(tmp_path) -> None:
     async def run_test() -> None:
         coordinator = FakeCoordinator(free_vram_mb=7000)
@@ -322,7 +331,9 @@ def test_image_history_reloads_legacy_flat_items(tmp_path) -> None:
         service = make_service(tmp_path, coordinator, adapter)
 
         job = await service.submit(
-            ImageGenerateRequest(conversation_id="legacy-conv", prompt="legacy portrait")
+            ImageGenerateRequest(
+                conversation_id="legacy-conv", prompt="legacy portrait"
+            )
         )
         while service.get_job(job.job_id).status not in {
             ImageJobStatus.completed,
@@ -377,5 +388,71 @@ def test_image_job_exposes_resource_pressure_warning(tmp_path) -> None:
         assert waiting.vram_free_mb == 1100
 
         await service.cancel(job.job_id)
+
+    asyncio.run(run_test())
+
+
+def test_history_records_capture_gallery_metadata_and_filters(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        service = make_service(tmp_path, coordinator, adapter)
+
+        job = await service.submit(
+            ImageGenerateRequest(
+                conversation_id="conv-a",
+                source="moment_capture",
+                source_message_id="msg-a",
+                prompt="aria at sunrise",
+                context={
+                    "character_id": "aria",
+                    "session_id": "session-a",
+                    "moment_capture_id": "mc-a",
+                    "scene_summary": "Sunrise garden confession",
+                    "prompt_hash": "abc12345",
+                    "feedback_state": "pending",
+                    "review_state": "unreviewed",
+                    "canon_status": "not_canon",
+                },
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        [item] = service.list_history("conv-a", character_id="aria").items
+        assert item.character_id == "aria"
+        assert item.session_id == "session-a"
+        assert item.moment_capture_id == "mc-a"
+        assert item.scene_summary == "Sunrise garden confession"
+        assert item.prompt_hash == "abc12345"
+        assert service.list_history("conv-a", character_id="other").items == []
+
+    asyncio.run(run_test())
+
+
+def test_delete_keeps_normalized_history_consistent(tmp_path) -> None:
+    async def run_test() -> None:
+        service = make_service(
+            tmp_path, FakeCoordinator(free_vram_mb=7000), FakeAdapter()
+        )
+        job = await service.submit(
+            ImageGenerateRequest(
+                conversation_id="conv-del",
+                prompt="delete me",
+                context={"character_id": "aria"},
+            )
+        )
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+        response = await service.delete_history_item(job.job_id)
+        assert response.items == []
+        assert service.get_job(job.job_id).output_paths == []
+        assert service.list_history("conv-del", character_id="aria").items == []
 
     asyncio.run(run_test())

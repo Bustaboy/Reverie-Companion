@@ -45,6 +45,14 @@ export interface ImageJobRead {
   source?: string | null;
   source_message_id?: string | null;
   saved_to_assets?: boolean;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_state?: string;
+  review_state?: string;
+  canon_status?: string;
 }
 
 export interface ImageGenerateResponse {
@@ -69,6 +77,14 @@ export interface ImageHistoryItem {
   fallback_used?: boolean;
   saved_to_assets?: boolean;
   asset_manifest_path?: string | null;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_state?: string;
+  review_state?: string;
+  canon_status?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -103,6 +119,14 @@ export interface ImageJobEvent {
   source?: string | null;
   source_message_id?: string | null;
   saved_to_assets?: boolean;
+  character_id?: string | null;
+  session_id?: string | null;
+  moment_capture_id?: string | null;
+  scene_summary?: string | null;
+  prompt_hash?: string | null;
+  feedback_state?: string;
+  review_state?: string;
+  canon_status?: string;
 }
 
 export interface ImageEventCallbacks {
@@ -224,8 +248,11 @@ export class ImageService {
     }
   }
 
-  async listHistory(conversationId = 'default'): Promise<ImageHistoryResponse> {
-    const response = await this.fetcher(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}`, {
+  async listHistory(conversationId = 'default', filters: { characterId?: string; sessionId?: string } = {}): Promise<ImageHistoryResponse> {
+    const url = new URL(`${this.baseUrl}/api/images/history/${encodeURIComponent(conversationId)}`);
+    if (filters.characterId) url.searchParams.set('character_id', filters.characterId);
+    if (filters.sessionId) url.searchParams.set('session_id', filters.sessionId);
+    const response = await this.fetcher(url.toString(), {
       headers: { Accept: 'application/json' }
     });
     const body = await this.parseJsonResponse<ImageHistoryResponse | BackendErrorBody>(response);

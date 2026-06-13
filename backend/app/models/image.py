@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from enum import StrEnum
 from typing import Any
 
@@ -83,6 +84,16 @@ class ImageJobRead(BaseModel):
     source: str | None = None
     source_message_id: str | None = None
     saved_to_assets: bool = False
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
+    prompt_summary: str | None = None
+    prompt_hash: str | None = None
+    feedback_state: str = "pending"
+    review_state: str = "unreviewed"
+    canon_status: str = "not_canon"
+    asset_manifest_path: str | None = None
 
 
 class ImageGenerateResponse(BaseModel):
@@ -111,17 +122,38 @@ class ImageJobEvent(BaseModel):
     source: str | None = None
     source_message_id: str | None = None
     saved_to_assets: bool = False
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
+    prompt_summary: str | None = None
+    prompt_hash: str | None = None
+    feedback_state: str = "pending"
+    review_state: str = "unreviewed"
+    canon_status: str = "not_canon"
+    asset_manifest_path: str | None = None
 
 
 class ImageHistoryItem(BaseModel):
-    """Persistent image result shown in the per-conversation gallery."""
+    """Persistent image result shown in the per-conversation gallery.
+
+    Version-2 records lift memory/capture provenance to first-class fields while
+    keeping legacy metadata intact. Deleting a history item removes the gallery
+    pointer and clears any in-memory job outputs, but does not delete linked
+    MomentCaptureRecord or character asset manifests.
+    """
 
     job_id: str
     conversation_id: str = "default"
     source: str | None = None
     source_message_id: str | None = None
+    character_id: str | None = None
+    session_id: str | None = None
+    moment_capture_id: str | None = None
+    scene_summary: str | None = None
     prompt: str
     prompt_summary: str
+    prompt_hash: str | None = None
     negative_prompt: str
     requested_preset: ImageQualityPreset
     active_preset: ImageQualityPreset
@@ -132,7 +164,52 @@ class ImageHistoryItem(BaseModel):
     fallback_used: bool = False
     saved_to_assets: bool = False
     asset_manifest_path: str | None = None
+    feedback_state: str = "pending"
+    review_state: str = "unreviewed"
+    canon_status: str = "not_canon"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("prompt_hash")
+    @classmethod
+    def prompt_hash_not_blank(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+    def model_post_init(self, __context: Any) -> None:
+        metadata = dict(self.metadata or {})
+        if self.character_id is None:
+            self.character_id = _optional_str(metadata.get("character_id"))
+        if self.session_id is None:
+            self.session_id = _optional_str(metadata.get("session_id"))
+        if self.moment_capture_id is None:
+            self.moment_capture_id = _optional_str(
+                metadata.get("moment_capture_id") or metadata.get("capture_id")
+            )
+        if self.scene_summary is None:
+            self.scene_summary = _optional_str(metadata.get("scene_summary"))
+        if self.prompt_hash is None:
+            self.prompt_hash = _optional_str(
+                metadata.get("prompt_hash")
+            ) or _hash_prompt(self.prompt_summary or self.prompt)
+        self.feedback_state = str(
+            metadata.get("feedback_state") or self.feedback_state or "pending"
+        )
+        self.review_state = str(
+            metadata.get("review_state") or self.review_state or "unreviewed"
+        )
+        self.canon_status = str(
+            metadata.get("canon_status") or self.canon_status or "not_canon"
+        )
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _hash_prompt(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
 class ImageHistoryResponse(BaseModel):
