@@ -22,6 +22,10 @@
     chatStore.clearError();
   };
 
+  const captureLatest = () => {
+    imageGenerationStore.captureLatestMessage($chatStore.messages);
+  };
+
   const visualizeLatest = () => {
     imageGenerationStore.generateFromLatestMessage($chatStore.messages);
   };
@@ -52,9 +56,17 @@
         type="button"
         class="ghost-button image-header-button"
         disabled={imageGenerationStore.isBusy || !$chatStore.messages.some((message) => message.content.trim() && message.status !== 'streaming')}
+        onclick={captureLatest}
+      >
+        Capture this moment
+      </button>
+      <button
+        type="button"
+        class="ghost-button image-header-button legacy"
+        disabled={imageGenerationStore.isBusy || !$chatStore.messages.some((message) => message.content.trim() && message.status !== 'streaming')}
         onclick={visualizeLatest}
       >
-        Generate image
+        Legacy image
       </button>
       <div
         class:streaming={$chatStore.generationState !== 'idle' || imageGenerationStore.isBusy}
