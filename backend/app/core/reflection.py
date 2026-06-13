@@ -542,7 +542,11 @@ class ReflectionManager:
                 "source": "ReflectionManager",
                 "local_first": True,
                 "lora_ready": True,
-                **({"character_id": character_id} if character_id else {}),
+                **(
+                    {"character_id": character_id, "memory_scope": "character_private"}
+                    if character_id
+                    else {"memory_scope": "global"}
+                ),
             },
         )
 
@@ -1063,9 +1067,18 @@ class ReflectionManager:
                     "source": "reflection_journal",
                     "journal_entry_id": entry.get("entry_id"),
                     **(
-                        {"character_id": entry.get("metadata", {}).get("character_id")}
+                        {
+                            "character_id": entry.get("metadata", {}).get(
+                                "character_id"
+                            ),
+                            "memory_scope": "character_private",
+                        }
                         if entry.get("metadata", {}).get("character_id")
-                        else {}
+                        else {
+                            "memory_scope": entry.get("metadata", {}).get(
+                                "memory_scope", "global"
+                            )
+                        }
                     ),
                     "source_journal_ids": [entry.get("entry_id")],
                     "source_turn_indices": decision.get("source_turn_indices", []),
@@ -1144,8 +1157,18 @@ class ReflectionManager:
                 "session_id": self._config.session_id,
                 "source": "ReflectionManager",
                 "local_first": True,
+                "memory_scope": "global",
             },
         )
+        metadata = normalized.get("metadata", {}) or {}
+        if metadata.get("character_id"):
+            metadata.setdefault("memory_scope", "character_private")
+        elif metadata.get("memory_scope") not in {"shared", "global"}:
+            raise ValueError(
+                "Journal writes require character_id for character-private scope, "
+                "or explicit memory_scope shared/global."
+            )
+        normalized["metadata"] = metadata
         normalized["character_summary"] = self._normalize_text(
             str(normalized.get("character_summary") or "journal entry"),
             field_name="character_summary",

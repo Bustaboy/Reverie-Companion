@@ -704,6 +704,19 @@ class CharacterScopedMemoryFilterTests(unittest.TestCase):
         self.assertFalse(manager._memory_matches_character_scope(other, "aria"))  # type: ignore[attr-defined]
         self.assertTrue(manager._memory_matches_character_scope(shared, "aria"))  # type: ignore[attr-defined]
 
+    def test_memory_write_scope_refuses_ambiguous_private_write(self) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        with self.assertRaises(ValueError):
+            manager._validate_write_scope({"source": "moment_capture_visual_feedback"})  # type: ignore[attr-defined]
+
+    def test_memory_write_scope_allows_explicit_shared_and_stamps_private(self) -> None:
+        manager = MemoryManager.__new__(MemoryManager)
+        shared = {"memory_scope": "shared"}
+        manager._validate_write_scope(shared)  # type: ignore[attr-defined]
+        private = {"character_id": "aria"}
+        manager._validate_write_scope(private)  # type: ignore[attr-defined]
+        self.assertEqual(private["memory_scope"], "character_private")
+
 
 if __name__ == "__main__":
     unittest.main()

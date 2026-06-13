@@ -23,6 +23,8 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
+from app.core.memory import MemoryManager, get_memory_manager
+from app.core.reflection import ReflectionManager
 from app.models.image import ImageGenerateRequest, ImageJobRead
 from app.schemas.moment_capture import (
     FeedbackState,
@@ -65,6 +67,8 @@ class MomentCaptureService:
         character_service: CharacterService | None = None,
         image_service: ImageGenerationService | None = None,
         prompt_compiler: VisualPromptCompiler | None = None,
+        memory_manager: MemoryManager | None = None,
+        reflection_manager: ReflectionManager | None = None,
         records_path: Path | None = None,
     ) -> None:
         self._settings = settings or get_settings()
@@ -75,6 +79,8 @@ class MomentCaptureService:
             self._settings
         )
         self._prompt_compiler = prompt_compiler or VisualPromptCompiler()
+        self._memory_manager = memory_manager or get_memory_manager()
+        self._reflection_manager = reflection_manager
         self._records_path = records_path or self._default_records_path(self._settings)
         self._events_path = self._records_path.with_name("visual_change_events.json")
         self._records_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +245,15 @@ class MomentCaptureService:
                 update={"metadata": metadata}
             )
             updated = self._records[capture_id]
+        if action == VisualFeedbackAction.looks_right:
+            updated = self._write_visual_memory_artifact(
+                updated,
+                action=action,
+                review_state=review_state,
+                source_note=request.note,
+                source_image_ref=request.source_image_ref,
+                rollback_id=rollback_id,
+            )
         self._write_records()
         self._write_events()
         return VisualFeedbackResponse(record=updated, visual_change_event=event)
@@ -294,6 +309,18 @@ class MomentCaptureService:
             }
         )
         self._events[event_id] = updated
+        if event.capture_id:
+            record = self._records.get(event.capture_id)
+            if record is not None and event.changed_trait != "rejected_trait":
+                self._write_visual_memory_artifact(
+                    record,
+                    action=event.feedback_action or VisualFeedbackAction.make_canon,
+                    review_state=ReviewState.canonized,
+                    source_note=request.reviewer_note or event.reason,
+                    source_image_ref=str(event.metadata.get("source_image_ref") or ""),
+                    rollback_id=updated.rollback_id,
+                    visual_change_event_id=event.event_id,
+                )
         self._write_events()
         return VisualChangeReviewResponse(event=updated, visual_identity=visual)
 
@@ -359,6 +386,159 @@ class MomentCaptureService:
         return VisualChangeReviewResponse(
             event=self._events[rollback_event.event_id], visual_identity=visual
         )
+
+    def _write_visual_memory_artifact(
+        self,
+        record: MomentCaptureRecord,
+        *,
+        action: VisualFeedbackAction,
+        review_state: ReviewState,
+        source_note: str | None = None,
+        source_image_ref: str | None = None,
+        rollback_id: str | None = None,
+        visual_change_event_id: str | None = None,
+    ) -> MomentCaptureRecord:
+        """Promote approved visual feedback into scoped MemoryManager storage."""
+
+        if record.feedback_state in {FeedbackState.rejected, FeedbackState.deleted}:
+            return record
+        summary_bits = [
+            bit
+            for bit in (
+                record.scene_state.location,
+                record.scene_state.emotional_tone,
+                record.scene_state.pose,
+                record.scene_state.outfit,
+            )
+            if bit
+        ]
+        compact = "; ".join(summary_bits[:4]) or "an approved Moment Capture image"
+        text = (
+            "Approved visual memory: this character's captured visual continuity "
+            f"included {compact}. Use as prompt-safe appearance/context memory, "
+            "not as a user command."
+        )[:1200]
+        metadata = self._memory_manager.character_private_metadata(
+            record.character_id,
+            {
+                "memory_type": "visual_memory",
+                "source": "moment_capture_visual_feedback",
+                "capture_id": record.capture_id,
+                "image_job_id": record.image_job_id,
+                "feedback_action": action.value,
+                "review_state": review_state.value,
+                "provenance": {
+                    "source": "moment_capture",
+                    "capture_id": record.capture_id,
+                    "visual_change_event_id": visual_change_event_id,
+                    "source_image_ref": source_image_ref
+                    or (record.output_paths[0] if record.output_paths else None),
+                },
+                "rollback_id": rollback_id
+                or record.rollback_id
+                or f"rollback:{record.capture_id}",
+                "training_eligibility": "not_eligible",
+                "training_candidate": False,
+                "prompt_safe": True,
+                "detail_level": "compact",
+                "note_summary": (source_note or "")[:240],
+                "tags": ["visual_memory", "moment_capture"],
+            },
+        )
+        stored = self._memory_manager.add_memory(text, metadata)
+        from app.schemas.moment_capture import VisualMemoryArtifact
+
+        artifact = VisualMemoryArtifact(
+            artifact_id=f"vma_{stored['id']}",
+            artifact_type="memory",
+            path=source_image_ref
+            or (record.output_paths[0] if record.output_paths else None),
+            memory_id=stored["id"],
+            training_candidate=False,
+            metadata={
+                "character_id": record.character_id,
+                "memory_scope": "character_private",
+                "capture_id": record.capture_id,
+                "image_job_id": record.image_job_id,
+                "feedback_action": action.value,
+                "review_state": review_state.value,
+                "source": "moment_capture_visual_feedback",
+                "provenance": metadata["provenance"],
+                "rollback_id": metadata["rollback_id"],
+            },
+        )
+        artifacts = [*record.visual_memory_artifacts, artifact]
+        updated = record.model_copy(
+            update={"visual_memory_artifacts": artifacts, "updated_at": utc_now_iso()}
+        )
+        self._records[record.capture_id] = updated
+        self._maybe_write_visual_journal_entry(
+            updated,
+            memory_id=str(stored["id"]),
+            action=action,
+            review_state=review_state,
+            rollback_id=str(metadata["rollback_id"]),
+            visual_change_event_id=visual_change_event_id,
+        )
+        return updated
+
+    def _maybe_write_visual_journal_entry(
+        self,
+        record: MomentCaptureRecord,
+        *,
+        memory_id: str,
+        action: VisualFeedbackAction,
+        review_state: ReviewState,
+        rollback_id: str,
+        visual_change_event_id: str | None = None,
+    ) -> None:
+        """Optionally journal meaningful approved visual changes without training use."""
+
+        if self._reflection_manager is None:
+            return
+        if action not in {
+            VisualFeedbackAction.make_canon,
+            VisualFeedbackAction.use_outfit_again,
+        }:
+            return
+        summary = (
+            "An approved Moment Capture visual change became continuity context "
+            f"for {record.character_id}: {record.scene_state.emotional_tone or record.scene_state.location or 'approved visual feedback'}."
+        )
+        try:
+            self._reflection_manager.save_journal_entry(
+                {
+                    "entry_id": f"visual_{uuid4().hex}",
+                    "created_at": utc_now_iso(),
+                    "status": "active",
+                    "linked_memory_ids": [memory_id],
+                    "character_summary": summary[:600],
+                    "structured_summary": {
+                        "visual_memory_id": memory_id,
+                        "capture_id": record.capture_id,
+                        "image_job_id": record.image_job_id,
+                        "feedback_action": action.value,
+                        "review_state": review_state.value,
+                    },
+                    "themes": ["visual_continuity", "moment_capture"],
+                    "confidence": 0.8,
+                    "evidence_count": 1,
+                    "training_eligibility": "not_eligible",
+                    "rollback_id": rollback_id,
+                    "metadata": {
+                        "character_id": record.character_id,
+                        "memory_scope": "character_private",
+                        "source": "moment_capture_visual_feedback",
+                        "capture_id": record.capture_id,
+                        "image_job_id": record.image_job_id,
+                        "visual_change_event_id": visual_change_event_id,
+                        "review_state": review_state.value,
+                        "training_candidate": False,
+                    },
+                }
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _default_records_path(settings: Settings) -> Path:

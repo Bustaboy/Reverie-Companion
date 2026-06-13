@@ -56,6 +56,50 @@ class FakeCharacterService:
         return visual
 
 
+class FakeMemoryManager:
+    def __init__(self) -> None:
+        self.memories = []
+        self.deleted = set()
+
+    def character_private_metadata(self, character_id: str, metadata=None):
+        if not character_id:
+            raise ValueError("character_id is required")
+        return {
+            **(metadata or {}),
+            "character_id": character_id,
+            "memory_scope": "character_private",
+        }
+
+    def add_memory(self, text, metadata):
+        if metadata.get("memory_scope") not in {
+            "shared",
+            "global",
+        } and not metadata.get("character_id"):
+            raise ValueError("missing character_id")
+        item = {
+            "id": f"mem-{len(self.memories)+1}",
+            "text": text,
+            "metadata": dict(metadata),
+        }
+        self.memories.append(item)
+        return item
+
+    def search_memories(self, query, limit=10, *, character_id=None):
+        rows = [m for m in self.memories if m["id"] not in self.deleted]
+        if character_id:
+            rows = [
+                m
+                for m in rows
+                if m["metadata"].get("character_id") == character_id
+                or m["metadata"].get("memory_scope") in {"shared", "global"}
+            ]
+        return rows[:limit]
+
+    def delete_memory(self, memory_id):
+        self.deleted.add(memory_id)
+        return True
+
+
 def _character() -> CharacterBlueprint:
     return CharacterBlueprint(
         character_id="aria",
@@ -100,6 +144,7 @@ def test_capture_queues_image_job_and_persists_record_with_metadata(tmp_path) ->
             character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
             image_service=image_service,
             records_path=tmp_path / "moment_captures.json",
+            memory_manager=FakeMemoryManager(),
         )
 
         response = await service.capture(_request())
@@ -136,6 +181,7 @@ def test_missing_specific_character_returns_structured_error_boundary(tmp_path) 
             character_service=FakeCharacterService(None),  # type: ignore[arg-type]
             image_service=image_service,
             records_path=tmp_path / "moment_captures.json",
+            memory_manager=FakeMemoryManager(),
         )
 
         with pytest.raises(CharacterNotFoundError) as exc:
@@ -156,6 +202,7 @@ def test_capture_submit_does_not_wait_for_tts_idle(tmp_path) -> None:
             character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
             image_service=image_service,
             records_path=tmp_path / "moment_captures.json",
+            memory_manager=FakeMemoryManager(),
         )
 
         response = await service.capture(_request())
@@ -198,6 +245,7 @@ def test_feedback_actions_validate_and_persist_summary(tmp_path) -> None:
         character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
         image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
         records_path=tmp_path / "moment_captures.json",
+        memory_manager=FakeMemoryManager(),
     )
     record = MomentCaptureRecordForTest(_request(), "job-feedback")
     service._records[record.capture_id] = record
@@ -243,6 +291,7 @@ def test_make_canon_is_pending_until_approved_then_rolls_back(tmp_path) -> None:
         character_service=character_service,  # type: ignore[arg-type]
         image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
         records_path=tmp_path / "moment_captures.json",
+        memory_manager=FakeMemoryManager(),
     )
     record = MomentCaptureRecordForTest(_request(), "job-canon")
     service._records[record.capture_id] = record
@@ -306,6 +355,7 @@ def test_rejected_and_scene_only_feedback_do_not_update_positive_identity(
         character_service=character_service,  # type: ignore[arg-type]
         image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
         records_path=tmp_path / "moment_captures.json",
+        memory_manager=FakeMemoryManager(),
     )
     record = MomentCaptureRecordForTest(_request(), "job-reject")
     service._records[record.capture_id] = record
@@ -351,6 +401,76 @@ def test_rejected_and_scene_only_feedback_do_not_update_positive_identity(
     )
     assert "blue eyes" not in prompt.positive_prompt
     assert "blue eyes" in prompt.negative_prompt
+
+
+def test_approved_visual_feedback_creates_character_scoped_memory(tmp_path) -> None:
+    memory = FakeMemoryManager()
+    service = MomentCaptureService(
+        character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+        memory_manager=memory,  # type: ignore[arg-type]
+    )
+    record = MomentCaptureRecordForTest(_request(), "job-memory")
+    service._records[record.capture_id] = record
+
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    response = service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria", action=VisualFeedbackAction.looks_right
+        ),
+    )
+
+    assert len(memory.memories) == 1
+    metadata = memory.memories[0]["metadata"]
+    assert metadata["character_id"] == "aria"
+    assert metadata["memory_scope"] == "character_private"
+    assert metadata["capture_id"] == record.capture_id
+    assert metadata["image_job_id"] == "job-memory"
+    assert metadata["feedback_action"] == "looks_right"
+    assert metadata["review_state"] == "accepted"
+    assert metadata["training_candidate"] is False
+    assert response.record.visual_memory_artifacts[0].memory_id == "mem-1"
+    assert memory.search_memories("visual", character_id="aria")
+    assert not memory.search_memories("visual", character_id="lyra")
+
+
+def test_rejected_feedback_does_not_create_visual_memory(tmp_path) -> None:
+    memory = FakeMemoryManager()
+    service = MomentCaptureService(
+        character_service=FakeCharacterService(_character()),  # type: ignore[arg-type]
+        image_service=make_service(tmp_path, FakeCoordinator(), FakeAdapter()),
+        records_path=tmp_path / "moment_captures.json",
+        memory_manager=memory,  # type: ignore[arg-type]
+    )
+    record = MomentCaptureRecordForTest(_request(), "job-no-memory")
+    service._records[record.capture_id] = record
+
+    from app.services.moment_capture_service import VisualFeedbackRequest
+
+    service.submit_feedback(
+        record.capture_id,
+        VisualFeedbackRequest(
+            character_id="aria",
+            action=VisualFeedbackAction.reject_style_trait,
+            trait_value="blue eyes",
+        ),
+    )
+
+    assert memory.memories == []
+
+
+def test_deleted_visual_memory_no_longer_retrieves(tmp_path) -> None:
+    memory = FakeMemoryManager()
+    stored = memory.add_memory(
+        "shared visual note",
+        {"memory_scope": "shared", "source": "moment_capture_visual_feedback"},
+    )
+    assert memory.search_memories("visual", character_id="aria")
+    memory.delete_memory(stored["id"])
+    assert not memory.search_memories("visual", character_id="aria")
 
 
 def MomentCaptureRecordForTest(request: MomentCaptureRequest, image_job_id: str):

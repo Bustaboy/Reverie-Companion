@@ -428,6 +428,7 @@ class MemoryManager:
 
         normalized_text = self._normalize_text(text)
         normalized_metadata = self._normalize_metadata(metadata)
+        self._validate_write_scope(normalized_metadata)
         user_id = str(normalized_metadata.get("user_id") or self._config.user_id)
         session_id = normalized_metadata.get("session_id") or self._config.session_id
         memory_type = str(normalized_metadata.get("memory_type") or "long_term")
@@ -625,9 +626,7 @@ class MemoryManager:
             session_id=merged_metadata.get("session_id") or self._config.session_id,
             memory_type=str(merged_metadata.get("memory_type") or "long_term"),
             source=str(
-                merged_metadata.get("source")
-                or existing.get("source")
-                or "reverie"
+                merged_metadata.get("source") or existing.get("source") or "reverie"
             ),
         )
         self._delete_from_lancedb(memory_id)
@@ -677,7 +676,9 @@ class MemoryManager:
 
         try:
             memories = self.search_memories(
-                query, limit=self._config.max_context_memories, character_id=character_id
+                query,
+                limit=self._config.max_context_memories,
+                character_id=character_id,
             )
         except MemoryError as exc:
             logger.warning(
@@ -729,7 +730,6 @@ class MemoryManager:
             lines.append(line)
             used_chars = projected_chars
         return "\n".join(lines) if len(lines) > 1 else ""
-
 
     def _memory_matches_character_scope(
         self, memory: MemorySearchResult, character_id: str
@@ -1033,6 +1033,35 @@ class MemoryManager:
         if self._config.session_id and not sanitized.get("session_id"):
             sanitized["session_id"] = self._config.session_id
         return sanitized
+
+    def _validate_write_scope(self, metadata: dict[str, Any]) -> None:
+        """Refuse ambiguous memory writes before they can cross character boundaries."""
+
+        scope = metadata.get("memory_scope")
+        character_id = metadata.get("character_id")
+        if scope in {"shared", "global"}:
+            return
+        if character_id:
+            metadata["memory_scope"] = scope or "character_private"
+            return
+        metadata["quarantine_reason"] = "missing_character_id_or_explicit_scope"
+        raise ValueError(
+            "Character-private memory writes require character_id; non-private "
+            "writes must explicitly set memory_scope to 'shared' or 'global'."
+        )
+
+    def character_private_metadata(
+        self, character_id: str, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Stamp metadata for a character-private write through MemoryManager."""
+
+        if not character_id:
+            raise ValueError("character_id is required for character-private memory.")
+        return {
+            **(metadata or {}),
+            "character_id": character_id,
+            "memory_scope": "character_private",
+        }
 
     def _normalize_text(self, text: str, *, field_name: str = "text") -> str:
         if not isinstance(text, str):
