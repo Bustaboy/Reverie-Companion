@@ -182,7 +182,13 @@ class VisualMemoryArtifact(BaseModel):
         description="Marks whether this artifact may be offered to later opt-in training review.",
     )
     created_at: str = Field(default_factory=utc_now_iso)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Optional implementation-specific notes for this artifact link; "
+            "not a replacement for structured artifact fields."
+        ),
+    )
 
 
 class MomentCaptureRequest(BaseModel):
@@ -273,12 +279,16 @@ class MomentCaptureRecord(BaseModel):
     ``review_state``/``feedback_state`` to ``deleted`` so gallery, memory, and
     training queues stop treating the record as active; only then may a storage
     service decide whether local files in ``output_paths`` are safe to remove.
+    Linked ``visual_memory_artifacts`` must be inspected separately; deleting a
+    record must not automatically delete, detach, or tombstone those artifacts.
 
     ``rollback_id`` is a pointer to a reversible visual change, usually a
     ``VisualChangeEvent.event_id`` or application-defined rollback receipt. It
     is not a delete marker and should never silently mutate
     ``VisualIdentityProfile``. Rollback services should use it to locate the
-    prior canon value and create an explicit rolled-back change event.
+    prior canon value and create an explicit rolled-back change event. Linked
+    ``visual_memory_artifacts`` generally remain attached during rollback unless
+    a caller explicitly cleans them up.
     """
 
     schema_version: Literal["moment_capture.v1"] = MOMENT_CAPTURE_SCHEMA_VERSION
@@ -323,7 +333,14 @@ class MomentCaptureRecord(BaseModel):
         description="Previous review state used to validate a proposed transition on model construction.",
     )
     feedback_actions: list[VisualFeedbackAction] = Field(default_factory=list)
-    visual_memory_artifacts: list[VisualMemoryArtifact] = Field(default_factory=list)
+    visual_memory_artifacts: list[VisualMemoryArtifact] = Field(
+        default_factory=list,
+        description=(
+            "Optional linked visual memory/training artifacts; deletion and rollback "
+            "callers must inspect these references and decide whether to tombstone, "
+            "detach, keep, or explicitly remove them."
+        ),
+    )
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
     rollback_id: str | None = Field(
