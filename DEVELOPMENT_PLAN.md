@@ -1119,8 +1119,24 @@ Definition of Done:
 ---
 
 #### M5-P05 — Visual feedback actions and VisualChangeEvent review flow
+**Status:** ✅ Completed (PR #149 merged)
 
-**Goal**: Let user feedback become reviewable visual continuity data without silently rewriting canon.
+**Delivered:**
+- Structured feedback actions: `looks_right`, `wrong_appearance`, `make_canon`, `use_outfit_again`, `just_this_scene`, `reject_style_trait`
+- API endpoint(s) for submitting feedback on Moment Captures
+- `VisualChangeEvent` creation and management for canon-affecting feedback
+- Minimal review flow: list pending changes, approve, reject, and rollback
+- Strict rules enforced:
+  - Only approved changes update `VisualIdentityProfile`
+  - Pending/rejected/scene-only changes do **not** affect future prompts
+  - Rejected traits feed negative prompt guidance
+- Structured Pydantic models for feedback requests/responses and review actions
+- Provenance, rollback_id, and audit metadata on events
+- Comprehensive tests covering feedback actions, state transitions, and safety rules
+
+**Next dependent tasks:** M5-P06, M5-P07, M5-P08
+
+**Goal**: Turn user feedback on images into structured, reviewable visual continuity data without silent canon changes.
 
 Context files to read:
 
