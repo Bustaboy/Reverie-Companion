@@ -22,6 +22,8 @@ from app.models.chat import (
     GrowthNotification,
 )
 from app.models.tts import TTSEmotionMetadata, TTSContext
+from app.repositories.character_repo import CharacterNotFoundError
+from app.services.character_service import CharacterPromptCompiler, CharacterService
 from app.services.emotion_engine import emotion_engine
 from app.services.tts_context_router import TTSContextRouter
 from app.services.voice_manager import VoiceManager, VoiceManagerError
@@ -60,11 +62,17 @@ class ChatService:
         memory_manager: MemoryManager | None = None,
         reflection_manager: ReflectionManager | None = None,
         growth_orchestrator: GrowthOrchestrator | None = None,
+        character_service: CharacterService | None = None,
+        character_prompt_compiler: CharacterPromptCompiler | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
         self._memory_manager = memory_manager
         self._reflection_manager = reflection_manager
+        self._character_service = character_service
+        self._character_prompt_compiler = (
+            character_prompt_compiler or CharacterPromptCompiler()
+        )
         self._reflection_scheduler = ReflectionScheduler.from_settings(settings)
         # Preserve historical test/reset hooks while delegating new growth-loop
         # coordination to GrowthOrchestrator. FastAPI creates services per request,
@@ -217,10 +225,17 @@ class ChatService:
         )
         self._sync_growth_state()
 
-        # Keep retrieved continuity context below caller/system instructions and
-        # above dialogue. Memory is inserted before reflection so durable facts
-        # remain clearer than tentative character-growth hypotheses.
+        # Keep selected character and retrieved continuity context below caller/system
+        # instructions and above dialogue. Character identity comes first so memory
+        # and growth remain scoped to the same companion.
         context_messages: list[ChatMessage] = []
+        character_context = self._compile_character_context(
+            request, request_id=request_id
+        )
+        if character_context:
+            context_messages.append(
+                ChatMessage(role="system", content=character_context)
+            )
         if memory_context:
             context_messages.append(
                 ChatMessage(
@@ -248,6 +263,7 @@ class ChatService:
                 "request_id": request_id,
                 "memory_context_chars": len(memory_context),
                 "reflection_context_chars": len(reflection_context),
+                "character_context_chars": len(character_context),
                 "message_count": len(enriched_messages),
             },
         )
@@ -255,6 +271,23 @@ class ChatService:
             request.model_copy(update={"messages": enriched_messages}),
             growth_context,
         )
+
+    def _compile_character_context(
+        self, request: ChatRequest, *, request_id: str | None
+    ) -> str:
+        """Load the selected character and compile a compact runtime block."""
+
+        if not request.character_id or self._character_service is None:
+            return ""
+        try:
+            character = self._character_service.load_by_id(request.character_id)
+        except CharacterNotFoundError:
+            logger.warning(
+                "Selected character was not found; continuing without character context",
+                extra={"request_id": request_id, "character_id": request.character_id},
+            )
+            return ""
+        return self._character_prompt_compiler.compile(character)
 
     async def _retrieve_memory_context(
         self,
@@ -287,9 +320,16 @@ class ChatService:
             return ""
 
         try:
-            context = await asyncio.to_thread(
-                self._memory_manager.get_relevant_context, query
-            )
+            try:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context,
+                    query,
+                    character_id=request.character_id,
+                )
+            except TypeError:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context, query
+                )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
                 "Memory retrieval failed; continuing chat without memory context",

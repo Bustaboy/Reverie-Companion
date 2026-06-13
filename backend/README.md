@@ -164,3 +164,24 @@ backend/
 ├── requirements.txt
 └── README.md
 ```
+
+
+## Character Runtime Foundation (M4-01)
+
+Reverie now stores companions as durable, versioned `CharacterBlueprint` records in a small SQLite database configured by `REVERIE_CHARACTER_DB_PATH` (default: `./data/characters/characters.sqlite3`). The schema intentionally covers runtime-consumed identity, relationship, personality, memory, growth, and roleplay policy fields before any full creator wizard is exposed.
+
+Key runtime pieces:
+
+- `app.schemas.character_blueprint.CharacterBlueprint` is the v1 durable schema with adult identity basics, pronouns, species/type, core traits, relationship dynamic/phase, memory policy, growth policy, and roleplay policy.
+- `app.repositories.character_repo.CharacterRepository` owns SQLite persistence and records the `20260613_0001_character_blueprints` migration seam.
+- `app.services.character_service.CharacterService` provides CRUD plus character-scoped memory metadata/filter hooks.
+- `app.services.character_service.CharacterPromptCompiler` compiles compact prompt context from a blueprint instead of dumping raw JSON.
+- Chat accepts `character_id`; when supplied, the selected blueprint is inserted into prompt assembly and memory retrieval is scoped to that character.
+
+Manual validation example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/characters   -H 'Content-Type: application/json'   -d '{"character_id":"mira-vale","blueprint":{"identity":{"display_name":"Mira Vale","pronouns":"she/her","adult_age_range":"late_20s","species_or_type":"kitsune-inspired adult"},"personality":{"core_traits":["playful","devoted","observant"]},"relationship":{"dynamic":"romantic_partner","phase":"getting_close","trust_level":0.35,"intimacy_level":0.2}}}'
+
+curl -X POST http://127.0.0.1:8000/chat   -H 'Content-Type: application/json'   -d '{"stream":false,"character_id":"mira-vale","messages":[{"role":"user","content":"Say hello in your own voice."}]}'
+```

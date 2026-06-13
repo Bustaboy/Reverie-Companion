@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     memory_context_max_chars: int = Field(default=4000, gt=500, le=20000)
     memory_mem0_enabled: bool = True
 
+    # Character blueprints are small SQLite records used by chat, memory,
+    # journal, growth, and future media surfaces without loading heavy models.
+    character_db_path: str = "./data/characters/characters.sqlite3"
+
     # Reflection/journaling stays lightweight by default: chat can read compact
     # recent journal insights, while new reflections run as throttled background
     # work so local LLM responsiveness remains the priority on 8GB systems.

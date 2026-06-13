@@ -127,9 +127,16 @@ class GrowthOrchestrator:
         if not query:
             return ""
         try:
-            context = await asyncio.to_thread(
-                self._memory_manager.get_relevant_context, query
-            )
+            try:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context,
+                    query,
+                    character_id=request.character_id,
+                )
+            except TypeError:
+                context = await asyncio.to_thread(
+                    self._memory_manager.get_relevant_context, query
+                )
         except Exception as exc:  # pragma: no cover - defensive graceful degradation.
             logger.warning(
                 "Memory retrieval failed; continuing chat",
@@ -162,6 +169,12 @@ class GrowthOrchestrator:
                 extra={"request_id": request_id, "error": str(exc)},
             )
             return []
+        if request.character_id:
+            entries = [
+                entry
+                for entry in entries
+                if entry.get("character_id") in (None, "", request.character_id)
+            ]
         return self.select_reflection_entries(entries, query)
 
     def reflection_context_from_entries(
@@ -284,7 +297,9 @@ class GrowthOrchestrator:
             )
         try:
             job = self._lora_trainer.evaluate_auto_training()
-        except Exception as exc:  # pragma: no cover - auto training must not affect chat.
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - auto training must not affect chat.
             logger.warning(
                 "Automated personal LoRA training check skipped",
                 extra={"request_id": request_id, "error": str(exc)},
@@ -556,7 +571,9 @@ class GrowthOrchestrator:
             payload = {"done": True}
 
         if growth_context.growth_notification is not None:
-            payload["growth_notification"] = growth_context.growth_notification.model_dump()
+            payload["growth_notification"] = (
+                growth_context.growth_notification.model_dump()
+            )
 
         if request is not None:
             visual_state = emotion_inference_engine.infer_visual_state(
