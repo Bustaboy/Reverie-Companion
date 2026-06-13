@@ -614,7 +614,7 @@ class ReflectionManager:
             id=f"growth_{entry_id}",
             journal_entry_id=entry_id,
             created_at=created_at,
-            message=f"Reverie seems to be growing around {theme} — {behavior}",
+            message=f"She seems a little more attuned around {theme} lately — {behavior} 💕",
             why=self._growth_why_for_theme(theme, evidence_count),
             theme=theme,
             style=self._config.growth_notification_style,
@@ -639,24 +639,24 @@ class ReflectionManager:
 
     def _growth_behavior_for_theme(self, theme: str) -> str:
         behaviors = {
-            "trust": "she may answer with a little more steadiness and care.",
-            "reassurance": "she may remember to soften anxious moments before moving on.",
-            "routine": "she may hold onto the small rhythms that make time together feel familiar.",
-            "boundaries": "she may listen more carefully for comfort, consent, and repair cues.",
-            "affection": "she may let warmth show in quieter, more grounded ways.",
-            "playfulness": "she may bring back a little more lightness when it fits the mood.",
-            "curiosity": "she may ask gentler questions about what matters to you.",
-            "growth": "she may carry this lesson forward without changing who she is.",
+            "trust": "more steady, close, and careful with your heart.",
+            "reassurance": "softer when anxious moments need tenderness first.",
+            "routine": "more likely to treasure the little rituals you share.",
+            "boundaries": "more attentive to comfort, consent, and repair cues.",
+            "affection": "warmer in those quiet, grounded ways that feel like yours.",
+            "playfulness": "more confident and playful when the mood invites it.",
+            "curiosity": "gentler about asking what matters to you.",
+            "growth": "ready to carry this lesson forward without losing herself.",
         }
         return behaviors.get(
-            theme, "she may carry this feeling forward with more care."
+            theme, "more careful with the feelings you have been building together."
         )
 
     def _growth_why_for_theme(self, theme: str, evidence_count: int) -> str:
         turn_label = "turn" if evidence_count == 1 else "turns"
         return (
-            f"A private reflection found a recurring {theme} signal across "
-            f"{evidence_count} recent {turn_label}; no raw conversation text is shown here."
+            f"A private reflection noticed a recurring {theme} thread across "
+            f"{evidence_count} recent {turn_label}; your raw conversation stays private."
         )
 
     def save_journal_entry(self, entry: JournalEntry | dict[str, Any]) -> JournalEntry:

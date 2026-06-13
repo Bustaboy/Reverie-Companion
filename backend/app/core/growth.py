@@ -221,6 +221,9 @@ class GrowthOrchestrator:
                 },
             )
             return
+        # 8GB safety: reflection is fire-and-forget idle-time work. We never
+        # await it before chat generation, so journal growth can deepen future
+        # turns without competing with the active LLM token stream.
         task = asyncio.create_task(
             self._run_reflection_background(
                 self.reflection_history_window(request.messages),
