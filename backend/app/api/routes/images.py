@@ -20,10 +20,16 @@ from app.models.image import (
     ImageSaveToAssetsRequest,
     ImageSaveToAssetsResponse,
 )
+from app.schemas.moment_capture import MomentCaptureRecord, MomentCaptureRequest
+from app.services.character_service import CharacterNotFoundError
 from app.services.image_generation_service import (
     ImageGenerationError,
     ImageGenerationService,
     get_image_generation_service,
+)
+from app.services.moment_capture_service import (
+    MomentCaptureService,
+    get_moment_capture_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +54,53 @@ def get_images_service(
             },
         )
     return get_image_generation_service(settings)
+
+
+def get_moment_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MomentCaptureService:
+    if not settings.image_generation_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "image_generation_disabled",
+                    "message": "Image generation is disabled in settings.",
+                    "details": {},
+                    "retryable": False,
+                }
+            },
+        )
+    return get_moment_capture_service(settings)
+
+
+@router.post(
+    "/moment-capture",
+    response_model=MomentCaptureRecord,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_moment_capture(
+    request: MomentCaptureRequest,
+    service: Annotated[MomentCaptureService, Depends(get_moment_service)],
+) -> MomentCaptureRecord:
+    """Queue a character-linked Moment Capture job without waiting for completion."""
+
+    try:
+        return await service.capture(request)
+    except CharacterNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "character_not_found",
+                    "message": exc.user_message,
+                    "details": {"character_id": exc.character_id},
+                    "retryable": False,
+                }
+            },
+        ) from exc
+    except ImageGenerationError as exc:
+        raise _image_http_exception(exc, status_code=status.HTTP_409_CONFLICT) from exc
 
 
 @router.post(
