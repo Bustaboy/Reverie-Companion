@@ -80,6 +80,8 @@ class VisualFeedbackAction(StrEnum):
     wrong_appearance = "wrong_appearance"
     make_canon = "make_canon"
     use_outfit_again = "use_outfit_again"
+    just_this_scene = "just_this_scene"
+    reject_style_trait = "reject_style_trait"
     scene_only = "scene_only"
     never_use_trait = "never_use_trait"
     favorite = "favorite"
@@ -511,3 +513,36 @@ class VisualChangeEvent(BaseModel):
         if self.previous_value is None:
             self.rollback_available = False
         return self
+
+
+class VisualFeedbackRequest(BaseModel):
+    """User feedback for a completed/generated Moment Capture image."""
+
+    character_id: str = Field(..., min_length=1, max_length=120)
+    action: VisualFeedbackAction
+    trait_name: str | None = Field(default=None, max_length=120)
+    trait_value: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
+    note: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
+    source_image_ref: str | None = Field(default=None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VisualFeedbackResponse(BaseModel):
+    """Feedback submission result with the updated capture and optional event."""
+
+    record: MomentCaptureRecord
+    visual_change_event: VisualChangeEvent | None = None
+
+
+class VisualChangeReviewRequest(BaseModel):
+    """Minimal review action payload for approve/reject/rollback endpoints."""
+
+    character_id: str = Field(..., min_length=1, max_length=120)
+    reviewer_note: str | None = Field(default=None, max_length=MAX_MEDIUM_TEXT)
+
+
+class VisualChangeReviewResponse(BaseModel):
+    """Review action result with the event and optional updated identity."""
+
+    event: VisualChangeEvent
+    visual_identity: VisualIdentityProfile | None = None
