@@ -152,15 +152,17 @@ class VisualPromptCompiler:
         negative = self._bound(
             self._join_sections(negative_sections), self.MAX_NEGATIVE_CHARS
         )
+        scene_state_summary = self._scene_summary(scene_state)
         canonical = {
             "positive_prompt": positive,
             "negative_prompt": negative,
             "character_id": character_id,
-            "scene_state_summary": self._scene_summary(scene_state),
+            "scene_state_summary": scene_state_summary,
+            "identity_anchors_used": anchors,
+            "rejected_traits_excluded": rejected,
+            "wrong_appearance_excluded": wrong,
         }
-        prompt_hash = hashlib.sha256(
-            json.dumps(canonical, sort_keys=True).encode()
-        ).hexdigest()[:16]
+        prompt_hash = self._prompt_hash(canonical)
         return VisualPromptBundle(
             positive_prompt=positive,
             negative_prompt=negative,
@@ -168,9 +170,9 @@ class VisualPromptCompiler:
                 "prompt_hash": prompt_hash,
                 "identity_anchors_used": anchors,
                 "rejected_traits_excluded": rejected,
-                "user_confirmed_wrong_appearance_excluded": wrong,
+                "wrong_appearance_excluded": wrong,
                 "character_id": character_id,
-                "scene_state_summary": canonical["scene_state_summary"],
+                "scene_state_summary": scene_state_summary,
             },
         )
 
@@ -277,6 +279,17 @@ class VisualPromptCompiler:
             f"{key}={scene_state[key]}" for key in summary_keys if scene_state.get(key)
         ]
         return self._clip("; ".join(pieces), 320) or "none"
+
+    def _prompt_hash(self, canonical: dict[str, Any]) -> str:
+        """Return a stable SHA256 trace hash for the prompt and key metadata."""
+
+        canonical_json = json.dumps(
+            canonical,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()[:16]
 
     def _explicit_user_face_requested(
         self, intent: str, scene_state: dict[str, Any]

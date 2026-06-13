@@ -57,6 +57,23 @@ def test_rejected_traits_only_appear_in_negative_prompt_and_metadata() -> None:
     assert "blue eyes" in bundle.negative_prompt
     assert "silver hair" in bundle.negative_prompt
     assert bundle.metadata["rejected_traits_excluded"] == ["blue eyes", "silver hair"]
+    assert bundle.metadata["wrong_appearance_excluded"] == []
+
+
+def test_wrong_appearance_metadata_is_negative_only() -> None:
+    character = _character("aria", "Aria", ["amber eyes"], [])
+
+    bundle = VisualPromptCompiler().compile(
+        character=character,
+        scene_state={"wrong_appearance": ["green eyes", "short bob"]},
+        capture_intent="capture her smile",
+    )
+
+    assert "green eyes" not in bundle.positive_prompt
+    assert "short bob" not in bundle.positive_prompt
+    assert "green eyes" in bundle.negative_prompt
+    assert "short bob" in bundle.negative_prompt
+    assert bundle.metadata["wrong_appearance_excluded"] == ["green eyes", "short bob"]
 
 
 def test_scene_mutable_traits_can_change_without_affecting_identity_anchors() -> None:
@@ -134,6 +151,7 @@ def test_prompt_hash_is_stable_for_equivalent_inputs() -> None:
     )
 
     assert first.metadata["prompt_hash"] == second.metadata["prompt_hash"]
+    assert len(first.metadata["prompt_hash"]) == 16
 
 
 def test_different_characters_produce_differentiated_bundles() -> None:
