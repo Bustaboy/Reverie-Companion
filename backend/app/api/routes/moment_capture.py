@@ -13,6 +13,10 @@ from app.schemas.moment_capture import (
     MomentCaptureRequest,
     VisualChangeCanonStatus,
     VisualChangeEvent,
+    VisualChangeReviewRequest,
+    VisualChangeReviewResponse,
+    VisualFeedbackRequest,
+    VisualFeedbackResponse,
 )
 from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.image_generation_service import (
@@ -22,10 +26,6 @@ from app.services.image_generation_service import (
 from app.services.moment_capture_service import (
     MomentCaptureResponse,
     MomentCaptureService,
-    VisualChangeReviewRequest,
-    VisualChangeReviewResponse,
-    VisualFeedbackRequest,
-    VisualFeedbackResponse,
 )
 
 logger = logging.getLogger(__name__)

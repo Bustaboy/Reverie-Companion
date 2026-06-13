@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
 from app.models.image import ImageGenerateRequest, ImageJobRead
@@ -31,6 +31,10 @@ from app.schemas.moment_capture import (
     ReviewState,
     VisualChangeCanonStatus,
     VisualChangeEvent,
+    VisualChangeReviewRequest,
+    VisualChangeReviewResponse,
+    VisualFeedbackRequest,
+    VisualFeedbackResponse,
     VisualFeedbackAction,
     utc_now_iso,
 )
@@ -40,33 +44,6 @@ from app.services.image_generation_service import (
     get_image_generation_service,
 )
 from app.services.visual_prompt_compiler import VisualPromptBundle, VisualPromptCompiler
-
-
-class VisualFeedbackRequest(BaseModel):
-    """User feedback for a completed/generated Moment Capture image."""
-
-    character_id: str
-    action: VisualFeedbackAction
-    trait_name: str | None = None
-    trait_value: str | None = None
-    note: str | None = None
-    source_image_ref: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class VisualFeedbackResponse(BaseModel):
-    record: MomentCaptureRecord
-    visual_change_event: VisualChangeEvent | None = None
-
-
-class VisualChangeReviewRequest(BaseModel):
-    character_id: str
-    reviewer_note: str | None = None
-
-
-class VisualChangeReviewResponse(BaseModel):
-    event: VisualChangeEvent
-    visual_identity: Any | None = None
 
 
 class MomentCaptureResponse(BaseModel):
