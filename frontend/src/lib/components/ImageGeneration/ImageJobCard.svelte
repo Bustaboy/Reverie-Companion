@@ -16,6 +16,7 @@
   let { job, compact = false, showPreview = true, previewOpen = true, onCancel, onRetry, onVary, onDelete, onSave }: Props = $props();
 
   const isActive = $derived(job.status === 'queued' || job.status === 'waiting_for_resources' || job.status === 'paused' || job.status === 'running');
+  const isCapture = $derived(Boolean(job.moment_capture_id) || job.source === 'moment_capture');
   const isPausedForTTS = $derived(job.status === 'paused' || job.resource_mode === 'paused_for_tts');
   const isLowVram = $derived(job.phase === 'low_vram' || job.resource_mode === 'waiting_for_vram');
   const isDegraded = $derived(Boolean(job.fallback_used) || job.resource_mode === 'degraded' || job.phase === 'oom_fallback');
@@ -26,25 +27,25 @@
   const completedWithoutPreview = $derived(job.status === 'completed' && (!job.imageUrls[0] || previewFailed));
 
   const statusLabel = $derived.by(() => {
-    if (completedWithoutPreview) return 'Image metadata saved · output unavailable';
-    if (job.status === 'completed') return job.fallback_used ? 'Image ready · lighter 8GB preset used' : 'Image ready';
-    if (job.status === 'failed') return job.error?.message ?? 'Image generation failed — chat and voice were not interrupted';
-    if (job.status === 'cancelled') return 'Image generation cancelled';
-    if (isPausedForTTS) return 'Paused for voice playback';
-    if (isLowVram) return 'Waiting for VRAM headroom';
-    if (job.status === 'waiting_for_resources') return 'Checking local resources';
-    if (job.status === 'running') return 'Composing image locally';
-    return 'Queued behind chat and voice';
+    if (completedWithoutPreview) return isCapture ? 'Capture metadata saved · output unavailable' : 'Image metadata saved · output unavailable';
+    if (job.status === 'completed') return job.fallback_used ? (isCapture ? 'Capture ready · preview preset used' : 'Image ready · lighter 8GB preset used') : (isCapture ? 'Capture ready' : 'Image ready');
+    if (job.status === 'failed') return job.error?.message ?? (isCapture ? 'Moment Capture failed — chat and voice were not interrupted' : 'Image generation failed — chat and voice were not interrupted');
+    if (job.status === 'cancelled') return isCapture ? 'Moment Capture cancelled' : 'Image generation cancelled';
+    if (isPausedForTTS) return isCapture ? 'Capture paused for voice playback' : 'Paused for voice playback';
+    if (isLowVram) return isCapture ? 'Capture waiting for VRAM headroom' : 'Waiting for VRAM headroom';
+    if (job.status === 'waiting_for_resources') return isCapture ? 'Checking capture resources' : 'Checking local resources';
+    if (job.status === 'running') return isCapture ? 'Rendering capture locally' : 'Composing image locally';
+    return isCapture ? 'Capture queued behind chat and voice' : 'Queued behind chat and voice';
   });
 
   const resourceNote = $derived.by(() => {
-    if (isPausedForTTS) return 'Voice has priority; the image worker will resume automatically.';
-    if (isLowVram) return 'Reverie is waiting rather than risking an 8GB VRAM spike.';
+    if (isPausedForTTS) return 'Voice has priority; capture/image work will resume automatically.';
+    if (isLowVram) return isCapture ? 'Reverie is keeping this capture queued rather than risking an 8GB VRAM spike.' : 'Reverie is waiting rather than risking an 8GB VRAM spike.';
     if (job.phase === 'resource_check' && job.resource_mode === 'unknown_vram_preview') {
-      return 'VRAM telemetry is unavailable, so Reverie is using the preview preset.';
+      return isCapture ? 'VRAM telemetry is unavailable, so Moment Capture is using the preview preset.' : 'VRAM telemetry is unavailable, so Reverie is using the preview preset.';
     }
     if (completedWithoutPreview) return 'The gallery kept the prompt and metadata, but the local output file is not reachable. Regenerate or reopen ComfyUI and retry.';
-    if (isDegraded && job.status !== 'completed') return 'Using a lighter 8GB-safe preset to avoid memory pressure.';
+    if (isDegraded && job.status !== 'completed') return isCapture ? 'Downgraded to preview capture quality to avoid memory pressure.' : 'Using a lighter 8GB-safe preset to avoid memory pressure.';
     if (job.vram_free_mb !== null && job.vram_free_mb !== undefined && job.vram_required_mb) {
       return `${job.vram_free_mb} MiB free · ${job.vram_required_mb} MiB target.`;
     }
@@ -100,8 +101,11 @@
   {/if}
 
   {#if job.status === 'failed'}
-    <p class="image-job-error">{job.error?.message ?? 'Image generation failed. Chat and voice were not interrupted.'}</p>
-  {:else if job.status !== 'cancelled'}
+    <p class="image-job-error">{job.error?.message ?? (isCapture ? 'Moment Capture failed. Chat and voice were not interrupted.' : 'Image generation failed. Chat and voice were not interrupted.')}</p>
+    {#if job.error?.retryable}<small class="image-job-note">Retryable: you can try again; capture metadata stays attached.</small>{/if}
+  {:else if job.status === 'cancelled'}
+    <small class="image-job-note">{isCapture ? 'Cancelled safely. Capture ID, character ID, and retry context are preserved.' : 'Cancelled safely.'}</small>
+  {:else}
     <small class="image-job-note">{resourceNote}</small>
   {/if}
 

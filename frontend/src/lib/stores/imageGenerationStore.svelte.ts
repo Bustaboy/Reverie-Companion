@@ -12,7 +12,7 @@ import type { ChatMessage } from '$lib/types/chat';
 import type { ResolvedVisualNovelScene } from '$lib/types/visualNovel';
 import type { VisualChangeCanonStatus, VisualChangeEvent, VisualFeedbackAction } from '$lib/types/momentCapture';
 
-export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery';
+export type ImageGenerationSource = 'chat-message' | 'chat-global' | 'visual-novel' | 'auto-chat' | 'gallery' | 'moment_capture';
 
 export interface ImageGenerationJob extends ImageJobRead {
   source: ImageGenerationSource;
@@ -111,6 +111,41 @@ const galleryItemFromHistory = (item: ImageHistoryItem): ImageGalleryItem => ({
     .slice(0, 1)
     .map((_, index) => imageService.resolveOutputUrl(item.job_id, index))
     .filter(Boolean)
+});
+
+
+const preservedRetryContext = (jobOrItem: ImageGenerationJob | ImageGalleryItem): Record<string, unknown> => {
+  const originalMetadata = ('metadata' in jobOrItem ? jobOrItem.metadata : undefined) ?? {};
+  const characterId = jobOrItem.character_id ?? (originalMetadata.character_id as string | undefined);
+  const captureId = jobOrItem.moment_capture_id ?? (originalMetadata.moment_capture_id as string | undefined);
+  const sessionId = jobOrItem.session_id ?? (originalMetadata.session_id as string | undefined);
+  const promptHash = jobOrItem.prompt_hash ?? (originalMetadata.prompt_hash as string | undefined);
+  const sceneSummary = jobOrItem.scene_summary ?? (originalMetadata.scene_summary as string | undefined);
+  const context: Record<string, unknown> = {
+    source: 'retry',
+    original_job_id: jobOrItem.job_id,
+    retry_of_status: 'status' in jobOrItem ? jobOrItem.status : 'history',
+    prompt_hash: promptHash
+  };
+  if (captureId || characterId || sessionId || sceneSummary || promptHash) {
+    context.moment_capture = {
+      capture_id: captureId,
+      character_id: characterId,
+      session_id: sessionId,
+      prompt_hash: promptHash,
+      capture_intent: 'prompt_summary' in jobOrItem ? jobOrItem.prompt_summary : jobOrItem.displayPrompt,
+      retry_of_job_id: jobOrItem.job_id,
+      scene_state: sceneSummary ? { summary: sceneSummary } : undefined
+    };
+  }
+  if (characterId) context.character = { id: characterId };
+  return context;
+};
+
+const preservedVariationContext = (jobOrItem: ImageGenerationJob | ImageGalleryItem): Record<string, unknown> => ({
+  ...preservedRetryContext(jobOrItem),
+  source: 'variation',
+  variation_of_job_id: jobOrItem.job_id
 });
 
 const contextFromMessage = (message: ChatMessage): Record<string, unknown> => ({
@@ -247,11 +282,11 @@ class ImageGenerationStore {
 
   regenerate(jobOrItem: ImageGenerationJob | ImageGalleryItem) {
     void this.queueImage({
-      source: 'gallery',
-      sourceLabel: 'Regenerated image',
+      source: jobOrItem.moment_capture_id ? 'moment_capture' : 'gallery',
+      sourceLabel: jobOrItem.moment_capture_id ? 'Retry Moment Capture' : 'Regenerated image',
       sourceMessageId: 'sourceMessageId' in jobOrItem ? jobOrItem.sourceMessageId : jobOrItem.source_message_id ?? undefined,
       prompt: 'displayPrompt' in jobOrItem ? jobOrItem.displayPrompt : jobOrItem.prompt,
-      context: { source: 'regenerate', original_job_id: jobOrItem.job_id },
+      context: preservedRetryContext(jobOrItem),
       qualityPreset: jobOrItem.requested_preset ?? this.defaultPreset,
       conversationId: jobOrItem.conversation_id ?? this.currentConversationId
     });
@@ -264,7 +299,7 @@ class ImageGenerationStore {
       sourceLabel: 'Image variation',
       sourceMessageId: 'sourceMessageId' in jobOrItem ? jobOrItem.sourceMessageId : jobOrItem.source_message_id ?? undefined,
       prompt: clipPrompt(`${prompt} Subtle variation: keep the same character identity and scene mood, but change composition, lighting, pose, or camera angle.`),
-      context: { source: 'variation', original_job_id: jobOrItem.job_id },
+      context: preservedVariationContext(jobOrItem),
       qualityPreset: jobOrItem.requested_preset ?? this.defaultPreset,
       conversationId: jobOrItem.conversation_id ?? this.currentConversationId
     });
@@ -410,7 +445,7 @@ class ImageGenerationStore {
         submittedAt: job.submittedAt,
         imageUrls: cancelled.output_paths.map((_, index) => imageService.resolveOutputUrl(cancelled.job_id, index)).filter(Boolean)
       }));
-      this.announcement = 'Image generation cancelled.';
+      this.announcement = cancelled.moment_capture_id ? 'Moment Capture cancelled. Metadata is preserved for retry.' : 'Image generation cancelled.';
     } catch (error) {
       this.error = normalizeError(error);
       this.announcement = this.error;
@@ -434,9 +469,14 @@ class ImageGenerationStore {
     if (!prompt) return;
 
     this.error = null;
+    const isCapture = input.source === 'moment_capture' || Boolean((input.context?.moment_capture as Record<string, unknown> | undefined)?.capture_id);
     this.announcement = ttsStore.isSpeaking
-      ? 'Queued a scene image. Voice has priority, so rendering will wait safely.'
-      : 'Queued a local scene image.';
+      ? isCapture
+        ? 'Queued Moment Capture. Voice has priority, so rendering will wait safely.'
+        : 'Queued a scene image. Voice has priority, so rendering will wait safely.'
+      : isCapture
+        ? 'Queued Moment Capture.'
+        : 'Queued a local scene image.';
 
     try {
       const response = await imageService.generateImage({
