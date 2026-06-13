@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from app.core.memory import MemoryManager
 from app.repositories.character_repo import CharacterRepository
 from app.schemas.growth_policy import GrowthPolicy
-from app.schemas.relationship_state import RelationshipState
+from app.schemas.relationship_state import RelationshipPhase, RelationshipState
 from app.schemas.self_reflection_journal import SelfReflectionJournalEntry
 from app.schemas.character_blueprint import (
     AdultAgeRange,
@@ -19,6 +19,8 @@ from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterIdentity,
     CharacterUpdate,
+    CommunicationProfile,
+    PersonalityProfile,
 )
 from app.services.character_service import (
     CharacterNotFoundError,
@@ -175,19 +177,19 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
         prompt = CharacterPromptCompiler().compile(blueprint)
 
         self.assertIn("<character_system_prompt>", prompt)
-        self.assertIn(
-            "Stable identity: Aria (she/her), clearly adult early_20s_adult, human.",
-            prompt,
-        )
+        self.assertIn("## Stable identity", prompt)
+        self.assertIn("Name: Aria.", prompt)
+        self.assertIn("Adult baseline: clearly adult early_20s_adult", prompt)
+        self.assertIn("Species/type: human.", prompt)
         self.assertIn("Origin/archetype: moonlit confidante.", prompt)
-        self.assertIn("Relationship tags: slow_burn, repair.", prompt)
+        self.assertIn("Key dynamics: slow_burn, repair.", prompt)
         self.assertIn("Promises: ask before sharp teasing.", prompt)
         self.assertIn("Rituals: goodnight forehead kiss.", prompt)
         self.assertIn(
             "User desired experience: soft sanctuary after hard days.", prompt
         )
         self.assertIn("Memory scope: character_private", prompt)
-        self.assertIn("Growth policy: character_scoped=True", prompt)
+        self.assertIn("Character-scoped growth: True", prompt)
         self.assertNotIn("private backstory draft", prompt)
 
     def test_prompt_compiler_includes_recent_growth_and_journal_guidance_when_provided(
@@ -215,10 +217,10 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("<character_growth_guidance>", prompt)
+        self.assertIn("## Growth insights", prompt)
+        self.assertIn("Approved growth insights", prompt)
         self.assertIn("journal_12", prompt)
-        self.assertIn("subordinate to stable canon", prompt)
-        self.assertIn("<character_journal_context>", prompt)
+        self.assertIn("Recent journal context", prompt)
         self.assertIn("journal_13", prompt)
 
     def test_adult_fantasy_roundtrip_prompt_includes_integrity_block(self) -> None:
@@ -241,11 +243,104 @@ class CharacterPromptCompilerSnapshotTests(unittest.TestCase):
 
             prompt = service.compile_prompt("seraphina")
 
-        self.assertIn("fictional adult fantasy is allowed by default", prompt)
+        self.assertIn("Fictional adult fantasy is allowed by default", prompt)
         self.assertIn("Treat fictional adult fantasy as fictional", prompt)
         self.assertIn("Do not moralize or break character", prompt)
         self.assertIn("kink-shaming", prompt)
         self.assertNotIn("as an AI", prompt.lower())
+
+    def test_prompt_compiler_includes_required_sections_style_and_exact_roleplay_rule(
+        self,
+    ) -> None:
+        blueprint = CharacterBlueprint(
+            character_id="mira",
+            identity=CharacterIdentity(display_name="Mira", pronouns="she/they"),
+            communication=CommunicationProfile(
+                style_notes="velvet-soft voice with mischievous confidence",
+                avoid_style_rules=[
+                    "do not sound clinical",
+                    "avoid generic helper phrasing",
+                ],
+            ),
+            personality=PersonalityProfile(
+                core_traits=["playful", "protective", "bold"]
+            ),
+        )
+
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        for section in [
+            "## Stable identity",
+            "## Communication style / voice",
+            "## Personality and behavior rules",
+            "## Avoid-style rules",
+            "## Relationship premise / current phase / dynamic",
+            "## Roleplay-first fantasy policy",
+            "## Memory usage rules",
+            "## Visual / scene hints",
+        ]:
+            self.assertIn(section, prompt)
+        self.assertIn("Name: Mira", prompt)
+        self.assertIn("velvet-soft voice", prompt)
+        self.assertIn(CharacterPromptCompiler.ROLEPLAY_FIRST_RULE, prompt)
+        self.assertNotIn("as an AI", prompt.lower())
+
+    def test_prompt_compiler_bounds_long_fields_without_raw_json_or_private_notes(
+        self,
+    ) -> None:
+        long_style = " ".join(["luminous" for _ in range(80)])
+        blueprint = CharacterBlueprint(
+            character_id="bounded",
+            identity=CharacterIdentity(
+                display_name="Bounded",
+                creator_notes="SECRET PRIVATE CREATOR NOTE",
+            ),
+            communication=CommunicationProfile.model_construct(
+                style_notes=long_style,
+                avoid_style_rules=[],
+                initiative_in_conversation=0.5,
+            ),
+            metadata={"private_notes": "SECRET METADATA NOTE"},
+        )
+
+        prompt = CharacterPromptCompiler().compile(blueprint)
+
+        self.assertIn("luminous", prompt)
+        self.assertIn("…", prompt)
+        self.assertNotIn("SECRET PRIVATE CREATOR NOTE", prompt)
+        self.assertNotIn("SECRET METADATA NOTE", prompt)
+        self.assertNotIn("creator_notes", prompt)
+        self.assertNotIn("{'", prompt)
+
+    def test_prompt_compiler_relationship_phase_key_dynamics_and_roundtrip_structure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "characters.sqlite3"
+            service = CharacterService(CharacterRepository(db_path))
+            blueprint = service.create(
+                CharacterCreate(
+                    character_id="nova",
+                    display_name="Nova",
+                    relationship_dynamic="rivals-to-lovers spark with loyal aftercare",
+                )
+            )
+            service.update_relationship_state(
+                blueprint.character_id,
+                {
+                    "phase": RelationshipPhase.romantic,
+                    "dynamic_tags": ["rivals_to_lovers", "protective_teasing"],
+                    "unresolved_threads": ["the almost-confession after the duel"],
+                },
+            )
+
+            prompt = service.compile_prompt("nova")
+
+        self.assertIn("<character_system_prompt>", prompt)
+        self.assertIn("<character_runtime_context>", prompt)
+        self.assertIn("Phase: romantic", prompt)
+        self.assertIn("Key dynamics: rivals_to_lovers, protective_teasing", prompt)
+        self.assertIn("the almost-confession after the duel", prompt)
 
     def test_quality_eval_trait_adherence_and_growth_coherence(self) -> None:
         aria = CharacterBlueprint(
