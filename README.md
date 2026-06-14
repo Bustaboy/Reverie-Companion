@@ -34,6 +34,33 @@ M7 is the presentation and experience layer on top of that foundation. It should
 
 ---
 
+## Tech Stack and Model Inventory
+
+Reverie's current local stack is FastAPI + Ollama + LanceDB on the backend,
+SvelteKit 2/Svelte 5 + Tauri 2 on the frontend, Orpheus-CPP with Piper fallback
+for voice, and ComfyUI for local image generation. The canonical model inventory is
+kept in [Tech Stack and Model Inventory](docs/TECH_STACK_MODELS.md).
+
+Current required/default models:
+
+| Purpose | Current default | Runtime |
+|---|---|---|
+| Chat LLM | `llama3.1:8b` | Ollama |
+| Memory embeddings | `nomic-embed-text` | Ollama |
+| Memory extraction/reflection LLM | Reuses `llama3.1:8b` unless `REVERIE_MEMORY_LLM_MODEL` is set | Ollama |
+| Primary TTS | Orpheus `orpheus-3b-0.1-ft-q4_k_m.gguf` | `orpheus-cpp` CPU backend |
+| TTS fallback | Piper `en_US-lessac-medium.onnx`, stored as `reverie_default.onnx` | `piper-tts` CPU backend |
+| Image generation | `Comfy-Org/flux1-schnell` file `flux1-schnell-fp8.safetensors` | ComfyUI |
+
+Optional and lineage model references are documented in the inventory: Orpheus
+source model `canopylabs/orpheus-3b-0.1-ft`, SNAC decoder
+`onnx-community/snac_24khz-ONNX`, Flux Schnell GGUF
+`flux1-schnell-Q4_0.gguf`, Flux text encoders `clip_l.safetensors` and
+`t5xxl_fp8_e4m3fn.safetensors`, and the legacy SD 1.5 preview workflow
+checkpoint `v1-5-pruned-emaonly.safetensors`.
+
+---
+
 ## Current Focus
 
 The next milestone is **M7 - Companion Genesis Immersive Creator**.
@@ -180,6 +207,10 @@ Core docs:
 - [Creator Draft System](docs/creator-draft-system.md)
 - [Character Creator Capability Matrix](CHARACTER_CREATOR_CAPABILITY_MATRIX.md)
 - [Roleplay-First Character Integrity Policy](ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md)
+- [Installation Guide](docs/INSTALLATION_GUIDE.md)
+- [Tech Stack and Model Inventory](docs/TECH_STACK_MODELS.md)
+- [ComfyUI Setup](docs/COMFYUI_SETUP.md)
+- [TTS Setup](docs/TTS_SETUP.md)
 - [Backend README](backend/README.md)
 - [Frontend README](frontend/README.md)
 

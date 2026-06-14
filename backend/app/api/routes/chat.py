@@ -15,6 +15,7 @@ from app.models.chat import ChatRequest, ChatResponse
 from app.api.routes.characters import get_character_service
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
+from app.services.local_model_hotswap import ComfyUICacheUnloader
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -43,6 +44,7 @@ def get_chat_service(
         memory_manager=memory_manager,
         reflection_manager=reflection_manager,
         character_service=character_service,
+        media_cache_unloader=ComfyUICacheUnloader(settings).unload_for_chat,
     )
 
 

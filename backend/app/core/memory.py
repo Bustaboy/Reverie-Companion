@@ -85,7 +85,18 @@ class _LanceTable(Protocol):
 
     def delete(self, where: str) -> None: ...
 
-    def to_pandas(self) -> Any: ...
+    def to_arrow(self) -> Any: ...
+
+
+def _lance_table_records(
+    table: _LanceTable | Any, *, limit: int | None = None
+) -> list[dict[str, Any]]:
+    """Return LanceDB rows without requiring pandas/pylance conversion support."""
+
+    rows = table.to_arrow().to_pylist()
+    if limit is not None:
+        rows = rows[: max(limit, 0)]
+    return [dict(row) for row in rows]
 
 
 @dataclass
@@ -229,7 +240,7 @@ class Mem0LanceDBVectorStore:
         table = self._open_table(required=False)
         if table is None:
             return [[]]
-        rows = table.to_pandas().head(top_k or 100).to_dict("records")
+        rows = _lance_table_records(table, limit=top_k or 100)
         results = [self._row_to_mem0_result(row) for row in rows]
         if filters:
             results = [
@@ -1198,11 +1209,11 @@ class MemoryManager:
         except FileNotFoundError:
             return []
         try:
-            records = table.to_pandas().to_dict("records")
+            records = _lance_table_records(table)
         except Exception as exc:
             logger.exception("Failed to read local memory table for browser")
             raise MemoryStoreError("Failed to read local memory store.") from exc
-        return [dict(record) for record in records]
+        return records
 
     def _delete_from_lancedb(self, memory_id: str) -> None:
         try:

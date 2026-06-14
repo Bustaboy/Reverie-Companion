@@ -1,4 +1,5 @@
 <script lang="ts">
+  import reverieIcon from '$lib/assets/brand/reverie-icon-128.png';
   import { navigationItems, type NavigationItemId } from '$lib/config/navigation';
 
   interface Props {
@@ -11,7 +12,9 @@
 
 <aside class="sidebar" aria-label="Reverie workspace navigation">
   <div class="brand">
-    <div class="brand-mark">R</div>
+    <div class="brand-mark" aria-hidden="true">
+      <img src={reverieIcon} alt="" />
+    </div>
     <div>
       <strong>Reverie</strong>
       <span>Offline companion</span>

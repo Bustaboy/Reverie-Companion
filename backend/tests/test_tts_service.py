@@ -1,13 +1,17 @@
 """Tests for the local-first TTS service foundation."""
 
 import asyncio
+import io
+import wave
 
+import numpy as np
 import pytest
 
 from app.core.config import Settings
 from app.models.voice import VoiceProfile
 from app.services.voice_manager import VoiceManager
 from app.services.tts_service import (
+    OrpheusBackend,
     TTSBackendUnavailable,
     TTSGenerationResult,
     TTSService,
@@ -39,6 +43,7 @@ class FakeBackend:
 
 def make_service(tmp_path) -> TTSService:
     settings = Settings(
+        tts_primary_backend="orpheus",
         tts_orpheus_timeout_seconds=1.0,
         tts_piper_timeout_seconds=1.0,
         voice_profile_store_path=str(tmp_path / "voices.json"),
@@ -84,6 +89,105 @@ def test_generate_speech_prefers_orpheus(tmp_path) -> None:
         assert result.audio_bytes == b"orpheus wav"
 
     asyncio.run(run_test())
+
+
+def test_orpheus_cpp_tts_result_is_encoded_as_wav() -> None:
+    class FakeCppModel:
+        def tts(self, text, options):
+            assert text == "Hello"
+            assert options["voice_id"] == "tara"
+            return 24_000, np.zeros((1, 24), dtype=np.int16)
+
+    backend = OrpheusBackend(
+        Settings(
+            _env_file=None,
+            tts_orpheus_runtime="cpp",
+            tts_orpheus_default_voice_id="tara",
+        )
+    )
+
+    audio = backend._generate_with_model(  # type: ignore[attr-defined]
+        FakeCppModel(), "Hello", "reverie_default", None
+    )
+
+    with wave.open(io.BytesIO(audio), "rb") as wav_file:
+        assert wav_file.getframerate() == 24_000
+        assert wav_file.getnchannels() == 1
+        assert wav_file.getsampwidth() == 2
+        assert wav_file.getnframes() == 24
+
+
+def test_orpheus_cpp_reports_audio_duration_not_generation_latency() -> None:
+    class FakeCppModel:
+        def tts(self, text, options):
+            return 24_000, np.zeros((1, 24), dtype=np.int16)
+
+    async def run_test() -> None:
+        backend = OrpheusBackend(
+            Settings(
+                _env_file=None,
+                tts_orpheus_runtime="cpp",
+                tts_orpheus_default_voice_id="tara",
+            )
+        )
+        backend._model = FakeCppModel()  # type: ignore[attr-defined]
+
+        result = await backend.generate(
+            text="Hello",
+            voice_id="reverie_default",
+            audio_format="wav",
+            request_id="req_duration",
+        )
+
+        assert result.duration_seconds == pytest.approx(24 / 24_000)
+
+    asyncio.run(run_test())
+
+
+def test_orpheus_cpp_context_is_bounded(monkeypatch) -> None:
+    llama_cpp = pytest.importorskip("llama_cpp")
+    captured: dict[str, object] = {}
+
+    def fake_llama(*args, **kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return object()
+
+    class FakeOrpheusCpp:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            from llama_cpp import Llama
+
+            self.llama = Llama(model_path="fake.gguf", n_ctx=0)
+
+    monkeypatch.setattr(llama_cpp, "Llama", fake_llama)
+    backend = OrpheusBackend(
+        Settings(
+            _env_file=None,
+            tts_orpheus_runtime="cpp",
+            tts_orpheus_cpp_n_ctx=4096,
+            tts_orpheus_cpp_n_threads=2,
+        )
+    )
+
+    model = backend._instantiate_orpheus_cpp(FakeOrpheusCpp)  # type: ignore[attr-defined]
+
+    assert isinstance(model, FakeOrpheusCpp)
+    assert model.kwargs["n_threads"] == 2
+    assert captured["n_ctx"] == 4096
+    assert llama_cpp.Llama is fake_llama
+
+
+def test_orpheus_unknown_voice_maps_to_default_voice() -> None:
+    backend = OrpheusBackend(
+        Settings(
+            _env_file=None,
+            tts_orpheus_runtime="cpp",
+            tts_orpheus_default_voice_id="tara",
+        )
+    )
+
+    assert backend._orpheus_voice_id("reverie_default") == "tara"  # type: ignore[attr-defined]
+    assert backend._orpheus_voice_id("leah_soft") == "leah"  # type: ignore[attr-defined]
 
 
 def test_generate_speech_falls_back_to_piper_when_orpheus_unavailable(tmp_path) -> None:

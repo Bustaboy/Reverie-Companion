@@ -39,6 +39,23 @@ This keeps the active token path free of training, unbounded scans, and hidden c
 - Moment Capture uses the existing image queue/resource coordinator, preserves retry/cancel metadata, pauses for TTS priority, downgrades to preview under low/unknown VRAM, and keeps chat non-blocking.
 - No resident reranker, hosted telemetry, or mandatory external service.
 
+## Backend Model Stack
+
+The current backend model inventory is:
+
+| Purpose | Model/artifact | Backend setting |
+|---|---|---|
+| Chat | `llama3.1:8b` | `REVERIE_OLLAMA_MODEL` |
+| Memory embeddings | `nomic-embed-text` | `REVERIE_MEMORY_EMBEDDING_MODEL` |
+| Memory extraction/reflection LLM | Reuses `REVERIE_OLLAMA_MODEL` unless set | `REVERIE_MEMORY_LLM_MODEL` |
+| Primary TTS | Orpheus `orpheus-3b-0.1-ft-q4_k_m.gguf` | `REVERIE_TTS_PRIMARY_BACKEND="orpheus"` |
+| Orpheus source model | `canopylabs/orpheus-3b-0.1-ft` | `REVERIE_TTS_ORPHEUS_MODEL_ID` |
+| TTS fallback | Piper `en_US-lessac-medium.onnx`, stored as `reverie_default.onnx` | `REVERIE_TTS_PIPER_MODEL_PATH` |
+| Default image generation | `flux1-schnell-fp8.safetensors` from `Comfy-Org/flux1-schnell` | `REVERIE_IMAGE_GENERATION_COMFYUI_WORKFLOW_PATH` |
+
+See [Tech Stack and Model Inventory](../docs/TECH_STACK_MODELS.md) for optional
+GGUF/text encoder references, legacy SD 1.5 workflow notes, and license notes.
+
 ## Key Settings
 
 Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
@@ -87,6 +104,31 @@ Edit `.env` to tune these values. All variables use the `REVERIE_` prefix.
 - `REVERIE_PERSONAL_LORA_MIN_CONFIDENCE`, `REVERIE_PERSONAL_LORA_MIN_EVIDENCE_COUNT`: candidate quality gates
 - `REVERIE_PERSONAL_LORA_MAX_EXAMPLE_CHARS`, `REVERIE_PERSONAL_LORA_MAX_EXAMPLES_PER_JOB`: dataset/job caps
 
+### TTS and Voices
+
+- `REVERIE_TTS_ENABLED`: enables the `/api/tts/generate` route
+- `REVERIE_TTS_PRIMARY_BACKEND`: default `orpheus`; set `piper` only to force the fallback backend
+- `REVERIE_TTS_ORPHEUS_RUNTIME`: default `cpp` for the local Orpheus-CPP runtime
+- `REVERIE_TTS_ORPHEUS_MODEL_ID`: upstream Orpheus source model id, default `canopylabs/orpheus-3b-0.1-ft`
+- `REVERIE_TTS_ORPHEUS_CPP_MODEL_ID`: active GGUF model id, default `isaiahbjork/orpheus-3b-0.1-ft-Q4_K_M-GGUF`
+- `REVERIE_TTS_ORPHEUS_CPP_N_GPU_LAYERS`: default `0` to keep Orpheus on CPU; increase only after CPU smoke testing is degraded
+- `REVERIE_TTS_ORPHEUS_CPP_N_CTX`: default `4096` to avoid the Orpheus-CPP `n_ctx=0` full-context RAM spike
+- `REVERIE_TTS_PIPER_BINARY_PATH`: optional absolute path to `piper.exe` when Uvicorn is not launched from an activated venv
+- `REVERIE_TTS_PIPER_MODEL_PATH`: local Piper `.onnx` voice model, default `./models/piper/reverie_default.onnx`
+- `REVERIE_TTS_PIPER_TIMEOUT_SECONDS`: CPU synthesis timeout for one request
+
+See [TTS Setup](../docs/TTS_SETUP.md) for the Orpheus/Piper model downloads and smoke test.
+
+### Image Generation and ComfyUI
+
+- `REVERIE_IMAGE_GENERATION_ENABLED`: disables Moment Capture/image routes when `false`
+- `REVERIE_IMAGE_GENERATION_COMFYUI_URL`: local ComfyUI URL, default `http://127.0.0.1:8188`
+- `REVERIE_IMAGE_GENERATION_DEFAULT_PRESET`: `preview_8gb`, `balanced_8gb`, or `high_8gb`
+- `REVERIE_IMAGE_GENERATION_MIN_FREE_VRAM_MB`: minimum free VRAM floor before preview jobs run
+- `REVERIE_IMAGE_GENERATION_COMFYUI_WORKFLOW_PATH`: optional ComfyUI workflow exported with `File -> Export (API)`
+- `REVERIE_IMAGE_GENERATION_COMFYUI_*_NODE_ID`: optional node/input mapping so Reverie can patch prompt, negative prompt, width, height, steps, guidance/cfg, seed, and filename prefix into the exported workflow
+
+See [ComfyUI Setup](../docs/COMFYUI_SETUP.md) for the project-specific 8GB Flux Schnell setup.
 
 ## Visual Consistency Eval Harness
 
@@ -118,6 +160,7 @@ python -m pytest
 
 - Python 3.11+
 - Ollama installed and running locally
+- Orpheus-CPP and Piper are installed by `requirements.txt`; download the Orpheus GGUF/SNAC files and Piper fallback voice when testing voice playback
 - A local Ollama chat model, for example:
 
 ```bash
@@ -132,10 +175,10 @@ ollama pull nomic-embed-text
 
 ## Setup
 
-```bash
+```powershell
 cd backend
 python -m venv .venv
-source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 cp .env.example .env
 ```

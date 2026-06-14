@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 
 from app.core.config import Settings
 from app.core.growth import GrowthContext, GrowthOrchestrator
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _REFLECTION_CONTEXT_MAX_ENTRIES = 3
 _REFLECTION_CONTEXT_MIN_CONFIDENCE = 0.35
+MediaCacheUnloader = Callable[[str], Awaitable[list[str]]]
 
 
 class ChatService:
@@ -62,6 +63,7 @@ class ChatService:
         reflection_manager: ReflectionManager | None = None,
         growth_orchestrator: GrowthOrchestrator | None = None,
         character_service: CharacterService | None = None,
+        media_cache_unloader: MediaCacheUnloader | None = None,
     ) -> None:
         self._settings = settings
         self._ollama_client = ollama_client
@@ -88,6 +90,7 @@ class ChatService:
         self._context_router = TTSContextRouter(self._voice_manager)
         self._emotion_engine = emotion_engine
         self._character_service = character_service
+        self._media_cache_unloader = media_cache_unloader
         self._growth_orchestrator = growth_orchestrator or GrowthOrchestrator(
             settings=settings,
             memory_manager=memory_manager,
@@ -102,6 +105,7 @@ class ChatService:
     ) -> ChatResponse:
         """Run a non-streaming chat completion with optional continuity context."""
 
+        await self._release_media_cache_before_chat(request_id=request_id)
         prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
@@ -176,6 +180,7 @@ class ChatService:
     ) -> AsyncIterator[str]:
         """Return an Ollama SSE stream with optional continuity context injected."""
 
+        await self._release_media_cache_before_chat(request_id=request_id)
         prepared_request, growth_context = await self._prepare_request_with_growth(
             request, request_id=request_id
         )
@@ -184,6 +189,25 @@ class ChatService:
             growth_context=growth_context,
             request_id=request_id,
         )
+
+    async def _release_media_cache_before_chat(
+        self, *, request_id: str | None
+    ) -> None:
+        if self._media_cache_unloader is None:
+            return
+        try:
+            unloaded = await self._media_cache_unloader("chat_start")
+        except Exception as exc:  # pragma: no cover - defensive local cleanup path.
+            logger.info(
+                "Media cache unload before chat failed; continuing chat",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return
+        if unloaded:
+            logger.info(
+                "Released media model cache before chat",
+                extra={"request_id": request_id, "models": unloaded},
+            )
 
     async def _prepare_request(
         self,

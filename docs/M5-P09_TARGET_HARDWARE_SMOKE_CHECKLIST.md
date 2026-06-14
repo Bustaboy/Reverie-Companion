@@ -7,9 +7,9 @@
 ## Target machine
 
 - GPU: RTX 4070 laptop GPU, 8GB VRAM, or equivalent 8GB NVIDIA mobile GPU.
-- ComfyUI: launched separately with `--lowvram` and the configured Flux GGUF/preview workflow.
+- ComfyUI: launched separately with `--lowvram` and the configured Flux Schnell preview workflow.
 - Reverie: packaged desktop build preferred; dev mode acceptable only if explicitly noted.
-- TTS: configured Orpheus/Piper path available for local playback.
+- TTS: Orpheus-CPP primary path available with `REVERIE_TTS_ORPHEUS_CPP_N_GPU_LAYERS=0`; Piper fallback path available for standard local playback.
 
 ## Smoke checks
 

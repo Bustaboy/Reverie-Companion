@@ -71,6 +71,24 @@ class FakeMemoryBrowserService:
 
 
 class MemoryManagerBrowserEditTests(unittest.TestCase):
+    def test_read_all_rows_uses_arrow_records_without_pandas_dependency(self) -> None:
+        class FakeArrowTable:
+            def to_pylist(self) -> list[dict[str, Any]]:
+                return [{"id": "mem_arrow", "text": "Stored from LanceDB Arrow."}]
+
+        class FakeLanceTable:
+            def to_arrow(self) -> FakeArrowTable:
+                return FakeArrowTable()
+
+        manager = MemoryManager.__new__(MemoryManager)
+        manager._get_table = lambda required: FakeLanceTable()  # type: ignore[method-assign]
+
+        rows = manager._read_all_rows()  # type: ignore[attr-defined]
+
+        self.assertEqual(
+            rows, [{"id": "mem_arrow", "text": "Stored from LanceDB Arrow."}]
+        )
+
     def test_browser_edit_preserves_original_provenance_metadata(self) -> None:
         manager = MemoryManager.__new__(MemoryManager)
         existing_metadata = {
