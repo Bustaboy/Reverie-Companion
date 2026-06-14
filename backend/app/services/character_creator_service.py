@@ -59,7 +59,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 5
+DRAFT_SCHEMA_VERSION = 6
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -229,6 +229,66 @@ class CreatorDraftContentBoundaries(BaseModel):
     @classmethod
     def normalize_boundary_text(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, "Content boundaries")
+
+
+class CreatorDraftWorldScene(BaseModel):
+    """Draft-scoped world and opening scene data current runtime can consume.
+
+    This intentionally stays compact: a default setting, scenario/starting
+    context, optional genre frame, and the user's role in the story. Rich
+    lorebooks, dynamic world info, and VN background state remain out of scope.
+    """
+
+    default_setting: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    scenario: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    starting_context: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    genre_frame: str | None = Field(default=None, max_length=120)
+    user_role_in_story: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+
+    @field_validator(
+        "default_setting",
+        "scenario",
+        "starting_context",
+        "genre_frame",
+        "user_role_in_story",
+        mode="after",
+    )
+    @classmethod
+    def normalize_world_scene_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "World and scene")
+
+    @model_validator(mode="after")
+    def require_context_for_setting(self) -> "CreatorDraftWorldScene":
+        if self.default_setting and not (self.scenario or self.starting_context):
+            raise ValueError(
+                "World and scene needs a scenario or starting context when a default setting is provided."
+            )
+        return self
+
+    def has_runtime_context(self) -> bool:
+        return any(
+            (
+                self.default_setting,
+                self.scenario,
+                self.starting_context,
+                self.genre_frame,
+                self.user_role_in_story,
+            )
+        )
+
+    def scene_hints(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in {
+                "setting": self.default_setting,
+                "default_setting": self.default_setting,
+                "scenario": self.scenario,
+                "starting_context": self.starting_context,
+                "genre_frame": self.genre_frame,
+                "user_role_in_story": self.user_role_in_story,
+            }.items()
+            if value
+        }
 
 
 class CreatorDraftVisualIdentity(BaseModel):
@@ -410,6 +470,7 @@ class CharacterCreatorDraft(BaseModel):
     content_boundaries: CreatorDraftContentBoundaries = Field(
         default_factory=CreatorDraftContentBoundaries
     )
+    world_scene: CreatorDraftWorldScene = Field(default_factory=CreatorDraftWorldScene)
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity = Field(
@@ -515,6 +576,7 @@ class CharacterCreatorDraftUpdate(BaseModel):
     content_boundaries: CreatorDraftContentBoundaries = Field(
         default_factory=CreatorDraftContentBoundaries
     )
+    world_scene: CreatorDraftWorldScene | None = None
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity | None = None
@@ -713,6 +775,17 @@ class CharacterCreatorService:
                 nsfw_pacing=draft.nsfw_pacing,
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
+                user_role_in_story=draft.world_scene.user_role_in_story,
+                dynamic_tags=(
+                    [draft.world_scene.genre_frame]
+                    if draft.world_scene.genre_frame
+                    else []
+                ),
+                metadata=(
+                    {"world_scene": draft.world_scene.scene_hints()}
+                    if draft.world_scene.has_runtime_context()
+                    else {}
+                ),
             ),
             personality=PersonalityProfile(
                 core_traits=draft.core_traits,
@@ -752,7 +825,7 @@ class CharacterCreatorService:
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p05_visual_identity_draft",
+                    "source": "m6_p06_world_scene_draft",
                     "migration_note": (
                         "API-only draft roleplay policy and visual identity fields "
                         "are mapped into runtime CharacterBlueprint structures "
@@ -760,6 +833,8 @@ class CharacterCreatorService:
                     ),
                 },
                 "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
+                "world_scene": draft.world_scene.model_dump(mode="json"),
+                "scene_hints": draft.world_scene.scene_hints(),
                 **draft.metadata,
             },
         )

@@ -32,6 +32,7 @@ from app.services.character_creator_service import (
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
     CreatorDraftVisualIdentity,
+    CreatorDraftWorldScene,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftMomentSource,
@@ -84,6 +85,13 @@ def _draft() -> CharacterCreatorDraft:
             soft_limits=["slow down humiliation if asked"],
             preferred_intensity="dark romance with explicit OOC controls",
             aftercare_style="warm debrief in character after intense scenes",
+        ),
+        world_scene=CreatorDraftWorldScene(
+            default_setting="moonlit apothecary above a sleepy harbor city",
+            scenario="Aria and the user reunite after closing the shop for the night",
+            starting_context="rain taps the windows while unfinished tea steams beside spell notes",
+            genre_frame="cozy fantasy romance",
+            user_role_in_story="trusted confidant and magical research partner",
         ),
         avoid_style=["clinical assistant tone", "moralizing fictional adult romance"],
         initiative_in_conversation=0.63,
@@ -141,6 +149,19 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         == DefaultIntimacyLevel.flirtatious
     )
     assert blueprint.relationship.user_desired_experience == "tender magical romance"
+    assert (
+        blueprint.relationship.user_role_in_story
+        == "trusted confidant and magical research partner"
+    )
+    assert blueprint.relationship.dynamic_tags == ["cozy fantasy romance"]
+    assert (
+        blueprint.metadata["scene_hints"]["setting"]
+        == "moonlit apothecary above a sleepy harbor city"
+    )
+    assert (
+        blueprint.metadata["scene_hints"]["scenario"]
+        == "Aria and the user reunite after closing the shop for the night"
+    )
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
     assert blueprint.personality.independence == 0.72
     assert blueprint.personality.devotion == 0.68
@@ -190,12 +211,12 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert (
         blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
-    assert (
-        blueprint.metadata["creator_draft"]["source"] == "m6_p05_visual_identity_draft"
-    )
+    assert blueprint.metadata["creator_draft"]["source"] == "m6_p06_world_scene_draft"
 
 
-def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> None:
+def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> (
+    None
+):
     service = CharacterCreatorService()
     draft = CharacterCreatorDraft(
         display_name="Mira",
@@ -243,6 +264,73 @@ def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections(
         trait.name == "fashion_identity" and trait.value == "battle-mage leathers"
         for trait in visual.evolving_traits
     )
+
+
+def test_creator_world_scene_fields_persist_update_and_map_to_blueprint(
+    tmp_path,
+) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            world_scene=CreatorDraftWorldScene(
+                default_setting="lamplit skyship cabin over the capital",
+                scenario="the first private conversation after a dangerous mission",
+                starting_context="engines hum softly while city lights pass below",
+                genre_frame="romantic airship adventure",
+                user_role_in_story="captain she trusts with her secrets",
+            )
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria")
+    assert (
+        loaded.record.draft.world_scene.default_setting
+        == "lamplit skyship cabin over the capital"
+    )
+    assert updated.validation.blueprint is not None
+    blueprint = updated.validation.blueprint
+    assert (
+        blueprint.relationship.user_role_in_story
+        == "captain she trusts with her secrets"
+    )
+    assert blueprint.relationship.dynamic_tags == ["romantic airship adventure"]
+    assert (
+        blueprint.relationship.metadata["world_scene"]["starting_context"]
+        == "engines hum softly while city lights pass below"
+    )
+    assert (
+        blueprint.metadata["world_scene"]["scenario"]
+        == "the first private conversation after a dangerous mission"
+    )
+    assert (
+        blueprint.metadata["scene_hints"]["setting"]
+        == "lamplit skyship cabin over the capital"
+    )
+
+
+def test_creator_world_scene_rejects_invalid_or_incomplete_values() -> None:
+    invalid_kwargs = (
+        {"default_setting": "schoolgirl dormitory"},
+        {"default_setting": "moon palace"},
+        {"scenario": "underage romance initiation"},
+        {"starting_context": "teen-coded first date"},
+        {"user_role_in_story": "guardian of a childlike doll"},
+    )
+    for kwargs in invalid_kwargs:
+        try:
+            CharacterCreatorDraft(
+                display_name="Aria", world_scene=CreatorDraftWorldScene(**kwargs)
+            )
+        except ValidationError as exc:
+            assert "adult" in str(exc).lower() or "scenario" in str(exc).lower()
+        else:
+            raise AssertionError(
+                f"Expected invalid world/scene values to fail: {kwargs}"
+            )
 
 
 def test_creator_visual_identity_fields_persist_and_update(tmp_path) -> None:
@@ -298,6 +386,7 @@ def test_creator_visual_identity_rejects_disallowed_or_misplaced_values() -> Non
             )
         else:
             raise AssertionError(f"Expected invalid visual values to fail: {kwargs}")
+
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     with_exception = None

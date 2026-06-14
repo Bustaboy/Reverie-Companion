@@ -307,7 +307,17 @@ class CharacterPromptCompiler:
                         self._optional_line(key.replace("_", " ").title(), value)
                     )
         if isinstance(scene, dict):
-            for key in ["setting", "mood", "current_appearance", "props"]:
+            for key in [
+                "setting",
+                "default_setting",
+                "scenario",
+                "starting_context",
+                "genre_frame",
+                "user_role_in_story",
+                "mood",
+                "current_appearance",
+                "props",
+            ]:
                 value = scene.get(key)
                 if isinstance(value, list):
                     value = self._join([str(item) for item in value])
