@@ -1,12 +1,12 @@
 # Creator Draft System
 
-**Status:** M6-P02 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6-P03 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
 
 ## What a draft is
 
 A creator draft is an incomplete, editable character-construction artifact. It captures the M6-approved answers needed to preview and validate a future character without treating that work-in-progress as canonical character data.
 
-Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core traits, communication style, visual identity, tags, creator notes, and metadata.
+Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core personality architecture, communication style, visual identity, tags, creator notes, and metadata.
 
 Drafts are intentionally separated from finalized characters:
 
@@ -63,7 +63,36 @@ M6-P02 treats these premise/relationship fields as draft-supported. They define 
 | `default_intimacy_level` | `RelationshipState.default_intimacy_level` | Must be a supported `DefaultIntimacyLevel` enum value: `sfw`, `flirtatious`, `romantic`, or `adult_roleplay`. |
 | `user_desired_experience` | `RelationshipState.user_desired_experience` | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
 
-`companion_mode` is not a dedicated draft field yet. A future UI may present companion-mode cards, but those cards must map honestly into the supported relationship fields above, and optionally later into personality/communication fields when those steps are implemented. Do not add a parallel premise store just to preserve a label.
+`companion_mode` is not a dedicated draft field yet. A future UI may present companion-mode cards, but those cards must map honestly into the supported relationship fields above, and optionally into personality/communication fields. Do not add a parallel premise store just to preserve a label.
+
+## Supported personality fields
+
+M6-P03 treats these personality fields as draft-supported. They are compact behavior anchors for prompt compilation and preview, not a full autonomous goals/planning engine.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `core_traits` | `PersonalityProfile.core_traits` | Required list with 1-8 unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+| `independence` | `PersonalityProfile.independence` and `CharacterIntegrityPolicy.independence` | Float from 0.0 to 1.0. Higher values should imply more in-character backbone, initiative, and willingness to disagree. |
+| `devotion` | `PersonalityProfile.devotion` | Float from 0.0 to 1.0. Use as an affection/loyalty anchor, not as a promise of dependency or constant agreement. |
+| `dominance_or_initiative` | `PersonalityProfile.dominance_or_initiative` | Float from 0.0 to 1.0. Use for assertiveness/initiative and pair UI copy with boundary-aware examples. |
+| `values_or_ideals` | `PersonalityProfile.values_or_ideals` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+| `flaws` | `PersonalityProfile.flaws` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+| `fears` | `PersonalityProfile.fears` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+| `vulnerabilities` | `PersonalityProfile.vulnerabilities` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+
+Practical UI should translate these into human-first controls. For example, presets such as warm, bold, playful, tender, shy slow-burn, or teasing can populate `core_traits`, the three float weights, and optional depth lists. Do not expose Big Five controls, active goals, wants/needs planning, or clinical labels in the normal M6 creator.
+
+## Supported communication fields
+
+M6-P03 treats these communication fields as draft-supported. They shape voice-of-character guidance for chat and previews.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `communication_style` | `CommunicationProfile.style_notes` | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
+| `avoid_style` | `CommunicationProfile.avoid_style_rules` | Optional list with up to 8 unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. |
+| `initiative_in_conversation` | `CommunicationProfile.initiative_in_conversation` | Float from 0.0 to 1.0. Higher values should imply more proactive conversational steering; it is a prompt/preview signal, not a scheduler or autonomous message system. |
+
+`avoid_style` is negative behavior guidance, not a safety refusal list. Good entries are practical anti-examples such as “generic assistant tone,” “therapy-bot phrasing,” “constant agreement,” or “lecturing about fictional adult romance.” Avoid-style rules should help the companion sound less like a generic assistant while preserving the character's chosen personality.
 
 ## Draft validation and mapping
 
@@ -71,12 +100,15 @@ Draft validation is intentionally blueprint-based. The service converts draft fi
 
 - identity fields into `CharacterIdentity`
 - relationship premise fields into `RelationshipState`
-- core traits into `PersonalityProfile`
-- communication style into `CommunicationProfile`
+- personality fields into `PersonalityProfile`
+- `independence` into both `PersonalityProfile.independence` and `CharacterIntegrityPolicy.independence`
+- communication fields into `CommunicationProfile`
 - visual identity into `VisualIdentityProfile`
 - creator provenance into blueprint metadata
 
-For M6-P02 specifically, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, and `adult_only_confirmed` into `CharacterIdentity`. It copies `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into `RelationshipState`.
+For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, `adult_only_confirmed`, `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into their runtime structures.
+
+For personality and communication, the mapper copies `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`, `communication_style`, `avoid_style`, and `initiative_in_conversation` into the corresponding runtime profiles. That means these fields can appear in draft summaries and blueprint previews today, as long as UI copy remains honest about them being prompt/profile signals rather than autonomous behavior engines.
 
 This keeps future UI steps honest: if a creator field cannot map into runtime data, it should remain preview-only, store-only, or deferred in the capability matrix.
 
@@ -84,9 +116,12 @@ This keeps future UI steps honest: if a creator field cannot map into runtime da
 
 - The identity step may ask for the companion's name, pronouns, adult age/presentation baseline, and species/type.
 - The premise step may ask how the relationship begins, what the bond should feel like, how quickly romance/adult roleplay should move, and what default intimacy level the user wants.
+- The personality step may offer presets and editable nuance that write to `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, and optional depth lists.
+- The communication step may ask how she talks, what she should avoid sounding like, and how proactive she should be in conversation.
 - These fields can appear in draft summaries and blueprint previews before final save.
 - Pacing and default intimacy are starting-frame hints for chat/prompt behavior, not a substitute for roleplay boundaries, safewords, OOC commands, or full consent controls.
-- Nickname/short name, occupation/role, genre frame, perspective mode, and durable user role in story should only be exposed according to the capability matrix status for those fields; they are not part of the M6-P02 draft-supported contract.
+- Personality and communication fields are behavior anchors for compiled prompts and previews; they are not active planning, autonomous outreach, or guaranteed model behavior.
+- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, and speech quirks should only be exposed according to the capability matrix status; they are not part of the M6-P03 draft-supported contract.
 
 ## Moment Capture integration
 
@@ -102,5 +137,5 @@ This means first portraits can use the same M5 capture, gallery, feedback, revie
 - Drafts are not backend-synced beyond local app persistence.
 - Draft finalization into a durable saved character remains a later M6 review/save flow.
 - Dialogue/greeting previews, import/export, memory/growth preference wiring, and richer field-impact evals remain later M6 work.
-- Personality, visuals, lore/default scene, roleplay policy, memory/growth preferences, and import/export should not be documented here as completed M6-P02 behavior.
+- Roleplay policy controls, visual identity documentation, lore/default scene, memory/growth preferences, and import/export should not be documented here as completed M6-P03 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.

@@ -1,9 +1,9 @@
 # Reverie — Master Development Plan
 
-**Version**: 2.7
+**Version**: 2.8
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity fields plus the premise/relationship starting frame.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, and communication style fields.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -667,7 +667,7 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, and M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, and M6-P03 documented draft-supported personality and communication capabilities. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
 
 ### M6 success criteria
 
@@ -760,7 +760,7 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 
 - Real Chat/VN Moment Capture wiring is split into `M6-P00A` so first portrait validation uses the M5 Moment Capture runtime instead of generic image generation.
 - `M6-P01` must keep creator drafts separate from saved `CharacterBlueprint` data and provide deterministic draft-to-blueprint mapping.
-- `M6-P03`/`M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before behavior fields are promised.
+- `M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before greeting/dialogue behavior is promised; M6-P03 documented the existing personality and communication draft fields without adding those preview systems.
 - `M6-P04` must establish the relationship, boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
 - `M6-P05` must adapt existing Moment Capture review/feedback into first portrait validation without adding a parallel visual canon store.
 - `M6-P06` must keep world/default scene support lore-lite and avoid full lorebook/canon retrieval.
@@ -769,9 +769,9 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 - `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
 
 
-### M6-P00/P00A/P01 foundation status
+### M6-P00/P00A/P01/P02/P03 foundation status
 
-The first M6 foundation series is complete:
+The first M6 foundation series is complete through the personality/communication documentation pass:
 
 | Task | Status | Delivered outcome |
 |---|---|---|
@@ -779,6 +779,7 @@ The first M6 foundation series is complete:
 | M6-P00A — Real Moment Capture creator wiring | Complete | Added draft-capable Moment Capture paths so first-portrait validation can use the existing M5 capture/review/rollback stack instead of generic image generation. |
 | M6-P01 — Creator architecture and draft persistence | Complete | Added a versioned `CharacterCreatorDraft` service/repository/API foundation, persisted drafts separately from finalized characters, provided create/load/list/update/validate/delete operations, and mapped drafts into valid `CharacterBlueprint` previews. |
 | M6-P02 — Identity, adult baseline, and companion premise steps | Complete | Documented the draft-supported identity fields (`display_name`, `pronouns`, `species_or_type`, `adult_age_range`, `adult_only_confirmed`) and premise/relationship starting-frame fields (`starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, `user_desired_experience`), including validation and mapping into `CharacterIdentity` and `RelationshipState`. |
+| M6-P03 — Personality and communication steps with examples | Complete | Documented the draft-supported personality fields (`core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`) and communication fields (`communication_style`, `avoid_style`, `initiative_in_conversation`), including validation and mapping into `PersonalityProfile`, `CommunicationProfile`, and integrity-policy independence. |
 
 Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
@@ -965,6 +966,10 @@ Definition of Done:
 ---
 
 #### M6-P03 — Personality and communication steps with examples
+
+**Status**: Complete — documentation updated June 14, 2026.
+
+**Delivered**: Recorded that creator drafts support the practical core personality architecture (`core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, and `vulnerabilities`) plus communication controls (`communication_style`, `avoid_style`, and `initiative_in_conversation`). `docs/creator-draft-system.md` now explains validation, adult-baseline checks, bounded list/float handling, and draft-to-blueprint mapping into `PersonalityProfile`, `CommunicationProfile`, and `CharacterIntegrityPolicy.independence`.
 
 **Goal**: Expose practical personality and communication choices that can affect prompt compilation and dialogue previews now.
 
@@ -1665,7 +1670,7 @@ Winner is not automatically the larger implementation. Bigger diffs are often ju
 
 ## 15. Immediate Next Actions
 
-1. Continue with **M6-P03 — Personality and communication steps with examples** on top of the persisted draft foundation and the documented M6-P02 identity/premise draft contract.
+1. Continue with **M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls** on top of the persisted draft foundation and the documented M6-P02/P03 identity, premise, personality, and communication draft contracts.
 2. Keep `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` as the field gate before exposing any new creator field.
 3. Use `docs/creator-draft-system.md` as the practical draft-system reference for future creator tasks.
 4. Preserve the separation between editable drafts and finalized `CharacterBlueprint` records.
