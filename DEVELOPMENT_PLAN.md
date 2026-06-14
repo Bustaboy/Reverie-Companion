@@ -3,7 +3,7 @@
 **Version**: 2.9
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, and visual identity anchors/evolving traits/scene-mutable traits.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, and lore-lite world/default scene settings.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -667,7 +667,7 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts, and M6-P05 documented the visual identity draft contract for stable anchors, evolving traits, scene-mutable traits, and rejected visual traits. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts, M6-P05 documented the visual identity draft contract for stable anchors, evolving traits, scene-mutable traits, and rejected visual traits, and M6-P06 documented lore-lite world/default scene settings for draft blueprint metadata, prompt scene hints, and default Moment Capture scene state. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
 
 ### M6 success criteria
 
@@ -763,15 +763,15 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 - `M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before greeting/dialogue behavior is promised; M6-P03 documented the existing personality and communication draft fields without adding those preview systems.
 - `M6-P04` established the draft-supported relationship boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
 - `M6-P05` documented the draft visual identity mapping that existing Moment Capture review/feedback can use without adding a parallel visual canon store; remaining portrait/reference controls are later M6 UI/save work.
-- `M6-P06` must keep world/default scene support lore-lite and avoid full lorebook/canon retrieval.
+- `M6-P06` completed lore-lite world/default scene draft support and must remain bounded: no full lorebook/canon retrieval is implied.
 - `M6-P07` must make memory/growth preferences either enforceable at baseline or visibly preview-only.
 - `M6-P09` must provide basic character-level import/export for blueprints and associated asset metadata, while full app backup/export remains M8.
 - `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
 
 
-### M6-P00/P00A/P01/P02/P03/P04/P05 foundation status
+### M6-P00/P00A/P01/P02/P03/P04/P05/P06 foundation status
 
-The first M6 foundation series is complete through the visual identity documentation pass:
+The first M6 foundation series is complete through the world/default-scene documentation pass:
 
 | Task | Status | Delivered outcome |
 |---|---|---|
@@ -782,6 +782,7 @@ The first M6 foundation series is complete through the visual identity documenta
 | M6-P03 — Personality and communication steps with examples | Complete | Documented the draft-supported personality fields (`core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`) and communication fields (`communication_style`, `avoid_style`, `initiative_in_conversation`), including validation and mapping into `PersonalityProfile`, `CommunicationProfile`, and integrity-policy independence. |
 | M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls | Complete | Documented the draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields (`integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`), including validation and mapping into `CharacterIntegrityPolicy`, `RoleplayPolicy`, `MetaConsentAndSafewordPolicy`, and draft metadata. |
 | M6-P05 — Visual identity step, asset/reference attachment, and first portrait validation | Complete | Documented the draft-supported visual identity fields: stable identity anchors (`eye_color`, `skin_tone`, `face_structure`, `body_baseline`, `species_features`, `permanent_marks`), evolving traits (`hair`, `accessories`, `fashion_identity`), scene-mutable traits (`outfit`, `pose`, `expression`), and `rejected_visual_traits`, including validation/normalization and mapping into `VisualIdentityProfile`. |
+| M6-P06 — World, default scene, and lore-lite step | Complete | Documented the draft-supported lore-lite world and default scene fields (`default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details`), including validation/normalization, mapping into `RelationshipState` and blueprint metadata, prompt scene hints, and draft Moment Capture default scene state. |
 
 Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
@@ -1136,6 +1137,10 @@ Definition of Done:
 ---
 
 #### M6-P06 — World, default scene, and lore-lite step
+
+**Status**: Complete.
+
+**Delivered summary**: Drafts now support compact world/default scene settings: `default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details`. These validate through the creator draft model, map into `RelationshipState.user_role_in_story`, `CharacterBlueprint.metadata.world_scene`, and `CharacterBlueprint.metadata.scene_hints`, and seed draft Moment Capture scene defaults when no explicit chat/VN scene state is supplied.
 
 **Goal**: Add practical world/default-scene fields that improve greetings, dialogue previews, Moment Capture scene state, and roleplay context without building a full lorebook yet.
 
@@ -1680,7 +1685,7 @@ Winner is not automatically the larger implementation. Bigger diffs are often ju
 
 ## 15. Immediate Next Actions
 
-1. Continue with the next M6 practical creator task after **M6-P05** on top of the persisted draft foundation and the documented M6-P02/P03/P04/P05 identity, premise, personality, communication, roleplay policy, boundary, and visual identity draft contracts.
+1. Continue with the next M6 practical creator task after **M6-P06** on top of the persisted draft foundation and the documented M6-P02/P03/P04/P05/P06 identity, premise, personality, communication, roleplay policy, boundary, visual identity, and world/default scene draft contracts.
 2. Keep `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` as the field gate before exposing any new creator field.
 3. Use `docs/creator-draft-system.md` as the practical draft-system reference for future creator tasks.
 4. Preserve the separation between editable drafts and finalized `CharacterBlueprint` records.

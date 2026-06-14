@@ -1,12 +1,12 @@
 # Creator Draft System
 
-**Status:** M6-P05 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6-P06 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
 
 ## What a draft is
 
 A creator draft is an incomplete, editable character-construction artifact. It captures the M6-approved answers needed to preview and validate a future character without treating that work-in-progress as canonical character data.
 
-Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core personality architecture, communication style, roleplay policy, character integrity controls, safeword/OOC controls, content boundaries, visual identity, tags, creator notes, and metadata.
+Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core personality architecture, communication style, roleplay policy, character integrity controls, safeword/OOC controls, content boundaries, visual identity, lore-lite world/default scene settings, tags, creator notes, and metadata.
 
 Drafts are intentionally separated from finalized characters:
 
@@ -176,6 +176,28 @@ The draft mapper starts with the draft's existing `visual_identity` profile, the
 
 This separation is the important contract for UI copy: anchors answer “what should never drift?”, evolving traits answer “what is part of her current/canon style but may change with review?”, and scene traits answer “what should this moment look like?”
 
+
+## Supported world and default scene fields
+
+M6-P06 treats these world/default scene fields as draft-supported. They are lore-lite starting context for prompt scene hints and first-portrait/Moment Capture defaults, not a full lorebook, world simulation, or retrieval-ranked canon store.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `world_scene.default_setting` | `CharacterBlueprint.metadata.world_scene.default_setting` and `metadata.scene_hints.setting`; used as the default draft Moment Capture `SceneState.location` when no explicit chat/VN scene is supplied. | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. Use compact location/setting language such as “rainy moonlit atelier above the old city.” |
+| `world_scene.scenario` | `CharacterBlueprint.metadata.world_scene.scenario` and `metadata.scene_hints.scenario`; appears in prompt scene hints and seeds draft Moment Capture `SceneState.emotional_tone`. | Optional text up to 500 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. Use it for the opening situation, not for a long backstory dump. |
+| `world_scene.world_genre` / creator-facing `genre_frame` | `CharacterBlueprint.metadata.world_scene.world_genre` and `metadata.scene_hints.world_genre`; shown as compact genre context in prompt scene hints. | Optional text up to 120 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. UI may call this “genre frame,” but the draft field is `world_genre`. |
+| `world_scene.user_role_in_story` | `RelationshipState.user_role_in_story`; consumed by the relationship prompt context as the user's in-story role. | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. Use for the user's role in the relationship/story, not as a second character identity. |
+| `world_scene.time_of_day` | `CharacterBlueprint.metadata.world_scene.time_of_day`, `metadata.scene_hints.time_of_day`, and draft Moment Capture `SceneState.time_of_day`. | Optional text up to 80 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
+| `world_scene.mood` | `CharacterBlueprint.metadata.world_scene.mood`, `metadata.scene_hints.mood`, and draft Moment Capture `SceneState.mood`; falls back to relationship dynamic when absent. | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
+| `world_scene.key_objects` | `CharacterBlueprint.metadata.world_scene.key_objects` and `metadata.scene_hints.props`; used as draft Moment Capture `SceneState.key_objects`. | Optional list with up to 8 unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for scene props or symbolic objects, not hidden lore entries. |
+| `world_scene.background_details` | `CharacterBlueprint.metadata.world_scene.background_details` and `metadata.scene_hints.background_details`; used as draft Moment Capture `SceneState.background_details`. | Optional list with up to 8 unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for visible environmental details such as lighting, weather, windows, furniture, or stage texture. |
+
+The draft mapper stores the complete normalized `world_scene` object under `CharacterBlueprint.metadata.world_scene` for preview/finalization handoff, and stores a compact prompt-facing subset under `CharacterBlueprint.metadata.scene_hints`. The prompt compiler reads `scene_hints` in the “Visual / scene hints” section using the keys `setting`, `scenario`, `world_genre`, `time_of_day`, `mood`, `props`, and `background_details`.
+
+When draft first-portrait capture needs a scene and the request does not provide explicit chat or Visual Novel scene state, the creator service builds a default `SceneState` from these hints: `setting` becomes `location`, `time_of_day` remains `time_of_day`, `mood` becomes `mood`, `scenario` becomes `emotional_tone`, `props` become `key_objects`, and `background_details` become `background_details`. Visual identity summaries still provide character appearance, so world/scene defaults should describe the environment and moment rather than restating stable appearance anchors.
+
+Practical UI should ask this step in human language: “Where does your story usually begin?”, “What kind of world is this?”, “Who are you to her in the story?”, “What mood should the first scene carry?”, and “What objects or background details should the moment remember?” Keep copy clear that these are defaults. Current chat/VN scene state can override them for a specific capture.
+
 ## Draft validation and mapping
 
 Draft validation is intentionally blueprint-based. The service converts draft fields into runtime structures, then lets the normal schema validation reject invalid runtime output. Current mappings include:
@@ -190,6 +212,8 @@ Draft validation is intentionally blueprint-based. The service converts draft fi
 - `meta.safeword_policy` into `MetaConsentAndSafewordPolicy`, with its `policy_note` also summarized in `RoleplayPolicy.safeword_policy`
 - `content_boundaries` into blueprint metadata for prompt/preview use
 - creator-facing `visual` fields and any existing draft `visual_identity` profile into `VisualIdentityProfile`
+- `world_scene.user_role_in_story` into `RelationshipState.user_role_in_story`
+- `world_scene` into blueprint metadata, with compact `scene_hints` for prompt and Moment Capture defaults
 - creator provenance into blueprint metadata
 
 For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, `adult_only_confirmed`, `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into their runtime structures.
@@ -199,6 +223,8 @@ For personality and communication, the mapper copies `core_traits`, `independenc
 For roleplay policy and boundaries, the mapper copies `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy.safeword`, `meta.safeword_policy.ooc_marker`, `meta.safeword_policy.pause_commands`, `meta.safeword_policy.fade_to_black_preference`, `meta.safeword_policy.policy_note`, and `content_boundaries` into the runtime policy objects or metadata described above. That means these fields can appear in draft summaries and blueprint previews today, as long as UI copy remains honest: fiction-first mode and in-character pushback are prompt policy signals, safeword/OOC fields are explicit meta-controls, and content boundaries are lightweight stored guidance rather than a complete scene-safety engine.
 
 For visual identity, the mapper copies stable anchors, evolving traits, scene-mutable traits, and rejected visual traits into `VisualIdentityProfile` as described in the M6-P05 visual section above. That means first-portrait capture and visual prompt summaries can use the draft visual profile without turning the draft into canonical saved character data.
+
+For world/default scene, the mapper copies `default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details` into either `RelationshipState` or blueprint metadata as described in the M6-P06 section above. That means compiled prompts can include compact scene hints and draft Moment Capture can fall back to default scene state without creating a full lorebook.
 
 This keeps future UI steps honest: if a creator field cannot map into runtime data, it should remain preview-only, store-only, or deferred in the capability matrix.
 
@@ -210,14 +236,15 @@ This keeps future UI steps honest: if a creator field cannot map into runtime da
 - The communication step may ask how she talks, what she should avoid sounding like, and how proactive she should be in conversation.
 - The roleplay policy step may ask how she pushes back in character, whether fictional adult roleplay should stay fiction-first, what safeword/OOC marker and pause commands to use, how fade-to-black should be handled, and what hard/soft boundaries should be summarized.
 - The visual identity step may ask what should never drift about her look, what current style traits can evolve with confirmation, what outfit/pose/expression belongs only to this scene, and what generated traits should be rejected.
+- The world/default scene step may ask for the default setting, opening scenario, genre frame, user role in story, default time of day, mood, key objects, and background details.
 - These fields can appear in draft summaries and blueprint previews before final save.
 - Pacing and default intimacy are starting-frame hints for chat/prompt behavior; roleplay boundaries, safewords, OOC commands, and fade-to-black preferences now live in the M6-P04 draft policy fields.
 - Personality and communication fields are behavior anchors for compiled prompts and previews; they are not active planning, autonomous outreach, or guaranteed model behavior.
-- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, speech quirks, dedicated art style, asset/reference attachment UI, and portrait approval UI should only be exposed according to the capability matrix status; they are not part of the M6-P05 draft-supported visual identity contract.
+- Nickname/short name, occupation/role beyond compact story-role text, perspective mode, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, speech quirks, dedicated art style, asset/reference attachment UI, and portrait approval UI should only be exposed according to the capability matrix status; they are not part of the M6-P06 draft-supported world/default scene contract.
 
 ## Moment Capture integration
 
-Creator drafts can trigger first-portrait Moment Capture before the character is finalized. The draft flow builds a temporary blueprint from the draft, passes the blueprint's visual identity and relationship state into the existing Moment Capture service, and marks the capture as draft-derived evidence.
+Creator drafts can trigger first-portrait Moment Capture before the character is finalized. The draft flow builds a temporary blueprint from the draft, passes the blueprint's visual identity, relationship state, and default scene hints into the existing Moment Capture service, and marks the capture as draft-derived evidence.
 
 Draft capture metadata uses the `draft_` prefix consistently, including the draft ID, source context (`chat` or `visual_novel`), capture intent, provenance, evidence-only status, rollback note, and the explicit rule that canonical mutation is not allowed while the character is still a draft.
 
@@ -229,5 +256,5 @@ This means first portraits can use the same M5 capture, gallery, feedback, revie
 - Drafts are not backend-synced beyond local app persistence.
 - Draft finalization into a durable saved character remains a later M6 review/save flow.
 - Dialogue/greeting previews, import/export, memory/growth preference wiring, and richer field-impact evals remain later M6 work.
-- Lore/default scene, memory/growth preferences, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P05 behavior.
+- Full lorebooks/canon retrieval, memory/growth preferences, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P06 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.
