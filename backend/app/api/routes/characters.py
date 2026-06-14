@@ -14,7 +14,14 @@ from app.schemas.character_blueprint import (
     CharacterResponse,
     CharacterUpdate,
 )
+from app.services.character_creator_service import (
+    CharacterCreatorService,
+    DraftMomentCaptureRequest,
+    DraftValidationResponse,
+    CharacterCreatorDraft,
+)
 from app.services.character_service import CharacterNotFoundError, CharacterService
+from app.services.moment_capture_service import MomentCaptureResponse
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
 
@@ -44,6 +51,38 @@ def _repository_exception(exc: CharacterRepositoryError) -> HTTPException:
             "code": "character_library_unavailable",
         },
     )
+
+
+@router.post("/creator/validate", response_model=DraftValidationResponse)
+def validate_creator_draft(request: CharacterCreatorDraft) -> DraftValidationResponse:
+    """Validate and map an unsaved creator draft into a CharacterBlueprint."""
+
+    return CharacterCreatorService().validate_draft(request)
+
+
+@router.post(
+    "/creator/first-portrait",
+    response_model=MomentCaptureResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_creator_first_portrait(
+    request: DraftMomentCaptureRequest,
+) -> MomentCaptureResponse:
+    """Queue draft first-portrait Moment Capture without saving the character."""
+
+    try:
+        return await CharacterCreatorService().capture_first_portrait(request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "creator_draft_invalid",
+                    "message": str(exc),
+                    "retryable": False,
+                }
+            },
+        ) from exc
 
 
 @router.post("", response_model=CharacterResponse, status_code=status.HTTP_201_CREATED)
