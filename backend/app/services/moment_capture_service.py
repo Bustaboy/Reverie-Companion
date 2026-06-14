@@ -565,6 +565,7 @@ class MomentCaptureService:
                     for artifact in request.relevant_visual_memories
                 ],
                 "prompt_bundle_metadata": prompt_bundle.metadata,
+                "request_metadata": request.metadata,
             },
             "character": {
                 "id": request.character_id,
@@ -682,6 +683,20 @@ class MomentCaptureService:
                 or (record.output_paths[0] if record.output_paths else None),
                 "image_job_id": record.image_job_id,
                 "prompt_hash": record.prompt_hash,
+                **{
+                    key: record.metadata[key]
+                    for key in (
+                        "creator_draft",
+                        "draft_id",
+                        "source_context",
+                        "capture_intent",
+                        "rollback_note",
+                        "provenance",
+                        "evidence_only",
+                        "canonical_mutation_allowed",
+                    )
+                    if key in record.metadata
+                },
                 **request.metadata,
             },
         )
