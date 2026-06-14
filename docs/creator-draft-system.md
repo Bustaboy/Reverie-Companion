@@ -1,12 +1,12 @@
 # Creator Draft System
 
-**Status:** M6-P03 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6-P04 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
 
 ## What a draft is
 
 A creator draft is an incomplete, editable character-construction artifact. It captures the M6-approved answers needed to preview and validate a future character without treating that work-in-progress as canonical character data.
 
-Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core personality architecture, communication style, visual identity, tags, creator notes, and metadata.
+Current draft data includes the basic creator foundation fields: draft/character IDs, display name, pronouns, adult baseline, species/type, relationship dynamic and starting phase, relationship pacing, romantic/NSFW pacing, default intimacy level, desired experience, core personality architecture, communication style, roleplay policy, character integrity controls, safeword/OOC controls, content boundaries, visual identity, tags, creator notes, and metadata.
 
 Drafts are intentionally separated from finalized characters:
 
@@ -59,7 +59,7 @@ M6-P02 treats these premise/relationship fields as draft-supported. They define 
 | `relationship_dynamic` | `RelationshipState.relationship_dynamic` | Required text, 1-240 characters, whitespace-normalized, underage/childlike-presentation checked. |
 | `relationship_pacing` | `RelationshipState.relationship_pacing` | Must be a supported `RelationshipPacing` enum value: `slow_burn`, `natural`, `direct`, or `user_led`. |
 | `romantic_pacing` | `RelationshipState.romantic_pacing` | Same pacing enum; controls the romantic pacing hint separately from the general relationship pace. |
-| `nsfw_pacing` | `RelationshipState.nsfw_pacing` | Same pacing enum; should be exposed with clear adult-only wording and should not be confused with consent/safeword controls, which remain M6-P04 scope. |
+| `nsfw_pacing` | `RelationshipState.nsfw_pacing` | Same pacing enum; should be exposed with clear adult-only wording and should not be confused with consent/safeword controls, which are documented in the M6-P04 roleplay policy section below. |
 | `default_intimacy_level` | `RelationshipState.default_intimacy_level` | Must be a supported `DefaultIntimacyLevel` enum value: `sfw`, `flirtatious`, `romantic`, or `adult_roleplay`. |
 | `user_desired_experience` | `RelationshipState.user_desired_experience` | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
 
@@ -94,6 +94,29 @@ M6-P03 treats these communication fields as draft-supported. They shape voice-of
 
 `avoid_style` is negative behavior guidance, not a safety refusal list. Good entries are practical anti-examples such as “generic assistant tone,” “therapy-bot phrasing,” “constant agreement,” or “lecturing about fictional adult romance.” Avoid-style rules should help the companion sound less like a generic assistant while preserving the character's chosen personality.
 
+## Supported roleplay policy, integrity, and boundary fields
+
+M6-P04 treats these roleplay policy and boundary fields as draft-supported. They are practical controls for roleplay posture, character backbone, and meta stop/pause behavior; they are not a new moralizing refusal system and they do not replace the adult-only baseline.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `integrity.in_character_pushback` | `CharacterIntegrityPolicy.in_character_pushback` | Required text, 1-240 characters, whitespace-normalized, adult-baseline checked. Use this to describe how the companion challenges, teases, negotiates, or resists while staying in character. |
+| `integrity.disagreement_style` | `CharacterIntegrityPolicy.disagreement_style` | Required text, 1-240 characters, whitespace-normalized, adult-baseline checked. Use this to keep disagreement embodied in the character voice instead of assistant-style correction. |
+| `roleplay.fiction_first_mode` | `RoleplayPolicy.fiction_first_mode` and `CharacterIntegrityPolicy.fiction_first_mode` | Boolean; defaults to true. When true, fictional adult roleplay should remain in-character unless a reality boundary, hard limit, or OOC stop/pause control is triggered. |
+| `meta.safeword_policy.safeword` | `MetaConsentAndSafewordPolicy.safeword` | Required text, 1-40 characters, whitespace-normalized, adult-baseline checked. Defaults to `red`. |
+| `meta.safeword_policy.ooc_marker` | `MetaConsentAndSafewordPolicy.ooc_marker` | Required text, 1-20 characters, whitespace-normalized, adult-baseline checked. Defaults to `[OOC]`. |
+| `meta.safeword_policy.pause_commands` | `MetaConsentAndSafewordPolicy.pause_commands` | Required list with 1-8 unique, whitespace-normalized commands; each command is capped at 40 characters and adult-baseline checked. Defaults include `pause`, `stop`, `safeword`, and `red`. |
+| `meta.safeword_policy.fade_to_black_preference` | `MetaConsentAndSafewordPolicy.fade_to_black_preference` | Must be one of `ask`, `allow`, `prefer`, or `never`. |
+| `meta.safeword_policy.policy_note` | `RoleplayPolicy.safeword_policy` | Required text, 1-240 characters, whitespace-normalized, adult-baseline checked. This is the prompt-facing summary of how to respect OOC stop, pause, safeword, or clear distress. |
+| `content_boundaries.hard_limits` | `CharacterBlueprint.metadata.content_boundaries.hard_limits` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for topics or actions the roleplay should not enter. |
+| `content_boundaries.soft_limits` | `CharacterBlueprint.metadata.content_boundaries.soft_limits` | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for topics that require extra care, slower pacing, or explicit checking. |
+| `content_boundaries.preferred_intensity` | `CharacterBlueprint.metadata.content_boundaries.preferred_intensity` | Optional text up to 80 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
+| `content_boundaries.aftercare_style` | `CharacterBlueprint.metadata.content_boundaries.aftercare_style` | Optional text up to 240 characters; blank values normalize to null and nonblank values are whitespace-normalized and adult-baseline checked. |
+
+Practical UI should explain these controls in human-first language: how she pushes back, what counts as a pause/OOC signal, what should be avoided, what should be handled gently, and whether fade-to-black should be offered. The user should not need to understand internal names such as `CharacterIntegrityPolicy` or `MetaConsentAndSafewordPolicy` to configure them.
+
+Boundary lists are lightweight draft metadata today. They can be shown in summaries, validation output, and blueprint previews, and they can inform prompt construction through the mapped blueprint metadata. They are not yet a full memory receipt system, trust dashboard, or advanced scene-control engine.
+
 ## Draft validation and mapping
 
 Draft validation is intentionally blueprint-based. The service converts draft fields into runtime structures, then lets the normal schema validation reject invalid runtime output. Current mappings include:
@@ -103,12 +126,18 @@ Draft validation is intentionally blueprint-based. The service converts draft fi
 - personality fields into `PersonalityProfile`
 - `independence` into both `PersonalityProfile.independence` and `CharacterIntegrityPolicy.independence`
 - communication fields into `CommunicationProfile`
+- `integrity.in_character_pushback` and `integrity.disagreement_style` into `CharacterIntegrityPolicy`
+- `roleplay.fiction_first_mode` into both `RoleplayPolicy` and `CharacterIntegrityPolicy`
+- `meta.safeword_policy` into `MetaConsentAndSafewordPolicy`, with its `policy_note` also summarized in `RoleplayPolicy.safeword_policy`
+- `content_boundaries` into blueprint metadata for prompt/preview use
 - visual identity into `VisualIdentityProfile`
 - creator provenance into blueprint metadata
 
 For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, `adult_only_confirmed`, `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into their runtime structures.
 
-For personality and communication, the mapper copies `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`, `communication_style`, `avoid_style`, and `initiative_in_conversation` into the corresponding runtime profiles. That means these fields can appear in draft summaries and blueprint previews today, as long as UI copy remains honest about them being prompt/profile signals rather than autonomous behavior engines.
+For personality and communication, the mapper copies `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`, `communication_style`, `avoid_style`, and `initiative_in_conversation` into the corresponding runtime profiles.
+
+For roleplay policy and boundaries, the mapper copies `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy.safeword`, `meta.safeword_policy.ooc_marker`, `meta.safeword_policy.pause_commands`, `meta.safeword_policy.fade_to_black_preference`, `meta.safeword_policy.policy_note`, and `content_boundaries` into the runtime policy objects or metadata described above. That means these fields can appear in draft summaries and blueprint previews today, as long as UI copy remains honest: fiction-first mode and in-character pushback are prompt policy signals, safeword/OOC fields are explicit meta-controls, and content boundaries are lightweight stored guidance rather than a complete scene-safety engine.
 
 This keeps future UI steps honest: if a creator field cannot map into runtime data, it should remain preview-only, store-only, or deferred in the capability matrix.
 
@@ -118,10 +147,11 @@ This keeps future UI steps honest: if a creator field cannot map into runtime da
 - The premise step may ask how the relationship begins, what the bond should feel like, how quickly romance/adult roleplay should move, and what default intimacy level the user wants.
 - The personality step may offer presets and editable nuance that write to `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, and optional depth lists.
 - The communication step may ask how she talks, what she should avoid sounding like, and how proactive she should be in conversation.
+- The roleplay policy step may ask how she pushes back in character, whether fictional adult roleplay should stay fiction-first, what safeword/OOC marker and pause commands to use, how fade-to-black should be handled, and what hard/soft boundaries should be summarized.
 - These fields can appear in draft summaries and blueprint previews before final save.
-- Pacing and default intimacy are starting-frame hints for chat/prompt behavior, not a substitute for roleplay boundaries, safewords, OOC commands, or full consent controls.
+- Pacing and default intimacy are starting-frame hints for chat/prompt behavior; roleplay boundaries, safewords, OOC commands, and fade-to-black preferences now live in the M6-P04 draft policy fields.
 - Personality and communication fields are behavior anchors for compiled prompts and previews; they are not active planning, autonomous outreach, or guaranteed model behavior.
-- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, and speech quirks should only be exposed according to the capability matrix status; they are not part of the M6-P03 draft-supported contract.
+- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, and speech quirks should only be exposed according to the capability matrix status; they are not part of the M6-P04 draft-supported contract.
 
 ## Moment Capture integration
 
@@ -137,5 +167,5 @@ This means first portraits can use the same M5 capture, gallery, feedback, revie
 - Drafts are not backend-synced beyond local app persistence.
 - Draft finalization into a durable saved character remains a later M6 review/save flow.
 - Dialogue/greeting previews, import/export, memory/growth preference wiring, and richer field-impact evals remain later M6 work.
-- Roleplay policy controls, visual identity documentation, lore/default scene, memory/growth preferences, and import/export should not be documented here as completed M6-P03 behavior.
+- Visual identity documentation, lore/default scene, memory/growth preferences, and import/export should not be documented here as completed M6-P04 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.

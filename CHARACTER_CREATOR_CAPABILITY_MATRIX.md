@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-14
 **Version:** 3.0
-**Context:** M6-P00/P00A/P01/P02/P03 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Context:** M6-P00/P00A/P01/P02/P03/P04 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P03
+## 0.1 Current Runtime Reality After M6-P04
 
 The current repo already has these runtime foundations:
 
@@ -43,7 +43,7 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01/P02/P03 added these creator-draft foundations:
+M6-P00A/P01/P02/P03/P04 added these creator-draft foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
@@ -52,6 +52,7 @@ M6-P00A/P01/P02/P03 added these creator-draft foundations:
 - Draft-supported premise/relationship fields: `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience`.
 - Draft-supported personality fields: `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, and `vulnerabilities`.
 - Draft-supported communication fields: `communication_style`, `avoid_style`, and `initiative_in_conversation`.
+- Draft-supported roleplay/integrity fields: `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`.
 - Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
@@ -491,7 +492,7 @@ Reverie should separate **character canon** from **user persona**. Mixing these 
 | `user_display_name_for_character` | Critical | Chat, TTS, memory | NEEDS_RUNTIME | M6-preview-only | Needs UserPersona or relationship metadata; avoid overbuilding in M6 | M6 Advanced | Dialogue preview |
 | `user_pronouns` | High | Chat | NEEDS_RUNTIME | M6-preview-only | Needs UserPersona | M6 Advanced | Dialogue preview |
 | `user_role_in_relationship` | High | Chat, relationship state | NOW/STORE | M6-preview-only | Existing `user_role_in_story`; prompt-consumed | M7 Genesis | Scenario preview |
-| `user_boundaries` | Critical | Chat, memory, trust | STORE | M6-blocking if exposed | Add basic boundary text/policy or keep lightweight | M6 Basic Creator | Clear UI |
+| `user_boundaries` | Critical | Chat, memory, trust | STORE/PARTIAL | M6-ready for draft boundary summary | Draft-supported through `content_boundaries` hard/soft limits; memory receipts and persona-level enforcement remain later | M6 Basic Creator | Clear UI |
 | `user_preferred_pacing` | Critical | Chat, relationship | STORE/PARTIAL | M6-ready | Can map to relationship pacing/default intimacy | M6 Basic Creator | Examples |
 | `user_likes_dislikes` | High | Memory, chat, image | STORE | M8 Alpha | Typed memories/receipts later | M6-preview-only | Memory examples |
 | `user_visual_preferences` | High | Image, gallery, memory | STORE/PARTIAL | M7 Genesis | Visual memory exists; persona preference model later | M7 Genesis | Visual examples |
@@ -510,16 +511,16 @@ This is not “less fun.” It is what prevents the companion from becoming a cl
 |---|---:|---|---|---|---|---|---|
 | `adult_only_confirmed` | Critical | Image, chat | NOW | M6-ready | Existing identity + visual validation | M6 Basic Creator | Brief, non-weird copy |
 | `underage_exclusion_policy` | Critical | Image, prompt compiler | NOW | M6-ready | Existing adult-only visual policy + prompt rules | Runtime hidden / simple adult-only note | Hidden by default |
-| `content_boundaries` | Critical | Chat, image, memory | STORE | M6-blocking if exposed | Add basic boundary storage/prompt mapping in M6-P04 | M6 Basic Creator | Examples |
-| `hard_no_topics` | Critical | Chat, memory | STORE | M6-blocking if exposed | Add boundary storage/prompt mapping or keep advanced | M6 Basic Creator | Clear UI |
+| `content_boundaries` | Critical | Chat, image, memory | STORE/PARTIAL | M6-ready for draft boundary summary | Draft-supported hard limits, soft limits, preferred intensity, and aftercare style; mapped into blueprint metadata for prompt/preview use | M6 Basic Creator | Examples |
+| `hard_no_topics` | Critical | Chat, memory | STORE/PARTIAL | M6-ready as `content_boundaries.hard_limits` | Draft-supported hard-limit list; deeper memory/trust receipts remain later | M6 Basic Creator / M6 Advanced | Clear UI |
 | `consent_check_style` | Critical | Chat | STORE/PARTIAL | M6-preview-only | Meta-consent exists; style field later | M6 Basic Creator | Scenario preview |
-| `integrity.in_character_pushback` | Critical | Chat, relationship, roleplay | NOW | M6-ready | Existing `CharacterIntegrityPolicy`, prompt-consumed | M6 Basic Creator | In-world disagreement preview |
+| `integrity.in_character_pushback` | Critical | Chat, relationship, roleplay | NOW | M6-ready | Draft-supported; maps to `CharacterIntegrityPolicy.in_character_pushback` and is prompt-consumed | M6 Basic Creator | In-world disagreement preview |
 | `integrity.independence` | Critical | Chat, agency, relationship | NOW | M6-ready | Existing personality + integrity independence | M6 Basic Creator | Independence examples |
-| `integrity.disagreement_style` | Critical | Chat, conflict, roleplay | NOW | M6-ready | Existing `CharacterIntegrityPolicy.disagreement_style` | M7 Genesis / M6 summary | Disagreement scenario |
-| `roleplay.fiction_first_mode` | Critical | Chat, prompt compiler, trust | NOW | M6-ready | Existing roleplay/integrity policies | M6 Basic Creator summary | Fantasy-vs-reality examples |
+| `integrity.disagreement_style` | Critical | Chat, conflict, roleplay | NOW | M6-ready | Draft-supported; maps to `CharacterIntegrityPolicy.disagreement_style` | M6 Basic Creator summary / M6 Advanced | Disagreement scenario |
+| `roleplay.fiction_first_mode` | Critical | Chat, prompt compiler, trust | NOW | M6-ready | Draft-supported; maps to both `RoleplayPolicy.fiction_first_mode` and `CharacterIntegrityPolicy.fiction_first_mode` | M6 Basic Creator summary | Fantasy-vs-reality examples |
 | `roleplay.lecture_avoidance` | Critical | Chat, evals | NOW | M6-ready | Existing policy + compiler | Runtime hidden / M6 summary | Must-not-lecture tests |
 | `reality.real_world_boundary_style` | Critical | Chat, trust | NOW/PROMPT | M8 Alpha for settings | Existing style in integrity policy; deeper behavior evals later | M8+ Alpha/settings | Soft redirect preview |
-| `meta.safeword_policy` | Critical | Chat, UI, trust | NOW/STORE | M6-ready | Existing `MetaConsentAndSafewordPolicy`; parser/UI controls in M6-P04 | M6 Basic Creator for dark modes | Safeword/OOC test |
+| `meta.safeword_policy` | Critical | Chat, UI, trust | NOW/STORE | M6-ready | Draft-supported safeword, OOC marker, pause commands, fade-to-black preference, and policy note; maps to `MetaConsentAndSafewordPolicy` and `RoleplayPolicy.safeword_policy` | M6 Basic Creator for dark modes | Safeword/OOC test |
 | `healthy_bond_runtime_guardrails_visible` | High | UX/trust | PARTIAL | M8 Alpha | Integrity policy exists; visible health/trust dashboard later | M8+ Alpha | Settings summary |
 | `memory_transparency_level` | Critical | Memory browser | NOW-ish | M6-preview-only | Browser exists; memory receipts later | M6 Basic Creator | Memory receipt preview |
 | `data_export_delete_policy` | Critical | Trust | PARTIAL | M8 Alpha | Character delete exists; full export/import M6/M8 | M8+ Alpha | Trust panel |
@@ -569,7 +570,7 @@ These replace the old “fields Reverie cannot fully process yet” list. M4/M5 
 | 4 | First message / alternative greetings / example dialogues | Creator preview requires more than abstract traits | Schema expansion + prompt preview usage | M6-P08 |
 | 5 | Dialogue preview generator | Users need evidence the character sounds right | Scenario preview service using `CharacterPromptCompiler` and fixtures | M6-P08 |
 | 6 | Memory preference baseline | Trust-critical creator controls must do something real | `remember_categories`, `never_remember_categories`, review defaults or clear preview-only limits | M6-P07 |
-| 7 | Basic boundary/user preference mapping | M6 roleplay/boundary choices need storage and prompt consumption | Boundary text fields or mapped policy fields | M6-P04 |
+| 7 | Basic boundary/user preference mapping | Complete foundation: draft roleplay/boundary choices have storage, validation, and blueprint mapping | `integrity`, `roleplay`, `meta.safeword_policy`, and `content_boundaries` draft fields | M6-P04 complete |
 | 8 | First portrait validation | Foundation complete; M6 still needs creator validation UI | Moment Capture from unsaved or persisted draft now works with draft provenance; approve/retry/save-reference UX remains M6-P05 | M6-P00A/P01 complete / M6-P05 pending |
 | 9 | Basic character import/export | M4 API lacks full import/export; M6 owns character-level portability | Export/import blueprint + assets metadata, not full app backup | M6-P09 |
 | 10 | Lore-lite/default scene | M6 creator needs a world/default scene without full lorebook | Small default scene/scenario fields + prompt/image preview | M6-P06 |
@@ -896,10 +897,10 @@ This matrix is based on these design signals:
 The next engineering target is:
 
 ```text
-M6-P04 - Roleplay policy, boundaries, safeword, and OOC controls
+M6-P05 - Visual identity step, asset/reference attachment, and first portrait validation
 ```
 
-P00/P00A/P01/P02/P03 are complete. Continue with the practical creator steps on top of the persisted draft foundation and documented identity, premise, personality, and communication draft contracts, without treating drafts as canonical characters before save.
+P00/P00A/P01/P02/P03/P04 are complete. Continue with the practical creator steps on top of the persisted draft foundation and documented identity, premise, personality, communication, roleplay policy, and boundary draft contracts, without treating drafts as canonical characters before save.
 
 The creator should expose only the fields in the M6 baseline after runtime gaps are closed. Everything else stays internal, preview-only, or deferred. This keeps Reverie honest: no decorative onboarding, no fake agency, no parallel visual canon, no memory soup, no magical promises that collapse the first time the user presses a button.
 
