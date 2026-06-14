@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 2.8
-**Context:** M6-P00/P00A/P01 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Version:** 2.9
+**Context:** M6-P00/P00A/P01/P02 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P01
+## 0.1 Current Runtime Reality After M6-P02
 
 The current repo already has these runtime foundations:
 
@@ -43,11 +43,13 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01 added these creator-draft foundations:
+M6-P00A/P01/P02 added these creator-draft foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
 - Draft create, load/list, update, validate, and delete API operations under `/api/characters/creator/drafts`.
+- Draft-supported identity fields: `display_name`, `pronouns`, `species_or_type`, `adult_age_range`, and `adult_only_confirmed`.
+- Draft-supported premise/relationship fields: `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience`.
 - Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
@@ -158,13 +160,13 @@ These fields define who the character is and how all subsystems reference her. B
 |---|---:|---|---|---|---|---|---|
 | `character_id` | Critical | All systems | NOW | M6-ready | Existing `CharacterBlueprint.character_id`, CRUD, chat/capture metadata | Runtime hidden | None |
 | `schema_version` / `character_version` | High | Migration, rollback, imports | NOW | M6-ready | Existing `CharacterBlueprint.schema_version`; future import/export uses it | Runtime hidden | None |
-| `display_name` | Critical | Chat, UI, TTS, memory, gallery | NOW | M6-ready | Stored in `CharacterIdentity`, prompt-consumed | M6 Basic Creator | Greeting/dialogue preview |
+| `display_name` | Critical | Chat, UI, TTS, memory, gallery | NOW | M6-ready | Draft-supported; stored in `CharacterIdentity`, prompt-consumed | M6 Basic Creator | Greeting/dialogue preview |
 | `short_name` / nickname | High | Chat, relationship, TTS | NEEDS_RUNTIME | M6-blocking runtime | Add optional nickname/short name or map safely to metadata | M6 Basic Creator | Dialogue preview |
-| `pronouns` | High | Chat, TTS, UI, import/export | NOW | M6-ready | Stored in `CharacterIdentity`, prompt-consumed | M6 Basic Creator | Summary preview |
-| `adult_age_range` | Critical | Visual identity, prompt, image | NOW | M6-ready | Stored and synced to `VisualIdentityProfile.adult_only_policy` | M6 Basic Creator | Friendly examples; no over-policing |
-| `adult_only_confirmed` | Critical | Chat, image, roleplay boundary | NOW | M6-ready | Existing adult baseline validation | M6 Basic Creator | Simple adult-only copy |
+| `pronouns` | High | Chat, TTS, UI, import/export | NOW | M6-ready | Draft-supported; stored in `CharacterIdentity`, prompt-consumed | M6 Basic Creator | Summary preview |
+| `adult_age_range` | Critical | Visual identity, prompt, image | NOW | M6-ready | Draft-supported; stored in `CharacterIdentity` and available to adult visual baseline handling | M6 Basic Creator | Friendly examples; no over-policing |
+| `adult_only_confirmed` | Critical | Chat, image, roleplay boundary | NOW | M6-ready | Draft-supported; blueprint validation requires adult-only confirmation | M6 Basic Creator | Simple adult-only copy |
 | `adult_only_policy` | Critical | Image, content boundary | NOW | M6-ready | Existing visual adult policy + prompt compiler | Runtime hidden / simple summary | Hidden runtime rule; never vibe-killer copy |
-| `species_or_type` | High | Chat, image, VN, lore | NOW | M6-ready | Stored in `CharacterIdentity`, prompt-consumed; image prompt can use visual anchors | M6 Basic Creator | Visual/text examples |
+| `species_or_type` | High | Chat, image, VN, lore | NOW | M6-ready | Draft-supported; stored in `CharacterIdentity`, prompt-consumed; image prompt can use visual anchors | M6 Basic Creator | Visual/text examples |
 | `occupation_or_role` | Medium | Chat, lore, image scene | PARTIAL | M6-preview-only | No dedicated field; can map to `relationship_dynamic`, metadata, or lore-lite in M6-P06 | M6 Basic Creator | Greeting/scenario preview |
 | `origin_archetype` | Medium | Chat, lore, creator presets | NOW/STORE | M6-store-only | Stored in `CharacterIdentity`; prompt-consumed | M7 Genesis | Choice card examples |
 | `creator_notes` | Medium | Import/export, debugging | NOW/STORE | M6-store-only | Stored in `CharacterIdentity`; not revealed in prompt | M6 Advanced | Not user-facing by default |
@@ -180,14 +182,14 @@ These fields define the emotional contract: what kind of companion she is, how t
 
 | Field | User value | Runtime consumers | Current support | M6 readiness | Needed capability / note | Wizard exposure | Preview / validation |
 |---|---:|---|---|---|---|---|---|
-| `companion_mode` | Critical | Chat, creator presets, memory tone | PARTIAL | M6-blocking runtime | Add creator preset mapping into `relationship_dynamic`, `dynamic_tags`, personality, and prompt preview | M6 Basic Creator | Choice examples |
-| `starting_relationship_phase` | Critical | Chat, relationship state, memory | NOW | M6-ready | Existing `RelationshipState.starting_relationship_phase` | M6 Basic Creator | Test scenes |
-| `relationship_dynamic` | Critical | Chat, image mood, TTS, VN | NOW | M6-ready | Stored in `RelationshipState`, prompt-consumed | M6 Basic Creator | Dialogue examples |
-| `user_desired_experience` | High | Creator, prompt compiler, growth | NOW/STORE | M6-ready | Stored in `RelationshipState`, prompt-consumed | M6 Basic Creator | Summary preview |
-| `relationship_pacing` | Critical | Chat, growth, boundaries | NOW | M6-ready | Existing `RelationshipState.relationship_pacing` | M6 Basic Creator | Scenario previews |
-| `default_intimacy_level` | High | Chat, roleplay policy, TTS/image intensity | NOW | M6-ready | Existing `DefaultIntimacyLevel`, prompt-consumed | M6 Basic Creator | Clear explanation |
-| `romantic_pacing` | Critical | Chat, growth, relationship | NOW | M6-ready | Existing `RelationshipState.romantic_pacing` | M6 Advanced | Preview scenes |
-| `nsfw_pacing` | Critical | Chat, roleplay boundary | NOW | M6-ready | Existing `RelationshipState.nsfw_pacing` | M6 Advanced | Clear adult-only controls |
+| `companion_mode` | Critical | Chat, creator presets, memory tone | PARTIAL | M6-preview-only | No dedicated field yet; M6 can present premise choices only when they map honestly into `relationship_dynamic`, pacing fields, `default_intimacy_level`, and optional traits/metadata. | M6 Basic Creator | Choice examples |
+| `starting_relationship_phase` | Critical | Chat, relationship state, memory | NOW | M6-ready | Draft-supported; maps to `RelationshipState.starting_relationship_phase`, `current_relationship_phase`, and `phase` | M6 Basic Creator | Test scenes |
+| `relationship_dynamic` | Critical | Chat, image mood, TTS, VN | NOW | M6-ready | Draft-supported; stored in `RelationshipState`, prompt-consumed | M6 Basic Creator | Dialogue examples |
+| `user_desired_experience` | High | Creator, prompt compiler, growth | NOW | M6-ready | Draft-supported; maps into `RelationshipState.user_desired_experience` and is prompt-consumed through relationship context | M6 Basic Creator | Summary preview |
+| `relationship_pacing` | Critical | Chat, growth, boundaries | NOW | M6-ready | Draft-supported; maps into `RelationshipState.relationship_pacing` | M6 Basic Creator | Scenario previews |
+| `default_intimacy_level` | High | Chat, roleplay policy, TTS/image intensity | NOW | M6-ready | Draft-supported; maps to `RelationshipState.default_intimacy_level` and is prompt-consumed | M6 Basic Creator | Clear explanation |
+| `romantic_pacing` | Critical | Chat, growth, relationship | NOW | M6-ready | Draft-supported; maps into `RelationshipState.romantic_pacing` | M6 Advanced | Preview scenes |
+| `nsfw_pacing` | Critical | Chat, roleplay boundary | NOW | M6-ready | Draft-supported; maps into `RelationshipState.nsfw_pacing` | M6 Advanced | Clear adult-only controls |
 | `emotional_tone_promise` | High | Chat, TTS, image mood | PROMPT | M6-preview-only | Can map into relationship dynamic and communication style | M7 Genesis | Sample lines |
 | `connection_origin` | Medium | Greeting, lore, relationship state | NEEDS_RUNTIME | M6-preview-only | Add to lore-lite/default scenario if needed | M7 Genesis | Greeting variants |
 | `perspective_mode` | Medium | Chat style, RP formatting | PROMPT | M6-preview-only | Not dedicated; can be style note only | M6 Advanced | Example dialogue |
@@ -810,18 +812,18 @@ Completed foundation:
 1. **M6-P00:** Matrix reconciliation.
 2. **M6-P00A:** Draft-capable Moment Capture wiring for first-portrait foundations.
 3. **M6-P01:** Creator draft persistence and draft-to-`CharacterBlueprint` mapper foundation.
+4. **M6-P02:** Identity, adult-baseline, and premise/relationship starting-frame documentation for draft-supported fields.
 
 Build next:
 
-1. Identity and premise steps.
-2. Personality/communication steps with examples and anti-examples.
-3. Roleplay/boundary/safeword controls in human-first wording.
-4. Visual identity step and first portrait validation UI.
-5. World/default scene lore-lite step.
-6. Memory/growth preference baseline.
-7. Greeting/dialogue preview engine.
-8. Character review/save/edit/duplicate/import/export/delete.
-9. Creator eval harness and docs/accessibility pass.
+1. Personality/communication steps with examples and anti-examples.
+2. Roleplay/boundary/safeword controls in human-first wording.
+3. Visual identity step and first portrait validation UI.
+4. World/default scene lore-lite step.
+5. Memory/growth preference baseline.
+6. Greeting/dialogue preview engine.
+7. Character review/save/edit/duplicate/import/export/delete.
+8. Creator eval harness and docs/accessibility pass.
 
 Do not build full Genesis here. Do not sneak in M8 or M9 runtime just to make the wizard feel larger. Bigger is not better; sometimes bigger is just an error message with ambition.
 
@@ -891,11 +893,11 @@ This matrix is based on these design signals:
 The next engineering target is:
 
 ```text
-M6-P02 - Identity, adult baseline, and companion premise steps
+M6-P03 - Personality and communication steps with examples
 ```
 
-P00/P00A/P01 are complete. Continue with the practical creator steps on top of the persisted draft foundation, without treating drafts as canonical characters before save.
+P00/P00A/P01/P02 are complete. Continue with the practical creator steps on top of the persisted draft foundation and documented identity/premise draft contract, without treating drafts as canonical characters before save.
 
 The creator should expose only the fields in the M6 baseline after runtime gaps are closed. Everything else stays internal, preview-only, or deferred. This keeps Reverie honest: no decorative onboarding, no fake agency, no parallel visual canon, no memory soup, no magical promises that collapse the first time the user presses a button.
 
-**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.8**
+**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.9**
