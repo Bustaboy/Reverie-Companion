@@ -32,6 +32,8 @@ from app.schemas.character_blueprint import (
     CharacterBlueprint,
     CharacterIdentity,
     CharacterIntegrityPolicy,
+    CharacterMemoryPolicy,
+    MemoryScope,
     MetaConsentAndSafewordPolicy,
     CommunicationProfile,
     MAX_LIST_ITEMS,
@@ -40,6 +42,7 @@ from app.schemas.character_blueprint import (
     RoleplayPolicy,
     utc_now_iso,
 )
+from app.schemas.growth_policy import GrowthPace, GrowthPolicy, ReflectionFrequency
 from app.schemas.moment_capture import (
     MomentCaptureRequest,
     SceneState,
@@ -59,7 +62,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 6
+DRAFT_SCHEMA_VERSION = 7
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -127,6 +130,119 @@ def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> N
                 f"{field_name} must describe a clearly adult companion; "
                 "underage or deliberately childlike sexual presentation is not allowed."
             )
+
+
+def _normalize_growth_domain_list(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = str(value).strip().lower().replace(" ", "_").replace("-", "_")[:80]
+        if not item:
+            continue
+        if not all(char.isalnum() or char == "_" for char in item):
+            raise ValueError(
+                "Growth domains may contain only letters, numbers, spaces, hyphens, or underscores."
+            )
+        if item not in normalized:
+            normalized.append(item)
+    return normalized[:16]
+
+
+class CreatorDraftMemoryPreferences(BaseModel):
+    """Draft-scoped long-term memory preferences for current runtime policy."""
+
+    memory_enabled: bool = True
+    memory_scope: MemoryScope = MemoryScope.character_private
+
+    @model_validator(mode="after")
+    def validate_memory_scope(self) -> "CreatorDraftMemoryPreferences":
+        # M6 exposes only character-scoped local memory modes. Shared memory can be
+        # included, but drafts must not imply unbounded/global recall.
+        if self.memory_scope not in {
+            MemoryScope.character_private,
+            MemoryScope.character_plus_shared,
+        }:
+            raise ValueError(
+                "Memory scope must be character_private or character_plus_shared."
+            )
+        return self
+
+    def to_policy(self) -> CharacterMemoryPolicy:
+        return CharacterMemoryPolicy(
+            memory_enabled=self.memory_enabled,
+            scope=self.memory_scope,
+            include_shared_memories=(
+                self.memory_enabled
+                and self.memory_scope == MemoryScope.character_plus_shared
+            ),
+            memory_summary=(
+                "Long-term memory is disabled for this draft."
+                if not self.memory_enabled
+                else None
+            ),
+        )
+
+
+class CreatorDraftGrowthPreferences(BaseModel):
+    """Draft-scoped self-learning/growth preferences mapped to GrowthPolicy."""
+
+    reflection_frequency: ReflectionFrequency = ReflectionFrequency.balanced
+    growth_pace: GrowthPace = GrowthPace.balanced
+    allowed_growth_domains: list[str] = Field(
+        default_factory=lambda: [
+            "preferences",
+            "relationship",
+            "rituals",
+            "communication_style",
+        ],
+        max_length=16,
+    )
+    blocked_growth_domains: list[str] = Field(
+        default_factory=lambda: [
+            "stable_identity_without_user_edit",
+            "underage_or_childlike_sexualization",
+        ],
+        max_length=16,
+    )
+    major_change_requires_approval: bool = True
+
+    @field_validator("allowed_growth_domains", "blocked_growth_domains", mode="after")
+    @classmethod
+    def normalize_growth_domains(cls, values: list[str]) -> list[str]:
+        return _normalize_growth_domain_list(values)
+
+    @model_validator(mode="after")
+    def validate_growth_safety(self) -> "CreatorDraftGrowthPreferences":
+        if not self.allowed_growth_domains:
+            raise ValueError("At least one allowed growth domain is required.")
+        required_blocked = {
+            "stable_identity_without_user_edit",
+            "underage_or_childlike_sexualization",
+        }
+        missing = required_blocked.difference(self.blocked_growth_domains)
+        if missing:
+            raise ValueError(
+                "Blocked growth domains must include stable_identity_without_user_edit "
+                "and underage_or_childlike_sexualization."
+            )
+        overlap = set(self.allowed_growth_domains).intersection(
+            self.blocked_growth_domains
+        )
+        if overlap:
+            raise ValueError(
+                "Growth domains cannot be both allowed and blocked: "
+                + ", ".join(sorted(overlap))
+            )
+        return self
+
+    def to_policy(self, *, character_id: str) -> GrowthPolicy:
+        return GrowthPolicy(
+            character_id=character_id,
+            growth_pace=self.growth_pace,
+            reflection_frequency=self.reflection_frequency,
+            major_change_requires_approval=self.major_change_requires_approval,
+            allowed_growth_domains=self.allowed_growth_domains,
+            blocked_growth_domains=self.blocked_growth_domains,
+        )
 
 
 class CreatorDraftIntegrityPolicy(BaseModel):
@@ -246,7 +362,9 @@ class CreatorDraftWorldScene(BaseModel):
     time_of_day: str | None = Field(default=None, max_length=80)
     mood: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
     key_objects: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
-    background_details: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    background_details: list[str] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS
+    )
 
     @field_validator(
         "default_setting",
@@ -454,6 +572,12 @@ class CharacterCreatorDraft(BaseModel):
     fears: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     vulnerabilities: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    memory: CreatorDraftMemoryPreferences = Field(
+        default_factory=CreatorDraftMemoryPreferences
+    )
+    growth: CreatorDraftGrowthPreferences = Field(
+        default_factory=CreatorDraftGrowthPreferences
+    )
     integrity: CreatorDraftIntegrityPolicy = Field(
         default_factory=CreatorDraftIntegrityPolicy
     )
@@ -560,6 +684,12 @@ class CharacterCreatorDraftUpdate(BaseModel):
     fears: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     vulnerabilities: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    memory: CreatorDraftMemoryPreferences = Field(
+        default_factory=CreatorDraftMemoryPreferences
+    )
+    growth: CreatorDraftGrowthPreferences = Field(
+        default_factory=CreatorDraftGrowthPreferences
+    )
     integrity: CreatorDraftIntegrityPolicy = Field(
         default_factory=CreatorDraftIntegrityPolicy
     )
@@ -786,6 +916,8 @@ class CharacterCreatorService:
                 avoid_style_rules=draft.avoid_style,
                 initiative_in_conversation=draft.initiative_in_conversation,
             ),
+            memory_policy=draft.memory.to_policy(),
+            growth_policy=draft.growth.to_policy(character_id=character_id),
             roleplay_policy=RoleplayPolicy(
                 fiction_first_mode=draft.roleplay.fiction_first_mode,
                 lecture_avoidance=True,
@@ -809,10 +941,10 @@ class CharacterCreatorService:
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p06_world_scene_draft",
+                    "source": "m6_p07_memory_growth_preferences",
                     "migration_note": (
-                        "API-only draft roleplay policy, visual identity, and world/scene fields "
-                        "are mapped into runtime CharacterBlueprint structures "
+                        "API-only draft memory, growth, roleplay policy, visual identity, and world/scene fields "
+                        "are mapped into runtime CharacterBlueprint policy structures "
                         "before final save."
                     ),
                 },

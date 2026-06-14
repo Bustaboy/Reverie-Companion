@@ -27,7 +27,9 @@ from app.services.character_creator_service import (
     CharacterCreatorDraftCreate,
     CharacterCreatorDraftUpdate,
     CreatorDraftContentBoundaries,
+    CreatorDraftGrowthPreferences,
     CreatorDraftIntegrityPolicy,
+    CreatorDraftMemoryPreferences,
     CreatorDraftMetaPolicy,
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
@@ -66,6 +68,24 @@ def _draft() -> CharacterCreatorDraft:
         fears=["being forgotten"],
         vulnerabilities=["softens when praised sincerely"],
         communication_style="soft teasing with emotional honesty",
+        memory=CreatorDraftMemoryPreferences(
+            memory_enabled=True, memory_scope="character_plus_shared"
+        ),
+        growth=CreatorDraftGrowthPreferences(
+            reflection_frequency="high",
+            growth_pace="responsive",
+            allowed_growth_domains=[
+                "Preferences",
+                "relationship",
+                "communication style",
+            ],
+            blocked_growth_domains=[
+                "stable_identity_without_user_edit",
+                "underage_or_childlike_sexualization",
+                "visual_canon_without_review",
+            ],
+            major_change_requires_approval=True,
+        ),
         integrity=CreatorDraftIntegrityPolicy(
             in_character_pushback="push back through teasing, vows, and proud in-world disagreement",
             disagreement_style="stay embodied as Aria and argue from desire, loyalty, or playful defiance",
@@ -192,6 +212,21 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         "moralizing fictional adult romance",
     ]
     assert blueprint.communication.initiative_in_conversation == 0.63
+    assert blueprint.memory_policy.memory_enabled is True
+    assert blueprint.memory_policy.scope == "character_plus_shared"
+    assert blueprint.memory_policy.include_shared_memories is True
+    assert blueprint.growth_policy.character_id == "draft_aria"
+    assert blueprint.growth_policy.reflection_frequency == "high"
+    assert blueprint.growth_policy.growth_pace == "responsive"
+    assert blueprint.growth_policy.allowed_growth_domains == [
+        "preferences",
+        "relationship",
+        "communication_style",
+    ]
+    assert (
+        "visual_canon_without_review" in blueprint.growth_policy.blocked_growth_domains
+    )
+    assert blueprint.growth_policy.major_change_requires_approval is True
     assert "amber eyes" in blueprint.visual_identity.identity_anchors
     assert "warm brown skin" in blueprint.visual_identity.identity_anchors
     assert "same adult face" in blueprint.visual_identity.identity_anchors
@@ -202,14 +237,23 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
     assert (
-        blueprint.metadata["creator_draft"]["source"] == "m6_p06_world_scene_draft"
+        blueprint.metadata["creator_draft"]["source"]
+        == "m6_p07_memory_growth_preferences"
     )
-    assert blueprint.relationship.user_role_in_story == "trusted apprentice and slow-burn romantic interest"
-    assert blueprint.metadata["scene_hints"]["setting"] == "rainy moonlit atelier above the old city"
+    assert (
+        blueprint.relationship.user_role_in_story
+        == "trusted apprentice and slow-burn romantic interest"
+    )
+    assert (
+        blueprint.metadata["scene_hints"]["setting"]
+        == "rainy moonlit atelier above the old city"
+    )
     assert blueprint.metadata["scene_hints"]["world_genre"] == "modern fantasy romance"
 
 
-def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> None:
+def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> (
+    None
+):
     service = CharacterCreatorService()
     draft = CharacterCreatorDraft(
         display_name="Mira",
@@ -257,6 +301,113 @@ def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections(
         trait.name == "fashion_identity" and trait.value == "battle-mage leathers"
         for trait in visual.evolving_traits
     )
+
+
+def test_creator_memory_and_growth_fields_persist_update_and_map_to_blueprint(
+    tmp_path,
+) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            memory=CreatorDraftMemoryPreferences(
+                memory_enabled=False, memory_scope="character_private"
+            ),
+            growth=CreatorDraftGrowthPreferences(
+                reflection_frequency="low",
+                growth_pace="slow",
+                allowed_growth_domains=["preferences", "rituals"],
+                blocked_growth_domains=[
+                    "stable_identity_without_user_edit",
+                    "underage_or_childlike_sexualization",
+                    "personality_rewrite_without_review",
+                ],
+                major_change_requires_approval=False,
+            ),
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria")
+    assert loaded.record.draft.memory.memory_enabled is False
+    assert loaded.record.draft.memory.memory_scope == "character_private"
+    assert loaded.record.draft.growth.reflection_frequency == "low"
+    assert loaded.record.draft.growth.growth_pace == "slow"
+    assert loaded.record.draft.growth.allowed_growth_domains == [
+        "preferences",
+        "rituals",
+    ]
+    assert updated.validation.blueprint is not None
+    blueprint = updated.validation.blueprint
+    assert blueprint.memory_policy.memory_enabled is False
+    assert blueprint.memory_policy.scope == "character_private"
+    assert blueprint.memory_policy.include_shared_memories is False
+    assert "disabled" in (blueprint.memory_policy.memory_summary or "").lower()
+    assert blueprint.growth_policy.reflection_frequency == "low"
+    assert blueprint.growth_policy.growth_pace == "slow"
+    assert blueprint.growth_policy.allowed_growth_domains == ["preferences", "rituals"]
+    assert (
+        "personality_rewrite_without_review"
+        in blueprint.growth_policy.blocked_growth_domains
+    )
+    assert blueprint.growth_policy.major_change_requires_approval is False
+
+
+def test_creator_memory_and_growth_reject_invalid_values() -> None:
+    invalid_kwargs = (
+        {"memory": {"memory_scope": "global"}},
+        {"growth": {"reflection_frequency": "constant"}},
+        {
+            "growth": {
+                "allowed_growth_domains": [],
+                "blocked_growth_domains": [
+                    "stable_identity_without_user_edit",
+                    "underage_or_childlike_sexualization",
+                ],
+            }
+        },
+        {
+            "growth": {
+                "allowed_growth_domains": ["relationship"],
+                "blocked_growth_domains": [
+                    "stable_identity_without_user_edit",
+                    "underage_or_childlike_sexualization",
+                    "relationship",
+                ],
+            }
+        },
+        {
+            "growth": {
+                "allowed_growth_domains": ["preferences"],
+                "blocked_growth_domains": ["stable_identity_without_user_edit"],
+            }
+        },
+        {
+            "growth": {
+                "allowed_growth_domains": ["relationship!"],
+                "blocked_growth_domains": [
+                    "stable_identity_without_user_edit",
+                    "underage_or_childlike_sexualization",
+                ],
+            }
+        },
+    )
+    for kwargs in invalid_kwargs:
+        try:
+            CharacterCreatorDraft(display_name="Aria", **kwargs)
+        except ValidationError as exc:
+            assert (
+                "memory" in str(exc).lower()
+                or "growth" in str(exc).lower()
+                or "reflection" in str(exc).lower()
+                or "domain" in str(exc).lower()
+            )
+        else:
+            raise AssertionError(
+                f"Expected invalid memory/growth values to fail: {kwargs}"
+            )
 
 
 def test_creator_visual_identity_fields_persist_and_update(tmp_path) -> None:
@@ -314,7 +465,9 @@ def test_creator_visual_identity_rejects_disallowed_or_misplaced_values() -> Non
             raise AssertionError(f"Expected invalid visual values to fail: {kwargs}")
 
 
-def test_creator_world_scene_fields_persist_update_and_map_to_blueprint(tmp_path) -> None:
+def test_creator_world_scene_fields_persist_update_and_map_to_blueprint(
+    tmp_path,
+) -> None:
     repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
     service = CharacterCreatorService(draft_repository=repository)
     service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
@@ -336,14 +489,25 @@ def test_creator_world_scene_fields_persist_update_and_map_to_blueprint(tmp_path
     )
 
     loaded = service.load_draft("draft-aria")
-    assert loaded.record.draft.world_scene.default_setting == "cozy starship lounge orbiting a blue nebula"
+    assert (
+        loaded.record.draft.world_scene.default_setting
+        == "cozy starship lounge orbiting a blue nebula"
+    )
     assert updated.validation.blueprint is not None
     blueprint = updated.validation.blueprint
     assert blueprint.relationship.user_role_in_story == "beloved captain she trusts"
     assert blueprint.metadata["world_scene"]["world_genre"] == "soft sci-fi romance"
-    assert blueprint.metadata["scene_hints"]["setting"] == "cozy starship lounge orbiting a blue nebula"
-    assert blueprint.metadata["scene_hints"]["scenario"].startswith("The user has just returned")
-    assert blueprint.metadata["scene_hints"]["props"] == ["tea service", "holographic star map"]
+    assert (
+        blueprint.metadata["scene_hints"]["setting"]
+        == "cozy starship lounge orbiting a blue nebula"
+    )
+    assert blueprint.metadata["scene_hints"]["scenario"].startswith(
+        "The user has just returned"
+    )
+    assert blueprint.metadata["scene_hints"]["props"] == [
+        "tea service",
+        "holographic star map",
+    ]
 
 
 def test_creator_world_scene_defaults_seed_draft_moment_scene_state() -> None:
@@ -368,11 +532,16 @@ def test_creator_world_scene_rejects_invalid_values() -> None:
         {"key_objects": ["schoolgirl costume"]},
     ):
         try:
-            CharacterCreatorDraft(display_name="Aria", world_scene=CreatorDraftWorldScene(**kwargs))
+            CharacterCreatorDraft(
+                display_name="Aria", world_scene=CreatorDraftWorldScene(**kwargs)
+            )
         except ValidationError as exc:
             assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
         else:
-            raise AssertionError(f"Expected invalid world/scene values to fail: {kwargs}")
+            raise AssertionError(
+                f"Expected invalid world/scene values to fail: {kwargs}"
+            )
+
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     with_exception = None
