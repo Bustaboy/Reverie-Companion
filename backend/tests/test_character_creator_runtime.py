@@ -990,3 +990,82 @@ def test_creator_first_portrait_feedback_uses_existing_review_and_rollback_patte
         )
 
     asyncio.run(run_test())
+
+
+def test_creator_greeting_preview_reflects_draft_fields_and_quality() -> None:
+    service = CharacterCreatorService()
+
+    preview = service.generate_greeting_preview(_draft())
+
+    assert preview.kind == "greeting"
+    assert preview.greeting is not None
+    assert preview.quality.passed is True
+    assert not [issue for issue in preview.quality.issues if issue.severity == "error"]
+    text = preview.greeting.lower()
+    assert "aria" in text
+    assert "soft teasing with emotional honesty" in text
+    assert "devoted slow-burn companion" in text
+    assert "rainy moonlit atelier" in text
+    assert "starlight" in text
+    assert "stable identity" in text
+    assert "blue eyes" not in text
+    assert "<character_system_prompt>" in preview.prompt_context
+
+
+def test_creator_example_dialogue_previews_reflect_policy_memory_and_growth() -> None:
+    service = CharacterCreatorService()
+
+    preview = service.generate_example_dialogue_previews(_draft())
+
+    assert preview.kind == "example_dialogues"
+    assert len(preview.example_dialogues) >= 3
+    assert preview.quality.passed is True
+    joined = "\n".join(
+        turn.text for dialogue in preview.example_dialogues for turn in dialogue.turns
+    ).lower()
+    assert "devoted slow-burn companion" in joined
+    assert "soft teasing with emotional honesty" in joined
+    assert "romantic pacing" in joined
+    assert "adult pacing" in joined
+    assert "starlight" in joined
+    assert "character-private preference" in joined
+    assert "stable identity and visual canon" in joined
+    assert "moralizing fictional adult romance" not in joined
+
+
+def test_creator_preview_quality_reports_missing_consistency_fields() -> None:
+    service = CharacterCreatorService()
+    blueprint = service.draft_to_blueprint(_draft())
+
+    report = service._validate_preview_text(  # noqa: SLF001 - intentional unit coverage
+        blueprint,
+        ["A generic hello with no specific companion context."],
+        required_fields=["identity", "personality", "roleplay_policy", "world_scene"],
+    )
+
+    assert report.passed is True
+    assert {issue.code for issue in report.issues} >= {
+        "missing_identity",
+        "missing_personality",
+        "missing_roleplay_policy",
+        "missing_world_scene",
+    }
+
+
+def test_persisted_creator_preview_methods_load_draft_without_persisting_preview(
+    tmp_path,
+) -> None:
+    repository = CreatorDraftRepository(tmp_path / "creator.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    created = service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    greeting = service.generate_persisted_greeting_preview(created.record.draft_id)
+    dialogues = service.generate_persisted_example_dialogue_previews(
+        created.record.draft_id
+    )
+
+    assert greeting.greeting is not None
+    assert dialogues.example_dialogues
+    assert repository.get(created.record.draft_id) is not None
+    assert greeting.metadata["storage"] == "not_persisted"
+    assert dialogues.metadata["storage"] == "not_persisted"

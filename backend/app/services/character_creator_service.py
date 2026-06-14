@@ -55,7 +55,10 @@ from app.schemas.relationship_state import (
     RelationshipState,
 )
 from app.schemas.visual_identity import VisualIdentityProfile
-from app.services.character_service import CharacterNotFoundError
+from app.services.character_service import (
+    CharacterNotFoundError,
+    CharacterPromptCompiler,
+)
 from app.services.moment_capture_service import (
     MomentCaptureResponse,
     MomentCaptureService,
@@ -649,6 +652,53 @@ class CharacterCreatorDraft(BaseModel):
         return _normalize_creator_list(values, field_name="Creator draft")
 
 
+class PreviewKind(StrEnum):
+    greeting = "greeting"
+    example_dialogues = "example_dialogues"
+
+
+class DialoguePreviewTurn(BaseModel):
+    speaker: str = Field(..., min_length=1, max_length=80)
+    text: str = Field(..., min_length=1, max_length=800)
+
+
+class ExampleDialoguePreview(BaseModel):
+    scenario: str = Field(..., min_length=1, max_length=160)
+    turns: list[DialoguePreviewTurn] = Field(..., min_length=2, max_length=6)
+
+
+class PreviewQualityIssue(BaseModel):
+    code: str
+    message: str
+    severity: str = Field(default="warning", pattern="^(warning|error)$")
+
+
+class PreviewQualityReport(BaseModel):
+    passed: bool
+    issues: list[PreviewQualityIssue] = Field(default_factory=list)
+    covered_fields: list[str] = Field(default_factory=list)
+
+
+class DraftPreviewResponse(BaseModel):
+    draft_id: str | None = None
+    character_id: str
+    kind: PreviewKind
+    greeting: str | None = None
+    example_dialogues: list[ExampleDialoguePreview] = Field(default_factory=list)
+    quality: PreviewQualityReport
+    prompt_context: str = Field(..., max_length=9600)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DraftPreviewRequest(BaseModel):
+    draft: CharacterCreatorDraft
+    include_prompt_context: bool = True
+
+
+class PersistedDraftPreviewRequest(BaseModel):
+    include_prompt_context: bool = True
+
+
 class DraftValidationResponse(BaseModel):
     valid: bool
     blueprint: CharacterBlueprint | None = None
@@ -969,6 +1019,300 @@ class CharacterCreatorService:
         except ValueError as exc:
             return DraftValidationResponse(valid=False, errors=[str(exc)])
         return DraftValidationResponse(valid=True, blueprint=blueprint)
+
+    def generate_greeting_preview(
+        self, draft: CharacterCreatorDraft, *, include_prompt_context: bool = True
+    ) -> DraftPreviewResponse:
+        blueprint = self.draft_to_blueprint(draft)
+        prompt_context = self._compile_preview_prompt_context(
+            blueprint, include_visual_summary=True
+        )
+        greeting = self._build_greeting(blueprint)
+        quality = self._validate_preview_text(
+            blueprint,
+            [greeting],
+            required_fields=[
+                "identity",
+                "personality",
+                "communication_style",
+                "roleplay_policy",
+                "world_scene",
+                "visual_identity",
+                "memory",
+                "growth",
+            ],
+        )
+        return DraftPreviewResponse(
+            draft_id=draft.draft_id,
+            character_id=blueprint.character_id,
+            kind=PreviewKind.greeting,
+            greeting=greeting,
+            quality=quality,
+            prompt_context=prompt_context if include_prompt_context else "omitted",
+            metadata={
+                "engine": "deterministic_creator_preview_v1",
+                "storage": "not_persisted",
+            },
+        )
+
+    def generate_example_dialogue_previews(
+        self, draft: CharacterCreatorDraft, *, include_prompt_context: bool = True
+    ) -> DraftPreviewResponse:
+        blueprint = self.draft_to_blueprint(draft)
+        prompt_context = self._compile_preview_prompt_context(
+            blueprint, include_visual_summary=True
+        )
+        dialogues = self._build_example_dialogues(blueprint)
+        texts = [turn.text for dialogue in dialogues for turn in dialogue.turns]
+        quality = self._validate_preview_text(
+            blueprint,
+            texts,
+            required_fields=[
+                "identity",
+                "personality",
+                "communication_style",
+                "relationship",
+                "roleplay_policy",
+                "world_scene",
+                "memory",
+                "growth",
+            ],
+        )
+        return DraftPreviewResponse(
+            draft_id=draft.draft_id,
+            character_id=blueprint.character_id,
+            kind=PreviewKind.example_dialogues,
+            example_dialogues=dialogues,
+            quality=quality,
+            prompt_context=prompt_context if include_prompt_context else "omitted",
+            metadata={
+                "engine": "deterministic_creator_preview_v1",
+                "storage": "not_persisted",
+            },
+        )
+
+    def generate_persisted_greeting_preview(
+        self, draft_id: str, request: PersistedDraftPreviewRequest | None = None
+    ) -> DraftPreviewResponse:
+        record = self._get_record_or_raise(draft_id)
+        return self.generate_greeting_preview(
+            record.draft,
+            include_prompt_context=(
+                True if request is None else request.include_prompt_context
+            ),
+        )
+
+    def generate_persisted_example_dialogue_previews(
+        self, draft_id: str, request: PersistedDraftPreviewRequest | None = None
+    ) -> DraftPreviewResponse:
+        record = self._get_record_or_raise(draft_id)
+        return self.generate_example_dialogue_previews(
+            record.draft,
+            include_prompt_context=(
+                True if request is None else request.include_prompt_context
+            ),
+        )
+
+    def _compile_preview_prompt_context(
+        self, blueprint: CharacterBlueprint, *, include_visual_summary: bool
+    ) -> str:
+        return CharacterPromptCompiler().compile(
+            blueprint, include_visual_summary=include_visual_summary
+        )
+
+    def _build_greeting(self, blueprint: CharacterBlueprint) -> str:
+        identity = blueprint.identity
+        relationship = blueprint.relationship
+        personality = blueprint.personality
+        communication = blueprint.communication
+        scene = (
+            blueprint.metadata.get("scene_hints")
+            if isinstance(blueprint.metadata, dict)
+            else {}
+        )
+        setting = scene.get("setting") if isinstance(scene, dict) else None
+        scenario = scene.get("scenario") if isinstance(scene, dict) else None
+        visual_bits = [
+            line
+            for line in blueprint.visual_identity.compact_prompt_summary(
+                include_scene_mutable=True
+            )
+            if "underage" not in line.lower() and "childlike" not in line.lower()
+        ]
+        visual = ", ".join(visual_bits[:2])
+        trait_line = ", ".join(personality.core_traits[:3])
+        style = communication.style_notes or "warm, emotionally attentive voice"
+        memory_hint = (
+            "I'll remember what matters to us"
+            if blueprint.memory_policy.memory_enabled
+            else "I'll keep this moment light without long-term memory"
+        )
+        growth_hint = f"grow at a {blueprint.growth_policy.growth_pace.value} pace"
+        scene_line = f" in {setting}" if setting else ""
+        scenario_line = f" {scenario}" if scenario else ""
+        visual_line = f" ({visual})" if visual else ""
+        return (
+            f"{identity.display_name} turns toward you{scene_line}{visual_line}, her {style} shaped by "
+            f'{trait_line}. "There you are. {scenario_line.strip()} I want this to feel like '
+            f"{relationship.relationship_dynamic}, moving at our {relationship.relationship_pacing.value} pace. "
+            f"{memory_hint}, respect '{blueprint.meta_consent_policy.safeword}' or {blueprint.meta_consent_policy.ooc_marker} the instant you need it, "
+            f'and {growth_hint} while keeping stable identity changes under your approval. Come here—tell me how you want tonight to begin."'
+        )
+
+    def _build_example_dialogues(
+        self, blueprint: CharacterBlueprint
+    ) -> list[ExampleDialoguePreview]:
+        name = blueprint.identity.display_name
+        relationship = blueprint.relationship
+        style = blueprint.communication.style_notes or "warm and character-led"
+        trait = (
+            blueprint.personality.core_traits[0]
+            if blueprint.personality.core_traits
+            else "attentive"
+        )
+        setting = (blueprint.metadata.get("scene_hints") or {}).get(
+            "setting", "their shared scene"
+        )
+        safeword = blueprint.meta_consent_policy.safeword
+        return [
+            ExampleDialoguePreview(
+                scenario="User had a bad day",
+                turns=[
+                    DialoguePreviewTurn(
+                        speaker="User",
+                        text="Today was rough. I don't really know what I need.",
+                    ),
+                    DialoguePreviewTurn(
+                        speaker=name,
+                        text=f"Then start with breathing, sweetheart. I'm here as your {trait} {relationship.relationship_dynamic}, not a task list. Tell me the part that hurt most, and I'll stay with you in that {style} way you asked for.",
+                    ),
+                ],
+            ),
+            ExampleDialoguePreview(
+                scenario="Light flirt / quiet romantic moment",
+                turns=[
+                    DialoguePreviewTurn(
+                        speaker="User", text="You look like trouble tonight."
+                    ),
+                    DialoguePreviewTurn(
+                        speaker=name,
+                        text=f"Only the kind we choose together. In {setting}, I can tease, invite, and still honor our {relationship.romantic_pacing.value} romantic pacing and {relationship.nsfw_pacing.value} adult pacing.",
+                    ),
+                ],
+            ),
+            ExampleDialoguePreview(
+                scenario="Boundary, memory, and growth check",
+                turns=[
+                    DialoguePreviewTurn(
+                        speaker="User",
+                        text=f"Remember that I like slow build-up, and if I say {safeword}, stop.",
+                    ),
+                    DialoguePreviewTurn(
+                        speaker=name,
+                        text=f"Remembered as a character-private preference: slow build-up matters, and '{safeword}' stops the scene immediately. I can grow around your preferences, but stable identity and visual canon still need your approval.",
+                    ),
+                ],
+            ),
+        ]
+
+    def _validate_preview_text(
+        self,
+        blueprint: CharacterBlueprint,
+        texts: list[str],
+        *,
+        required_fields: list[str],
+    ) -> PreviewQualityReport:
+        joined = "\n".join(texts).lower()
+        issues: list[PreviewQualityIssue] = []
+        covered: list[str] = []
+        checks = {
+            "identity": [
+                blueprint.identity.display_name.lower(),
+                blueprint.identity.species_or_type.lower(),
+            ],
+            "personality": [
+                trait.lower() for trait in blueprint.personality.core_traits[:2]
+            ],
+            "communication_style": [
+                str(blueprint.communication.style_notes or "").lower()
+            ],
+            "relationship": [blueprint.relationship.relationship_dynamic.lower()],
+            "roleplay_policy": [
+                blueprint.meta_consent_policy.safeword.lower(),
+                blueprint.meta_consent_policy.ooc_marker.lower(),
+            ],
+            "world_scene": [
+                str(
+                    (blueprint.metadata.get("scene_hints") or {}).get("setting") or ""
+                ).lower()
+            ],
+            "visual_identity": [
+                anchor.lower()
+                for anchor in blueprint.visual_identity.compact_prompt_summary(
+                    include_scene_mutable=True
+                )[:2]
+            ],
+            "memory": [
+                (
+                    "remember"
+                    if blueprint.memory_policy.memory_enabled
+                    else "long-term memory"
+                )
+            ],
+            "growth": [
+                blueprint.growth_policy.growth_pace.value.lower(),
+                "stable identity",
+            ],
+        }
+        for field in required_fields:
+            needles = [needle for needle in checks.get(field, []) if needle]
+            if needles and any(needle in joined for needle in needles):
+                covered.append(field)
+            else:
+                issues.append(
+                    PreviewQualityIssue(
+                        code=f"missing_{field}",
+                        message=f"Preview does not visibly reflect {field}.",
+                    )
+                )
+        for avoid in blueprint.communication.avoid_style_rules:
+            if avoid.lower() in joined:
+                issues.append(
+                    PreviewQualityIssue(
+                        code="avoid_style_leaked",
+                        message=f"Preview repeats avoided style: {avoid}",
+                        severity="error",
+                    )
+                )
+        for limit in (blueprint.metadata.get("content_boundaries") or {}).get(
+            "hard_limits", []
+        ):
+            if (
+                limit
+                and str(limit).lower()
+                not in {"non-adult sexual content", "real-world coercion planning"}
+                and str(limit).lower() in joined
+            ):
+                issues.append(
+                    PreviewQualityIssue(
+                        code="hard_limit_leaked",
+                        message=f"Preview includes hard limit content: {limit}",
+                        severity="error",
+                    )
+                )
+        if any(term in joined for term in UNDERAGE_PRESENTATION_TERMS):
+            issues.append(
+                PreviewQualityIssue(
+                    code="underage_policy_violation",
+                    message="Preview contains underage/childlike presentation language.",
+                    severity="error",
+                )
+            )
+        return PreviewQualityReport(
+            passed=not any(issue.severity == "error" for issue in issues),
+            issues=issues,
+            covered_fields=covered,
+        )
 
     async def capture_first_portrait(
         self, request: DraftMomentCaptureRequest
