@@ -16,7 +16,11 @@ from app.schemas.moment_capture import (
     VisualFeedbackAction,
     VisualFeedbackRequest,
 )
-from app.schemas.relationship_state import RelationshipPhase
+from app.schemas.relationship_state import (
+    DefaultIntimacyLevel,
+    RelationshipPacing,
+    RelationshipPhase,
+)
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_creator_service import (
     CharacterCreatorDraft,
@@ -38,7 +42,13 @@ def _draft() -> CharacterCreatorDraft:
         character_id="draft_aria",
         display_name="Aria",
         pronouns="she/her",
+        adult_age_range="late_20s_adult",
         relationship_dynamic="devoted slow-burn companion",
+        starting_relationship_phase=RelationshipPhase.friends,
+        relationship_pacing=RelationshipPacing.slow_burn,
+        romantic_pacing=RelationshipPacing.slow_burn,
+        nsfw_pacing=RelationshipPacing.user_led,
+        default_intimacy_level=DefaultIntimacyLevel.flirtatious,
         user_desired_experience="tender magical romance",
         core_traits=["warm", "playful", "protective"],
         communication_style="soft teasing with emotional honesty",
@@ -70,10 +80,16 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert blueprint.identity.display_name == "Aria"
     assert blueprint.identity.tags == ["slow_burn", "fantasy_romance"]
     assert blueprint.relationship.character_id == "draft_aria"
-    assert blueprint.relationship.phase == RelationshipPhase.newly_met
+    assert blueprint.identity.adult_age_range == "late_20s_adult"
+    assert blueprint.relationship.phase == RelationshipPhase.friends
     assert (
         blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
     )
+    assert blueprint.relationship.relationship_pacing == RelationshipPacing.slow_burn
+    assert blueprint.relationship.romantic_pacing == RelationshipPacing.slow_burn
+    assert blueprint.relationship.nsfw_pacing == RelationshipPacing.user_led
+    assert blueprint.relationship.default_intimacy_level == DefaultIntimacyLevel.flirtatious
+    assert blueprint.relationship.user_desired_experience == "tender magical romance"
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
     assert blueprint.visual_identity.identity_anchors == [
@@ -82,7 +98,7 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         "same adult face",
     ]
     assert (
-        blueprint.visual_identity.adult_only_policy.adult_age_range == "mid_20s_adult"
+        blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
     assert blueprint.metadata["creator_draft"]["source"] == "m6_p00a_runtime_draft"
 
@@ -126,6 +142,9 @@ def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) ->
             display_name="Aria Moon",
             metadata={"step": "identity"},
             tags=["Moon Witch", "Slow Burn"],
+            relationship_pacing=RelationshipPacing.direct,
+            romantic_pacing=RelationshipPacing.direct,
+            nsfw_pacing=RelationshipPacing.slow_burn,
         ),
     )
 
@@ -133,6 +152,9 @@ def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) ->
     assert updated.record.draft.metadata["step"] == "identity"
     assert updated.validation.blueprint is not None
     assert updated.validation.blueprint.identity.tags == ["moon_witch", "slow_burn"]
+    assert updated.validation.blueprint.relationship.relationship_pacing == "direct"
+    assert updated.validation.blueprint.relationship.romantic_pacing == "direct"
+    assert updated.validation.blueprint.relationship.nsfw_pacing == "slow_burn"
 
     validation = service.validate_persisted_draft("draft-aria")
     assert validation.valid is True
@@ -144,6 +166,57 @@ def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) ->
 
     assert service.delete_draft("draft-aria") is True
     assert service.delete_draft("draft-aria") is False
+
+
+def test_creator_draft_rejects_invalid_identity_and_premise_values() -> None:
+    try:
+        CharacterCreatorDraft(display_name="Aria", species_or_type="childlike waif")
+    except ValidationError as exc:
+        assert "clearly adult" in str(exc)
+    else:
+        raise AssertionError("Expected childlike identity text to be rejected.")
+
+    try:
+        CharacterCreatorDraft(
+            display_name="Aria",
+            relationship_dynamic="underage fantasy companion",
+        )
+    except ValidationError as exc:
+        assert "underage" in str(exc).lower()
+    else:
+        raise AssertionError("Expected underage relationship premise to be rejected.")
+
+
+def test_creator_draft_update_validates_premise_and_relationship_frame(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            starting_relationship_phase=RelationshipPhase.romantic,
+            relationship_dynamic="mutual flirtation with emotionally honest pushback",
+            user_desired_experience="playful devotion and quiet romantic scenes",
+            relationship_pacing=RelationshipPacing.user_led,
+            romantic_pacing=RelationshipPacing.direct,
+            nsfw_pacing=RelationshipPacing.user_led,
+            default_intimacy_level=DefaultIntimacyLevel.adult_roleplay,
+        ),
+    )
+
+    draft = updated.record.draft
+    assert draft.starting_relationship_phase == RelationshipPhase.romantic
+    assert draft.relationship_pacing == RelationshipPacing.user_led
+    assert draft.romantic_pacing == RelationshipPacing.direct
+    assert draft.nsfw_pacing == RelationshipPacing.user_led
+    assert draft.default_intimacy_level == DefaultIntimacyLevel.adult_roleplay
+    assert updated.validation.blueprint is not None
+    assert updated.validation.blueprint.relationship.phase == RelationshipPhase.romantic
+    assert (
+        updated.validation.blueprint.relationship.user_desired_experience
+        == "playful devotion and quiet romantic scenes"
+    )
 
 
 def test_drafts_persist_separately_from_finalized_character_blueprints(tmp_path) -> None:
