@@ -1,9 +1,9 @@
 # Reverie — Master Development Plan
 
-**Version**: 2.9
+**Version**: 2.10
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, lore-lite world/default scene settings, and memory/growth preference fields.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, lore-lite world/default scene settings, memory/growth preference fields, and the deterministic greeting/example dialogue preview engine.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -667,7 +667,7 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts, M6-P05 documented the visual identity draft contract for stable anchors, evolving traits, scene-mutable traits, and rejected visual traits, and M6-P06 documented lore-lite world/default scene settings for draft blueprint metadata, prompt scene hints, and default Moment Capture scene state. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts, M6-P05 documented the visual identity draft contract for stable anchors, evolving traits, scene-mutable traits, and rejected visual traits, M6-P06 documented lore-lite world/default scene settings for draft blueprint metadata, prompt scene hints, and default Moment Capture scene state, M6-P07 documented baseline memory/growth preferences, and M6-P08 added deterministic greeting plus example dialogue previews for drafts. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
 
 ### M6 success criteria
 
@@ -760,18 +760,18 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 
 - Real Chat/VN Moment Capture wiring is split into `M6-P00A` so first portrait validation uses the M5 Moment Capture runtime instead of generic image generation.
 - `M6-P01` must keep creator drafts separate from saved `CharacterBlueprint` data and provide deterministic draft-to-blueprint mapping.
-- `M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before greeting/dialogue behavior is promised; M6-P03 documented the existing personality and communication draft fields without adding those preview systems.
+- `M6-P08` is complete: drafts can now generate non-persisted greeting and example dialogue previews from unsaved or persisted draft data, with quality reports that show field coverage and consistency warnings/errors. Alternate greeting storage remains out of scope until save/review work needs durable accepted preview text.
 - `M6-P04` established the draft-supported relationship boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
 - `M6-P05` documented the draft visual identity mapping that existing Moment Capture review/feedback can use without adding a parallel visual canon store; remaining portrait/reference controls are later M6 UI/save work.
 - `M6-P06` completed lore-lite world/default scene draft support and must remain bounded: no full lorebook/canon retrieval is implied.
-- `M6-P07` must make memory/growth preferences either enforceable at baseline or visibly preview-only.
+- `M6-P07` is complete: memory/growth preferences map into baseline `CharacterMemoryPolicy` and `GrowthPolicy` objects with scoped shared-memory inclusion, normalized growth domains, and required safety blocks.
 - `M6-P09` must provide basic character-level import/export for blueprints and associated asset metadata, while full app backup/export remains M8.
 - `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
 
 
-### M6-P00/P00A/P01/P02/P03/P04/P05/P06 foundation status
+### M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08 foundation status
 
-The first M6 foundation series is complete through the world/default-scene documentation pass:
+The first M6 foundation series is complete through the greeting/dialogue preview engine:
 
 | Task | Status | Delivered outcome |
 |---|---|---|
@@ -783,6 +783,8 @@ The first M6 foundation series is complete through the world/default-scene docum
 | M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls | Complete | Documented the draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields (`integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`), including validation and mapping into `CharacterIntegrityPolicy`, `RoleplayPolicy`, `MetaConsentAndSafewordPolicy`, and draft metadata. |
 | M6-P05 — Visual identity step, asset/reference attachment, and first portrait validation | Complete | Documented the draft-supported visual identity fields: stable identity anchors (`eye_color`, `skin_tone`, `face_structure`, `body_baseline`, `species_features`, `permanent_marks`), evolving traits (`hair`, `accessories`, `fashion_identity`), scene-mutable traits (`outfit`, `pose`, `expression`), and `rejected_visual_traits`, including validation/normalization and mapping into `VisualIdentityProfile`. |
 | M6-P06 — World, default scene, and lore-lite step | Complete | Documented the draft-supported lore-lite world and default scene fields (`default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details`), including validation/normalization, mapping into `RelationshipState` and blueprint metadata, prompt scene hints, and draft Moment Capture default scene state. |
+| M6-P07 — Memory and growth preference baseline | Complete | Documented draft-supported memory and growth fields, including `CharacterMemoryPolicy`/`GrowthPolicy` mapping, scoped shared-memory inclusion, growth-domain normalization, and required stable-identity/adult-safety blocks. |
+| M6-P08 — Greeting and dialogue preview engine | Complete | Added deterministic, non-persisted draft preview generation for first greetings and example dialogues, including unsaved/persisted draft endpoints, compiled prompt context, metadata identifying the preview engine/storage behavior, and `PreviewQualityReport` coverage/consistency validation. |
 
 Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
@@ -1247,6 +1249,10 @@ Definition of Done:
 ---
 
 #### M6-P08 — Greeting and dialogue preview engine
+
+**Status**: Complete.
+
+**Delivered summary**: Drafts now support deterministic, non-persisted first greeting and example dialogue previews. The preview engine maps the draft into a `CharacterBlueprint`, compiles the same bounded character prompt context used for runtime-style behavior evidence, returns `PreviewQualityReport` coverage/consistency validation, and is available for both unsaved draft payloads and persisted draft IDs.
 
 **Goal**: Provide deterministic, fast previews that prove creator choices have visible effect before the user saves a character.
 
