@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import Settings, get_settings
 from app.repositories.character_repo import CharacterRepositoryError
+from app.repositories.creator_draft_repo import CreatorDraftRepositoryError
 from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterListResponse,
@@ -15,10 +16,16 @@ from app.schemas.character_blueprint import (
     CharacterUpdate,
 )
 from app.services.character_creator_service import (
+    CharacterCreatorDraftCreate,
+    CharacterCreatorDraftListResponse,
+    CharacterCreatorDraftResponse,
+    CharacterCreatorDraftUpdate,
     CharacterCreatorService,
+    CreatorDraftNotFoundError,
     DraftMomentCaptureRequest,
     DraftValidationResponse,
     CharacterCreatorDraft,
+    PersistedDraftMomentCaptureRequest,
 )
 from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.moment_capture_service import MomentCaptureResponse
@@ -30,6 +37,12 @@ def get_character_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> CharacterService:
     return CharacterService.from_settings(settings)
+
+
+def get_creator_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CharacterCreatorService:
+    return CharacterCreatorService.from_settings(settings)
 
 
 def _not_found_exception(exc: CharacterNotFoundError) -> HTTPException:
@@ -53,11 +66,152 @@ def _repository_exception(exc: CharacterRepositoryError) -> HTTPException:
     )
 
 
+def _draft_repository_exception(exc: CreatorDraftRepositoryError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": exc.user_message,
+            "code": "creator_draft_store_unavailable",
+        },
+    )
+
+
+def _draft_not_found_exception(exc: CreatorDraftNotFoundError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={
+            "error": str(exc),
+            "code": "creator_draft_not_found",
+            "draft_id": exc.draft_id,
+        },
+    )
+
+
 @router.post("/creator/validate", response_model=DraftValidationResponse)
 def validate_creator_draft(request: CharacterCreatorDraft) -> DraftValidationResponse:
     """Validate and map an unsaved creator draft into a CharacterBlueprint."""
 
     return CharacterCreatorService().validate_draft(request)
+
+
+@router.post(
+    "/creator/drafts",
+    response_model=CharacterCreatorDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_creator_draft(
+    request: CharacterCreatorDraftCreate,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    """Create and persist a creator draft without finalizing a character."""
+
+    try:
+        return service.create_draft(request)
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.get("/creator/drafts", response_model=CharacterCreatorDraftListResponse)
+def list_creator_drafts(
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftListResponse:
+    try:
+        return service.list_drafts()
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.get("/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse)
+def get_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return service.load_draft(draft_id)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.patch("/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse)
+def update_creator_draft(
+    draft_id: str,
+    request: CharacterCreatorDraftUpdate,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return service.update_draft(draft_id, request)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/validate",
+    response_model=DraftValidationResponse,
+)
+def validate_persisted_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> DraftValidationResponse:
+    try:
+        return service.validate_persisted_draft(draft_id)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.delete(
+    "/creator/drafts/{draft_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    response_model=None,
+)
+def delete_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> None:
+    try:
+        if not service.delete_draft(draft_id):
+            raise CreatorDraftNotFoundError(draft_id)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/first-portrait",
+    response_model=MomentCaptureResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_persisted_creator_first_portrait(
+    draft_id: str,
+    request: PersistedDraftMomentCaptureRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> MomentCaptureResponse:
+    """Queue first-portrait Moment Capture from a persisted draft."""
+
+    try:
+        return await service.capture_persisted_first_portrait(draft_id, request)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "creator_draft_invalid",
+                    "message": str(exc),
+                    "retryable": False,
+                }
+            },
+        ) from exc
 
 
 @router.post(

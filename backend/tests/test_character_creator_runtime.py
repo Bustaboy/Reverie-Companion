@@ -7,6 +7,8 @@ import asyncio
 from pydantic import ValidationError
 
 from app.models.image import ImageJobStatus, ImageQualityPreset
+from app.repositories.character_repo import CharacterRepository
+from app.repositories.creator_draft_repo import CreatorDraftRepository
 from app.schemas.moment_capture import (
     FeedbackState,
     ReviewState,
@@ -18,9 +20,12 @@ from app.schemas.relationship_state import RelationshipPhase
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_creator_service import (
     CharacterCreatorDraft,
+    CharacterCreatorDraftCreate,
+    CharacterCreatorDraftUpdate,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftMomentSource,
+    PersistedDraftMomentCaptureRequest,
 )
 from app.services.moment_capture_service import MomentCaptureService
 
@@ -101,6 +106,59 @@ def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     assert any("adult" in error.lower() for error in response.errors)
 
 
+def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+
+    created = service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    assert created.record.draft_id == "draft-aria"
+    assert created.record.lifecycle_state == "draft"
+    assert created.record.provenance["state"] == "draft_not_finalized"
+    assert created.validation.valid is True
+
+    loaded = service.load_draft("draft-aria")
+    assert loaded.record.draft.display_name == "Aria"
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            display_name="Aria Moon",
+            metadata={"step": "identity"},
+            tags=["Moon Witch", "Slow Burn"],
+        ),
+    )
+
+    assert updated.record.draft.display_name == "Aria Moon"
+    assert updated.record.draft.metadata["step"] == "identity"
+    assert updated.validation.blueprint is not None
+    assert updated.validation.blueprint.identity.tags == ["moon_witch", "slow_burn"]
+
+    validation = service.validate_persisted_draft("draft-aria")
+    assert validation.valid is True
+    assert validation.blueprint is not None
+    assert validation.blueprint.identity.display_name == "Aria Moon"
+
+    listed = service.list_drafts()
+    assert [record.draft_id for record in listed.drafts] == ["draft-aria"]
+
+    assert service.delete_draft("draft-aria") is True
+    assert service.delete_draft("draft-aria") is False
+
+
+def test_drafts_persist_separately_from_finalized_character_blueprints(tmp_path) -> None:
+    db_path = tmp_path / "characters.sqlite3"
+    draft_repo = CreatorDraftRepository(db_path)
+    character_repo = CharacterRepository(db_path)
+    service = CharacterCreatorService(draft_repository=draft_repo)
+
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    assert service.load_draft("draft-aria").record.draft.display_name == "Aria"
+    assert character_repo.get("draft_aria") is None
+    assert character_repo.list() == []
+
+
 def test_draft_capture_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -> None:
     async def run_test() -> None:
         image_service = make_service(
@@ -172,6 +230,45 @@ def test_draft_capture_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
         assert (
             "first portrait validation"
             in vn_response.record.scene_state.continuity_notes
+        )
+
+    asyncio.run(run_test())
+
+
+def test_persisted_draft_can_trigger_first_portrait_with_adapter(tmp_path) -> None:
+    async def run_test() -> None:
+        draft_repo = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+        image_service = make_service(
+            tmp_path, FakeCoordinator(free_vram_mb=7000), FakeAdapter()
+        )
+        moment_service = MomentCaptureService(
+            image_service=image_service,
+            records_path=tmp_path / "moment_captures.json",
+        )
+        service = CharacterCreatorService(
+            moment_capture_service=moment_service,
+            draft_repository=draft_repo,
+        )
+        service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+        response = await service.capture_persisted_first_portrait(
+            "draft-aria",
+            PersistedDraftMomentCaptureRequest(
+                source=DraftMomentSource.chat,
+                conversation_id="persisted-draft-conv",
+            ),
+        )
+
+        assert response.job.status == ImageJobStatus.queued
+        assert response.record.character_id == "draft_aria"
+        assert response.record.metadata["draft_id"] == "draft-aria"
+        assert response.record.metadata["draft_capture"] is True
+        assert response.record.metadata["draft_canonical_mutation_allowed"] is False
+        assert (
+            image_service._jobs[response.job.job_id].context["moment_capture"][
+                "request_metadata"
+            ]["draft_provenance"]
+            == "character_creator_draft_first_portrait"
         )
 
     asyncio.run(run_test())
