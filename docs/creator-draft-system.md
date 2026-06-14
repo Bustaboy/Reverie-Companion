@@ -1,6 +1,6 @@
 # Creator Draft System
 
-**Status:** M6-P04 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6-P05 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
 
 ## What a draft is
 
@@ -117,6 +117,65 @@ Practical UI should explain these controls in human-first language: how she push
 
 Boundary lists are lightweight draft metadata today. They can be shown in summaries, validation output, and blueprint previews, and they can inform prompt construction through the mapped blueprint metadata. They are not yet a full memory receipt system, trust dashboard, or advanced scene-control engine.
 
+## Supported visual identity fields
+
+M6-P05 treats these visual identity fields as draft-supported. The practical rule is simple: stable anchors describe what should not drift, evolving traits describe canon self-expression that can change through confirmation or story, and scene-mutable traits describe only the current image/scene presentation.
+
+### Stable identity anchors
+
+Stable anchors map into `VisualIdentityProfile.identity_anchors`. They are included in visual prompt summaries and should be preserved across first-portrait validation, Moment Capture, and later saved character use.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `visual.eye_color` | Adds `eye color: {value}` to `VisualIdentityProfile.identity_anchors` | Optional text up to 80 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. Must not contain scene-level outfit, pose, or expression language. |
+| `visual.skin_tone` | Adds `skin tone: {value}` to `VisualIdentityProfile.identity_anchors` | Optional text up to 120 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. Must stay stable-identity focused. |
+| `visual.face_structure` | Adds `face structure: {value}` to `VisualIdentityProfile.identity_anchors` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. Must not describe temporary expressions or poses. |
+| `visual.body_baseline` | Adds `body baseline: {value}` to `VisualIdentityProfile.identity_anchors` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. The adult-only baseline still applies; do not use underage or deliberately childlike presentation language. |
+| `visual.species_features` | Adds one `species features: {value}` anchor per entry | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for stable horns, ears, tail, wings, android features, or similar permanent/species-defining features. |
+| `visual.permanent_marks` | Adds one `permanent marks: {value}` anchor per entry | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for scars, birthmarks, permanent tattoos, or similar non-temporary marks. |
+
+### Evolving traits
+
+Evolving traits map into `VisualIdentityProfile.evolving_traits` as `VisualTrait` records with `provenance: "creator_draft_visual_identity"`. They are prompt-consumed visual canon, but unlike anchors they are allowed to change through reviewable story, gallery, or user-confirmed visual updates.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `visual.hair` | Adds or replaces evolving trait `hair` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. Use for current hair color/style as one practical description. |
+| `visual.accessories` | Adds one evolving trait named `accessory` per entry | Optional list of unique, whitespace-normalized entries; each entry is capped at 80 characters and adult-baseline checked. Use for signature jewelry, glasses, hair ornaments, cyberware accents, or similar reusable look details. |
+| `visual.fashion_identity` | Adds or replaces evolving trait `fashion_identity` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. Use for her recognizable style language, not the exact outfit in a single scene. |
+
+Examples of future-friendly evolving traits include hair, accessories, fashion identity, reusable makeup style, cyberware/fantasy embellishments, or other appearance details that can become canon only through explicit confirmation/review. Do not treat them as autonomous visual growth controls; they are stored prompt/capture inputs today.
+
+### Scene-mutable traits
+
+Scene-mutable traits map into `VisualIdentityProfile.scene_mutable_traits`. They can influence first-portrait or Moment Capture prompts, but they should not overwrite stable identity.
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `visual.outfit` | Adds `outfit: {value}` to `VisualIdentityProfile.scene_mutable_traits` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. |
+| `visual.pose` | Adds `pose: {value}` to `VisualIdentityProfile.scene_mutable_traits` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. |
+| `visual.expression` | Adds `expression: {value}` to `VisualIdentityProfile.scene_mutable_traits` | Optional text up to 160 characters; blank values normalize to null; nonblank values are whitespace-normalized and adult-baseline checked. |
+
+Use scene-mutable traits for what the current capture should show: outfit, pose, and expression. Do not put these details into `eye_color`, `skin_tone`, `face_structure`, or `body_baseline`; the draft model rejects obvious anchor/scene mixing for those stable fields.
+
+### Rejected visual traits
+
+`visual.rejected_visual_traits` maps into `VisualIdentityProfile.rejected_traits`. It is an optional list of unique, whitespace-normalized entries capped at 80 characters each and adult-baseline checked. Use it for appearance drift or unwanted generated details such as the wrong eye color, wrong skin tone, wrong body baseline, incorrect species feature, unwanted style, or other traits the visual prompt should avoid.
+
+Rejected traits are not a positive-description bucket. They feed negative guidance through the visual prompt/capture stack and should be phrased as concise things to avoid, not as replacement instructions.
+
+### Visual mapping summary
+
+The draft mapper starts with the draft's existing `visual_identity` profile, then applies the creator-facing `visual` fields on top of it:
+
+- stable anchor fields append labeled strings to `identity_anchors`, de-duplicated and bounded to the profile list limit;
+- `hair`, `accessories`, and `fashion_identity` become provenance-tracked evolving traits;
+- `outfit`, `pose`, and `expression` append labeled strings to `scene_mutable_traits`;
+- `rejected_visual_traits` append to `rejected_traits`;
+- the resulting profile receives a refreshed `updated_at` timestamp and remains a normal `VisualIdentityProfile` for prompt summaries, draft validation, and Moment Capture.
+
+This separation is the important contract for UI copy: anchors answer “what should never drift?”, evolving traits answer “what is part of her current/canon style but may change with review?”, and scene traits answer “what should this moment look like?”
+
 ## Draft validation and mapping
 
 Draft validation is intentionally blueprint-based. The service converts draft fields into runtime structures, then lets the normal schema validation reject invalid runtime output. Current mappings include:
@@ -130,7 +189,7 @@ Draft validation is intentionally blueprint-based. The service converts draft fi
 - `roleplay.fiction_first_mode` into both `RoleplayPolicy` and `CharacterIntegrityPolicy`
 - `meta.safeword_policy` into `MetaConsentAndSafewordPolicy`, with its `policy_note` also summarized in `RoleplayPolicy.safeword_policy`
 - `content_boundaries` into blueprint metadata for prompt/preview use
-- visual identity into `VisualIdentityProfile`
+- creator-facing `visual` fields and any existing draft `visual_identity` profile into `VisualIdentityProfile`
 - creator provenance into blueprint metadata
 
 For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, `adult_only_confirmed`, `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into their runtime structures.
@@ -138,6 +197,8 @@ For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_a
 For personality and communication, the mapper copies `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`, `communication_style`, `avoid_style`, and `initiative_in_conversation` into the corresponding runtime profiles.
 
 For roleplay policy and boundaries, the mapper copies `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy.safeword`, `meta.safeword_policy.ooc_marker`, `meta.safeword_policy.pause_commands`, `meta.safeword_policy.fade_to_black_preference`, `meta.safeword_policy.policy_note`, and `content_boundaries` into the runtime policy objects or metadata described above. That means these fields can appear in draft summaries and blueprint previews today, as long as UI copy remains honest: fiction-first mode and in-character pushback are prompt policy signals, safeword/OOC fields are explicit meta-controls, and content boundaries are lightweight stored guidance rather than a complete scene-safety engine.
+
+For visual identity, the mapper copies stable anchors, evolving traits, scene-mutable traits, and rejected visual traits into `VisualIdentityProfile` as described in the M6-P05 visual section above. That means first-portrait capture and visual prompt summaries can use the draft visual profile without turning the draft into canonical saved character data.
 
 This keeps future UI steps honest: if a creator field cannot map into runtime data, it should remain preview-only, store-only, or deferred in the capability matrix.
 
@@ -148,10 +209,11 @@ This keeps future UI steps honest: if a creator field cannot map into runtime da
 - The personality step may offer presets and editable nuance that write to `core_traits`, `independence`, `devotion`, `dominance_or_initiative`, and optional depth lists.
 - The communication step may ask how she talks, what she should avoid sounding like, and how proactive she should be in conversation.
 - The roleplay policy step may ask how she pushes back in character, whether fictional adult roleplay should stay fiction-first, what safeword/OOC marker and pause commands to use, how fade-to-black should be handled, and what hard/soft boundaries should be summarized.
+- The visual identity step may ask what should never drift about her look, what current style traits can evolve with confirmation, what outfit/pose/expression belongs only to this scene, and what generated traits should be rejected.
 - These fields can appear in draft summaries and blueprint previews before final save.
 - Pacing and default intimacy are starting-frame hints for chat/prompt behavior; roleplay boundaries, safewords, OOC commands, and fade-to-black preferences now live in the M6-P04 draft policy fields.
 - Personality and communication fields are behavior anchors for compiled prompts and previews; they are not active planning, autonomous outreach, or guaranteed model behavior.
-- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, and speech quirks should only be exposed according to the capability matrix status; they are not part of the M6-P04 draft-supported contract.
+- Nickname/short name, occupation/role, genre frame, perspective mode, durable user role in story, first greeting, example dialogue, humor-style subfields, pet names, catchphrases, speech quirks, dedicated art style, asset/reference attachment UI, and portrait approval UI should only be exposed according to the capability matrix status; they are not part of the M6-P05 draft-supported visual identity contract.
 
 ## Moment Capture integration
 
@@ -167,5 +229,5 @@ This means first portraits can use the same M5 capture, gallery, feedback, revie
 - Drafts are not backend-synced beyond local app persistence.
 - Draft finalization into a durable saved character remains a later M6 review/save flow.
 - Dialogue/greeting previews, import/export, memory/growth preference wiring, and richer field-impact evals remain later M6 work.
-- Visual identity documentation, lore/default scene, memory/growth preferences, and import/export should not be documented here as completed M6-P04 behavior.
+- Lore/default scene, memory/growth preferences, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P05 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.
