@@ -667,7 +667,7 @@ Until that is complete, generic image generation must be treated as legacy/secon
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 starts with a reconciliation pass because the capability matrix still contains many fields marked `NEEDS_RUNTIME`. Some are now covered by M4/M5. Some are M6-blocking. Many belong in M7, M8, or M9. The practical creator must not pretend otherwise.
+M6 starts with a documentation-only reconciliation pass because the capability matrix still contains many fields marked `NEEDS_RUNTIME`. Some are now covered by M4/M5. Some are M6-blocking. Many belong in M7, M8, or M9. The practical creator must not pretend otherwise.
 
 ### M6 success criteria
 
@@ -752,26 +752,35 @@ If a field fails the gate, classify it as `M6-preview-only`, `M6-store-only`, `M
 
 M6 owns the **basic character-level** import/export carryover from M4. Full app backup/import/export remains M8. Character-specific authored VN assets may begin here only as simple asset import/selection metadata, not a full immersive asset authoring suite.
 
+### M6-P00 reconciliation result
+
+M6-P00 completed the documentation-only matrix reconciliation. `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` is now the authoritative field gate for the practical M6 creator: rows distinguish fields that are already M6-ready from fields that are M6-blocking runtime, M6-preview-only, M6-store-only, M7 Genesis, M8 Alpha, M9 Beta, or Deferred. The practical creator allow-list is limited to fields Reverie can store, consume or honestly preview, validate/correct, and preserve.
+
+Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
+
+- Real Chat/VN Moment Capture wiring is split into `M6-P00A` so first portrait validation uses the M5 Moment Capture runtime instead of generic image generation.
+- `M6-P01` must keep creator drafts separate from saved `CharacterBlueprint` data and provide deterministic draft-to-blueprint mapping.
+- `M6-P03`/`M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before behavior fields are promised.
+- `M6-P04` must establish the relationship, boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
+- `M6-P05` must adapt existing Moment Capture review/feedback into first portrait validation without adding a parallel visual canon store.
+- `M6-P06` must keep world/default scene support lore-lite and avoid full lorebook/canon retrieval.
+- `M6-P07` must make memory/growth preferences either enforceable at baseline or visibly preview-only.
+- `M6-P09` must provide basic character-level import/export for blueprints and associated asset metadata, while full app backup/export remains M8.
+- `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
+
 ### M6 prompt queue
 
-#### M6-P00 — Capability matrix reconciliation and real Moment Capture wiring
+#### M6-P00 — Capability matrix reconciliation
 
-**Goal**: Reconcile the post-M5 capability matrix, classify every creator field by M6 readiness, and wire Chat/VN primary capture actions to the real Moment Capture API before the creator depends on portrait validation.
+**Goal**: Reconcile the post-M5 capability matrix, classify every creator field by M6 readiness, and produce the authoritative M6 creator allow-list plus runtime gap list before any practical creator UI is built. This task is documentation and analysis only; real Chat/VN Moment Capture wiring remains a follow-up M6 gap-closure task.
 
 Context files to read:
 
 - `CHARACTER_CREATOR_CAPABILITY_MATRIX.md`
 - `DEVELOPMENT_PLAN.md`
 - `prompts/skills/character-runtime-creator.md`
-- `prompts/skills/moment-capture-visual-continuity.md`
+- `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md`
 - `prompts/skills/character-quality-evals.md`
-- `frontend/src/lib/components/Chat/ChatWindow.svelte`
-- `frontend/src/lib/components/VisualNovel/VisualNovelStage.svelte`
-- `frontend/src/lib/stores/imageGenerationStore.svelte.ts`
-- `frontend/src/lib/stores/characterStore.ts`
-- `frontend/src/lib/api/imageService.ts`
-- `backend/app/api/routes/moment_capture.py`
-- `backend/app/services/moment_capture_service.py`
 
 Must implement:
 
@@ -779,49 +788,42 @@ Must implement:
 - Mark M4/M5-delivered fields as `NOW` or `M6 Basic Creator` where runtime support now exists.
 - Mark true M6 gaps as `M6-blocking runtime`, `M6-preview-only`, or `M6-store-only`.
 - Explicitly place deeper fields into M7/M8/M9 instead of leaving vague `NEEDS_RUNTIME` labels.
-- Add a frontend API method for `POST /api/moment-capture` or a dedicated service wrapper if one does not already exist.
-- Add store methods for `captureMomentFromMessage` and `captureMomentFromVisualNovelScene` or equivalent.
-- Use selected `character_id` and selected character blueprint/visual identity from the existing character store/service path.
-- Build `SceneState` from current chat/VN context: location/background, mood/emotional tone, expression/pose/outfit if known, source message, session/conversation, and capture intent.
-- Change the primary Chat/VN copy from generic image generation to Moment Capture copy where the selected character is available.
-- Keep generic image generation as secondary/legacy if useful, but do not make it the primary character moment action.
-- Add tests that prove Chat/VN capture requests include `character_id`, scene state, source message/session metadata, visual identity snapshot, and produce `moment_capture_id`-backed jobs.
+- Clearly document the practical M6 creator allow-list, hidden/internal fields, and fields that must remain preview-only or store-only.
+- Add a focused M6 runtime gap list covering dialogue/greeting previews, draft-to-blueprint mapping, relationship/boundary baseline, memory/growth preferences, first portrait validation, character import/export, and Chat/VN Moment Capture wiring.
+- Update this development plan with the reconciliation summary and derived M6 gap-closure queue.
 
 Must not implement:
 
 - Full creator UI.
-- New image queue.
-- New character schema.
-- Cloud image generation.
-- M8 packaged hardware validation.
-- M9 goals/planning/LoRA systems.
-
-Architecture rules:
-
-- Moment Capture must call `/api/moment-capture` for character-linked moments.
-- Generic `/api/images/generate` is acceptable only for legacy/freeform generation.
-- No new visual canon store.
-- No unscoped visual memory writes.
-- Do not add creator-facing fields before the matrix classifies them.
+- New backend endpoints, services, schemas, or runtime logic.
+- Chat/VN Moment Capture wiring in this documentation-only pass.
+- M7 Genesis, M8 Alpha, or M9 Beta systems.
 
 Tests required:
 
-- Frontend unit tests for Moment Capture request construction.
-- Store/API tests proving `character_id`, `source_message_id`, `session_id`, `scene_state`, and visual identity data are sent.
-- Existing image/gallery feedback tests still pass.
-- Backend M5 Moment Capture tests still pass.
-
-Manual validation:
-
-- From Chat, select a character and capture the latest assistant message; the gallery item should have `moment_capture_id` and `character_id`.
-- From VN, capture the current scene; the gallery item should show scene metadata and character linkage.
-- Legacy generic image generation, if still exposed, remains clearly secondary.
+- Not applicable for this documentation-only task.
 
 Definition of Done:
 
-- The matrix tells Grok exactly which fields M6 may expose, and the user-facing Chat/VN capture path uses the real Moment Capture runtime.
+- The matrix tells future M6 tasks exactly which fields may be exposed, which are blocked, and which runtime gaps must close before the practical creator can proceed honestly.
 
----
+#### M6-P00A — Real Chat/VN Moment Capture wiring
+
+**Goal**: Wire Chat/VN primary capture actions to the real Moment Capture API before the creator depends on first portrait validation.
+
+Must implement:
+
+- Add or reuse a frontend API method for `POST /api/moment-capture`.
+- Add store methods for `captureMomentFromMessage` and `captureMomentFromVisualNovelScene` or equivalent.
+- Use selected `character_id` and selected character blueprint/visual identity from the existing character store/service path.
+- Build `SceneState` from current chat/VN context: location/background, mood/emotional tone, expression/pose/outfit if known, source message, session/conversation, and capture intent.
+- Change primary Chat/VN copy from generic image generation to Moment Capture copy where the selected character is available.
+- Keep generic image generation as secondary/legacy if useful, but do not make it the primary character moment action.
+- Add tests proving capture requests include `character_id`, `source_message_id`, `session_id`, `scene_state`, and visual identity data.
+
+Definition of Done:
+
+- User-facing Chat/VN capture paths use the real Moment Capture runtime and produce `moment_capture_id`-backed character-linked jobs.
 
 #### M6-P01 — Creator architecture and draft persistence
 
