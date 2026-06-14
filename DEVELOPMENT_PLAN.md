@@ -3,7 +3,7 @@
 **Version**: 2.7
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, and creator drafts persist separately from finalized `CharacterBlueprint` records.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity fields plus the premise/relationship starting frame.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -554,7 +554,7 @@ M6 must reuse the existing systems instead of creating parallel ones:
 | Character-specific authored VN/live-preview assets | M3/M4 | M6-lite / M7 | M6-P05, M7-P10 | M6 may attach/import references. M7 owns immersive live-preview asset workflow. |
 | Dialogue/scenario preview generator | Matrix | M6-blocking | M6-P08 | Required before exposing behavioral creator fields. |
 | Creator draft to runtime mapping | Matrix | Foundation complete | M6-P01 complete | Current draft fields map into valid `CharacterBlueprint` previews; later UI steps must extend mapping only for approved fields. |
-| Relationship/boundary baseline for creator choices | Matrix | M6-blocking | M6-P02, M6-P04 | Storage + prompt consumption only. No autonomous relationship evolution. |
+| Relationship/boundary baseline for creator choices | Matrix | Partially complete | M6-P02 complete; M6-P04 pending | M6-P02 documents draft-backed identity and premise/relationship starting-frame fields. Boundary, safeword/OOC, and roleplay policy controls remain M6-P04. |
 | Memory/growth preference baseline | Matrix | M6-blocking | M6-P07 | Basic policy enforcement and clear preview copy. Deep trust dashboard stays M8. |
 | First portrait validation using Moment Capture | M5/M6 | Foundation complete / UI pending | M6-P00A/P01 complete; M6-P05, M6-P09 pending | Drafts can queue evidence-only first-portrait captures; creator validation UI, reference selection, and save flow remain later M6 work. |
 | Packaged Tauri backend connectivity check | M1/M3 | Needs verification | M8-P09 | Dev mode is not packaged app validation. Humanity keeps learning this and forgetting it. |
@@ -667,7 +667,7 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, and M6-P01 added creator draft persistence plus draft-to-blueprint validation. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, and M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
 
 ### M6 success criteria
 
@@ -778,6 +778,7 @@ The first M6 foundation series is complete:
 | M6-P00 — Capability matrix reconciliation | Complete | Reconciled the creator capability matrix after M4/M5, classified M6-ready/blocking/preview/store/deferred fields, and established the practical creator allow-list. |
 | M6-P00A — Real Moment Capture creator wiring | Complete | Added draft-capable Moment Capture paths so first-portrait validation can use the existing M5 capture/review/rollback stack instead of generic image generation. |
 | M6-P01 — Creator architecture and draft persistence | Complete | Added a versioned `CharacterCreatorDraft` service/repository/API foundation, persisted drafts separately from finalized characters, provided create/load/list/update/validate/delete operations, and mapped drafts into valid `CharacterBlueprint` previews. |
+| M6-P02 — Identity, adult baseline, and companion premise steps | Complete | Documented the draft-supported identity fields (`display_name`, `pronouns`, `species_or_type`, `adult_age_range`, `adult_only_confirmed`) and premise/relationship starting-frame fields (`starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, `user_desired_experience`), including validation and mapping into `CharacterIdentity` and `RelationshipState`. |
 
 Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
@@ -908,6 +909,10 @@ Definition of Done:
 ---
 
 #### M6-P02 — Identity, adult baseline, and companion premise steps
+
+**Status**: Complete — documentation updated June 14, 2026.
+
+**Delivered**: Recorded that creator drafts support the practical identity set (`display_name`, `pronouns`, `species_or_type`, `adult_age_range`, `adult_only_confirmed`) and the premise/relationship starting frame (`starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience`). `docs/creator-draft-system.md` now explains how these fields validate and map into `CharacterIdentity` and `RelationshipState`, so future UI work can expose them without inventing parallel draft semantics.
 
 **Goal**: Implement the creator steps for basic identity and companion premise using human-first language that maps cleanly into runtime fields.
 
@@ -1660,7 +1665,7 @@ Winner is not automatically the larger implementation. Bigger diffs are often ju
 
 ## 15. Immediate Next Actions
 
-1. Continue with **M6-P02 — Identity, adult baseline, and companion premise steps** on top of the persisted draft foundation.
+1. Continue with **M6-P03 — Personality and communication steps with examples** on top of the persisted draft foundation and the documented M6-P02 identity/premise draft contract.
 2. Keep `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` as the field gate before exposing any new creator field.
 3. Use `docs/creator-draft-system.md` as the practical draft-system reference for future creator tasks.
 4. Preserve the separation between editable drafts and finalized `CharacterBlueprint` records.
