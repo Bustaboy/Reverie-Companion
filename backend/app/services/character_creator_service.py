@@ -43,6 +43,7 @@ from app.schemas.moment_capture import (
 from app.schemas.relationship_state import (
     DefaultIntimacyLevel,
     RelationshipPhase,
+    RelationshipPacing,
     RelationshipState,
 )
 from app.schemas.visual_identity import VisualIdentityProfile
@@ -54,6 +55,31 @@ from app.services.moment_capture_service import (
 
 
 LOGGER = logging.getLogger(__name__)
+DRAFT_SCHEMA_VERSION = 2
+
+UNDERAGE_PRESENTATION_TERMS = (
+    "underage",
+    "minor",
+    "childlike",
+    "teen",
+    "teenage",
+    "schoolgirl",
+    "schoolboy",
+    "loli",
+    "shota",
+)
+
+
+def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> None:
+    """Enforce the creator matrix adult-only baseline without over-policing adults."""
+
+    normalized = value.lower()
+    for term in UNDERAGE_PRESENTATION_TERMS:
+        if term in normalized:
+            raise ValueError(
+                f"{field_name} must describe a clearly adult companion; "
+                "underage or deliberately childlike sexual presentation is not allowed."
+            )
 
 
 class DraftMomentSource(StrEnum):
@@ -75,6 +101,9 @@ class CharacterCreatorDraft(BaseModel):
         default="warm, emotionally attentive companion", min_length=1, max_length=240
     )
     starting_relationship_phase: RelationshipPhase = RelationshipPhase.newly_met
+    relationship_pacing: RelationshipPacing = RelationshipPacing.natural
+    romantic_pacing: RelationshipPacing = RelationshipPacing.natural
+    nsfw_pacing: RelationshipPacing = RelationshipPacing.user_led
     default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] = Field(
@@ -98,6 +127,45 @@ class CharacterCreatorDraft(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator(
+        "display_name",
+        "pronouns",
+        "species_or_type",
+        "relationship_dynamic",
+        mode="after",
+    )
+    @classmethod
+    def strip_required_creator_text(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("This part of your companion needs a little more detail.")
+        _reject_underage_or_childlike_presentation(normalized, "Creator draft")
+        return normalized
+
+    @field_validator("user_desired_experience", "communication_style", mode="after")
+    @classmethod
+    def strip_optional_creator_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            return None
+        _reject_underage_or_childlike_presentation(normalized, "Creator draft")
+        return normalized
+
+    @field_validator("core_traits", mode="after")
+    @classmethod
+    def normalize_core_traits(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            item = " ".join(str(value).strip().split())[:80]
+            if item and item not in normalized:
+                _reject_underage_or_childlike_presentation(item, "Core traits")
+                normalized.append(item)
+        if not normalized:
+            raise ValueError("At least one core trait is required.")
+        return normalized
+
 
 class DraftValidationResponse(BaseModel):
     valid: bool
@@ -120,6 +188,9 @@ class CharacterCreatorDraftUpdate(BaseModel):
     species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
     relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=240)
     starting_relationship_phase: RelationshipPhase | None = None
+    relationship_pacing: RelationshipPacing | None = None
+    romantic_pacing: RelationshipPacing | None = None
+    nsfw_pacing: RelationshipPacing | None = None
     default_intimacy_level: DefaultIntimacyLevel | None = None
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
@@ -133,7 +204,7 @@ class CharacterCreatorDraftUpdate(BaseModel):
 class CharacterCreatorDraftRecord(BaseModel):
     """Durable draft envelope kept distinct from canonical characters."""
 
-    schema_version: int = Field(default=1, ge=1)
+    schema_version: int = Field(default=DRAFT_SCHEMA_VERSION, ge=1)
     draft_id: str = Field(..., min_length=1, max_length=120)
     lifecycle_state: str = Field(default="draft", pattern="^draft$")
     draft: CharacterCreatorDraft
@@ -312,6 +383,9 @@ class CharacterCreatorService:
                 current_relationship_phase=draft.starting_relationship_phase,
                 phase=draft.starting_relationship_phase,
                 relationship_dynamic=draft.relationship_dynamic,
+                relationship_pacing=draft.relationship_pacing,
+                romantic_pacing=draft.romantic_pacing,
+                nsfw_pacing=draft.nsfw_pacing,
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
             ),
