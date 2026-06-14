@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
-**Date:** 2026-06-14  
-**Version:** 2.6  
-**Context:** Post-Milestone 5 reconciliation against the current repo code. Milestones 4 and 5 delivered the core character runtime, relationship state, visual identity, Moment Capture, visual feedback, visual memory, and reviewable visual canon workflows. This matrix is now aligned for M6-P00 and the Basic Character Creator Foundation.  
+**Date:** 2026-06-14
+**Version:** 2.7
+**Context:** M6-P00 documentation-only reconciliation after Milestone 5. Milestones 4 and 5 delivered the core character runtime, relationship state, visual identity, Moment Capture backend, visual feedback, visual memory, asset metadata, and reviewable visual canon workflows. This matrix is the authoritative field gate for the Basic Character Creator Foundation; no creator UI or runtime code was changed by this pass.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -45,7 +45,7 @@ The current repo already has these runtime foundations:
 
 Important current gap:
 
-- Chat/VN frontend actions still need to be wired as true primary Moment Capture requests through `POST /api/moment-capture`. Backend Moment Capture exists; M6-P00 must wire the cockpit button to the correct engine.
+- Chat/VN frontend actions still need to be wired as true primary Moment Capture requests through `POST /api/moment-capture`. Backend Moment Capture exists; this M6-P00 reconciliation identifies that as a required gap-closure task before creator portrait validation depends on it.
 
 ---
 
@@ -116,7 +116,7 @@ Avoid user-facing clinical or machine-room labels unless the user opens an advan
 
 | Code | Meaning |
 |---|---|
-| **M6-ready** | Can be exposed in the practical M6 creator after normal form/UI work. |
+| **M6-ready** | Current runtime already satisfies the M6 field gate; normal creator form/UI work may expose it. This positive status is retained alongside the requested gap/defer classes so safe fields are explicit. |
 | **M6-blocking runtime** | Must be implemented or wired before M6 can honestly expose the related field. |
 | **M6-preview-only** | Can appear in summaries, examples, or draft previews, but not as a hard runtime promise. |
 | **M6-store-only** | Store internally or in advanced details, but do not make it a main wizard choice. |
@@ -561,7 +561,7 @@ These replace the old “fields Reverie cannot fully process yet” list. M4/M5 
 
 # 4. M6 Field Exposure Baseline
 
-M6 should expose only fields that can be stored and meaningfully consumed or previewed after M6-P00/M6-P08 are done.
+M6 should expose only fields that can be stored and meaningfully consumed or previewed after the M6 gap-closure tasks below are done. This section is the practical creator allow-list; anything not listed here is hidden, internal, preview-only, or deferred according to the matrix row.
 
 ## M6 may expose as primary creator fields
 
@@ -873,11 +873,11 @@ This matrix is based on these design signals:
 The next engineering target is:
 
 ```text
-M6-P00 - Capability matrix reconciliation and real Moment Capture wiring
+M6-P00 - Capability matrix reconciliation
 ```
 
-Then build the M6 practical creator.
+Then close the identified M6-blocking runtime gaps and build the M6 practical creator.
 
 The creator should expose only the fields in the M6 baseline after runtime gaps are closed. Everything else stays internal, preview-only, or deferred. This keeps Reverie honest: no decorative onboarding, no fake agency, no parallel visual canon, no memory soup, no magical promises that collapse the first time the user presses a button.
 
-**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.6**
+**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.7**
