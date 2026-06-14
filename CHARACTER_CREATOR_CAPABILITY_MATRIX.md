@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 3.1
-**Context:** M6-P00/P00A/P01/P02/P03/P04/P05 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Version:** 3.2
+**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P05
+## 0.1 Current Runtime Reality After M6-P06
 
 The current repo already has these runtime foundations:
 
@@ -43,7 +43,7 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01/P02/P03/P04/P05 added these creator-draft foundations:
+M6-P00A/P01/P02/P03/P04/P05/P06 added these creator-draft foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
@@ -54,6 +54,7 @@ M6-P00A/P01/P02/P03/P04/P05 added these creator-draft foundations:
 - Draft-supported communication fields: `communication_style`, `avoid_style`, and `initiative_in_conversation`.
 - Draft-supported roleplay/integrity fields: `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`.
 - Draft-supported visual identity fields: stable anchors (`eye_color`, `skin_tone`, `face_structure`, `body_baseline`, `species_features`, `permanent_marks`), evolving traits (`hair`, `accessories`, `fashion_identity`), scene-mutable traits (`outfit`, `pose`, `expression`), and `rejected_visual_traits`.
+- Draft-supported lore-lite world/default scene fields: `default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details`.
 - Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
@@ -61,7 +62,7 @@ Important current gaps:
 
 - Full practical creator UI is still pending.
 - Draft finalization through review/save into durable character management is still M6-P09 scope.
-- Greeting/dialogue previews, memory/growth preference enforcement, lore-lite/default scene fields, import/export, asset/reference attachment UI, first-portrait approval UI, and field-impact evals remain later M6 tasks.
+- Greeting/dialogue previews, memory/growth preference enforcement, import/export, asset/reference attachment UI, first-portrait approval UI, and field-impact evals remain later M6 tasks.
 
 ---
 
@@ -197,8 +198,8 @@ These fields define the emotional contract: what kind of companion she is, how t
 | `emotional_tone_promise` | High | Chat, TTS, image mood | PROMPT | M6-preview-only | Can map into relationship dynamic and communication style | M7 Genesis | Sample lines |
 | `connection_origin` | Medium | Greeting, lore, relationship state | NEEDS_RUNTIME | M6-preview-only | Add to lore-lite/default scenario if needed | M7 Genesis | Greeting variants |
 | `perspective_mode` | Medium | Chat style, RP formatting | PROMPT | M6-preview-only | Not dedicated; can be style note only | M6 Advanced | Example dialogue |
-| `genre_frame` | Medium | Lore, image, VN | PARTIAL | M6-blocking runtime if exposed | M6-P06 lore-lite/default scene needs field/mapping | M6 Basic Creator | World preview |
-| `user_role_in_story` | High | Chat, lore, relationship state | NOW/STORE | M6-ready | Existing `RelationshipState.user_role_in_story`, prompt-consumed | M7 Genesis / M6 Advanced | Scenario preview |
+| `genre_frame` | Medium | Lore, image, VN | NOW | M6-ready via `world_genre` | Draft-supported as `world_scene.world_genre`; maps into blueprint metadata and prompt scene hints | M6 Basic Creator | World preview |
+| `user_role_in_story` | High | Chat, lore, relationship state | NOW | M6-ready | Draft-supported through `world_scene.user_role_in_story`; maps to `RelationshipState.user_role_in_story` and prompt context | M6 Basic Creator / M6 Advanced | Scenario preview |
 
 Suggested `companion_mode` presets for M6 mapping:
 
@@ -460,9 +461,9 @@ Backstory becomes valuable when it can be retrieved at the right time. Otherwise
 
 | Field | User value | Runtime consumers | Current support | M6 readiness | Needed capability / note | Wizard exposure | Preview / validation |
 |---|---:|---|---|---|---|---|---|
-| `default_setting` | High | Chat, image, VN | NEEDS_RUNTIME | M6-blocking runtime | M6-P06 must add lore-lite/default scene storage or metadata mapping | M6 Basic Creator | World preview |
-| `scenario` | Critical | Chat, image, greeting | NEEDS_RUNTIME | M6-blocking runtime | Add scenario/default scene field and prompt consumption | M6 Basic Creator | Greeting preview |
-| `world_genre` | Medium | Chat, image, lore | NEEDS_RUNTIME | M6-preview-only | Store as default scene/lore-lite tag | M6 Basic Creator | Choice examples |
+| `default_setting` | High | Chat, image, VN | NOW | M6-ready | Draft-supported; maps to `metadata.world_scene`, `metadata.scene_hints.setting`, prompt scene hints, and draft Moment Capture default location | M6 Basic Creator | World preview |
+| `scenario` | Critical | Chat, image, greeting | NOW | M6-ready | Draft-supported; maps to `metadata.world_scene`, `metadata.scene_hints.scenario`, prompt scene hints, and draft Moment Capture emotional tone | M6 Basic Creator | Greeting/scene preview |
+| `world_genre` | Medium | Chat, image, lore | NOW | M6-ready | Draft-supported lore-lite tag; maps to `metadata.world_scene` and `metadata.scene_hints.world_genre` | M6 Basic Creator | Choice examples |
 | `world_rules` | High | Chat, lore | STORE | M8 Alpha | Full lorebook/canon engine later | M8+ Alpha | Lore preview |
 | `lorebook_entries` | Critical | Chat, memory | NEEDS_RUNTIME | M8 Alpha | Lorebook/world-info engine later | M8+ Alpha | Trigger preview |
 | `character_backstory_compact` | High | Chat, lore | NEEDS_RUNTIME | M6-preview-only / M7 | No dedicated CharacterCanonStore yet; can map to metadata/prompt summary | M6 Basic Creator | Summary preview |
@@ -492,7 +493,7 @@ Reverie should separate **character canon** from **user persona**. Mixing these 
 |---|---:|---|---|---|---|---|---|
 | `user_display_name_for_character` | Critical | Chat, TTS, memory | NEEDS_RUNTIME | M6-preview-only | Needs UserPersona or relationship metadata; avoid overbuilding in M6 | M6 Advanced | Dialogue preview |
 | `user_pronouns` | High | Chat | NEEDS_RUNTIME | M6-preview-only | Needs UserPersona | M6 Advanced | Dialogue preview |
-| `user_role_in_relationship` | High | Chat, relationship state | NOW/STORE | M6-preview-only | Existing `user_role_in_story`; prompt-consumed | M7 Genesis | Scenario preview |
+| `user_role_in_relationship` | High | Chat, relationship state | NOW | M6-ready via `user_role_in_story` | Draft-supported through `world_scene.user_role_in_story`; maps to `RelationshipState.user_role_in_story` and prompt context | M6 Basic Creator | Scenario preview |
 | `user_boundaries` | Critical | Chat, memory, trust | STORE/PARTIAL | M6-ready for draft boundary summary | Draft-supported through `content_boundaries` hard/soft limits; memory receipts and persona-level enforcement remain later | M6 Basic Creator | Clear UI |
 | `user_preferred_pacing` | Critical | Chat, relationship | STORE/PARTIAL | M6-ready | Can map to relationship pacing/default intimacy | M6 Basic Creator | Examples |
 | `user_likes_dislikes` | High | Memory, chat, image | STORE | M8 Alpha | Typed memories/receipts later | M6-preview-only | Memory examples |
@@ -898,10 +899,10 @@ This matrix is based on these design signals:
 The next engineering target is:
 
 ```text
-Next M6 practical creator implementation task after M6-P05
+Next M6 practical creator implementation task after M6-P06
 ```
 
-P00/P00A/P01/P02/P03/P04/P05 are complete. Continue with the practical creator steps on top of the persisted draft foundation and documented identity, premise, personality, communication, roleplay policy, boundary, and visual identity draft contracts, without treating drafts as canonical characters before save.
+P00/P00A/P01/P02/P03/P04/P05/P06 are complete. Continue with the practical creator steps on top of the persisted draft foundation and documented identity, premise, personality, communication, roleplay policy, boundary, visual identity, and world/default scene draft contracts, without treating drafts as canonical characters before save.
 
 The creator should expose only the fields in the M6 baseline after runtime gaps are closed. Everything else stays internal, preview-only, or deferred. This keeps Reverie honest: no decorative onboarding, no fake agency, no parallel visual canon, no memory soup, no magical promises that collapse the first time the user presses a button.
 
