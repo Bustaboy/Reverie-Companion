@@ -32,9 +32,12 @@ from app.schemas.character_blueprint import (
     CharacterBlueprint,
     CharacterIdentity,
     CharacterIntegrityPolicy,
+    MetaConsentAndSafewordPolicy,
     CommunicationProfile,
     MAX_LIST_ITEMS,
+    MAX_SHORT_TEXT,
     PersonalityProfile,
+    RoleplayPolicy,
     utc_now_iso,
 )
 from app.schemas.moment_capture import (
@@ -56,7 +59,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 3
+DRAFT_SCHEMA_VERSION = 4
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -100,6 +103,20 @@ def _normalize_creator_list(
     return normalized[:max_items]
 
 
+def _normalize_required_policy_text(value: str, field_name: str) -> str:
+    normalized = " ".join(value.strip().split())
+    if not normalized:
+        raise ValueError(f"{field_name} cannot be empty.")
+    _reject_underage_or_childlike_presentation(normalized, field_name)
+    lowered = normalized.lower()
+    blocked_fragments = ("as an ai", "moral lecture", "kink shame", "kink-shame")
+    if any(fragment in lowered for fragment in blocked_fragments):
+        raise ValueError(
+            f"{field_name} must preserve roleplay-first, in-character boundaries without assistant-style moralizing."
+        )
+    return normalized
+
+
 def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> None:
     """Enforce the creator matrix adult-only baseline without over-policing adults."""
 
@@ -110,6 +127,108 @@ def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> N
                 f"{field_name} must describe a clearly adult companion; "
                 "underage or deliberately childlike sexual presentation is not allowed."
             )
+
+
+class CreatorDraftIntegrityPolicy(BaseModel):
+    """Draft-scoped character integrity controls consumed by runtime prompts."""
+
+    in_character_pushback: str = Field(
+        default=(
+            "Challenge, tease, negotiate, or resist in-character when it fits "
+            "the companion's personality and relationship dynamic."
+        ),
+        min_length=1,
+        max_length=MAX_SHORT_TEXT,
+    )
+    disagreement_style: str = Field(
+        default=(
+            "Keep disagreement embodied in the character voice; use in-world "
+            "concerns, desires, humor, or emotional honesty instead of assistant-style correction."
+        ),
+        min_length=1,
+        max_length=MAX_SHORT_TEXT,
+    )
+
+    @field_validator("in_character_pushback", "disagreement_style", mode="after")
+    @classmethod
+    def normalize_integrity_text(cls, value: str) -> str:
+        return _normalize_required_policy_text(value, "Integrity policy")
+
+
+class CreatorDraftRoleplayPolicy(BaseModel):
+    """Draft-scoped fiction-first roleplay switches that current runtime consumes."""
+
+    fiction_first_mode: bool = True
+
+
+class CreatorDraftSafewordPolicy(BaseModel):
+    """Draft-scoped OOC/safeword controls mapped to MetaConsentAndSafewordPolicy."""
+
+    safeword: str = Field(default="red", min_length=1, max_length=40)
+    ooc_marker: str = Field(default="[OOC]", min_length=1, max_length=20)
+    pause_commands: list[str] = Field(
+        default_factory=lambda: ["pause", "stop", "safeword", "red"],
+        min_length=1,
+        max_length=8,
+    )
+    fade_to_black_preference: str = Field(default="ask")
+    policy_note: str = Field(
+        default="Respect explicit OOC stop, pause, safeword, or clear distress immediately.",
+        min_length=1,
+        max_length=MAX_SHORT_TEXT,
+    )
+
+    @field_validator("safeword", "ooc_marker", "policy_note", mode="after")
+    @classmethod
+    def normalize_control_text(cls, value: str) -> str:
+        return _normalize_required_policy_text(value, "Safeword policy")
+
+    @field_validator("pause_commands", mode="after")
+    @classmethod
+    def normalize_pause_commands(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(
+            values,
+            field_name="Safeword pause commands",
+            required=True,
+            max_items=8,
+            max_item_length=40,
+        )
+
+    @field_validator("fade_to_black_preference", mode="after")
+    @classmethod
+    def validate_fade_to_black(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"ask", "allow", "prefer", "never"}
+        if normalized not in allowed:
+            raise ValueError(
+                "Fade-to-black preference must be ask, allow, prefer, or never."
+            )
+        return normalized
+
+
+class CreatorDraftMetaPolicy(BaseModel):
+    safeword_policy: CreatorDraftSafewordPolicy = Field(
+        default_factory=CreatorDraftSafewordPolicy
+    )
+
+
+class CreatorDraftContentBoundaries(BaseModel):
+    """Draft-only boundary summary for hard limits and roleplay steering."""
+
+    hard_limits: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    soft_limits: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    preferred_intensity: str | None = Field(default=None, max_length=80)
+    aftercare_style: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+
+    @field_validator("hard_limits", "soft_limits", mode="after")
+    @classmethod
+    def normalize_boundary_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(values, field_name="Content boundaries")
+
+    @field_validator("preferred_intensity", "aftercare_style", mode="after")
+    @classmethod
+    def normalize_boundary_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "Content boundaries")
 
 
 class DraftMomentSource(StrEnum):
@@ -149,6 +268,16 @@ class CharacterCreatorDraft(BaseModel):
     fears: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     vulnerabilities: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    integrity: CreatorDraftIntegrityPolicy = Field(
+        default_factory=CreatorDraftIntegrityPolicy
+    )
+    roleplay: CreatorDraftRoleplayPolicy = Field(
+        default_factory=CreatorDraftRoleplayPolicy
+    )
+    meta: CreatorDraftMetaPolicy = Field(default_factory=CreatorDraftMetaPolicy)
+    content_boundaries: CreatorDraftContentBoundaries = Field(
+        default_factory=CreatorDraftContentBoundaries
+    )
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile = Field(
@@ -241,6 +370,16 @@ class CharacterCreatorDraftUpdate(BaseModel):
     fears: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     vulnerabilities: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    integrity: CreatorDraftIntegrityPolicy = Field(
+        default_factory=CreatorDraftIntegrityPolicy
+    )
+    roleplay: CreatorDraftRoleplayPolicy = Field(
+        default_factory=CreatorDraftRoleplayPolicy
+    )
+    meta: CreatorDraftMetaPolicy = Field(default_factory=CreatorDraftMetaPolicy)
+    content_boundaries: CreatorDraftContentBoundaries = Field(
+        default_factory=CreatorDraftContentBoundaries
+    )
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile | None = None
@@ -377,14 +516,12 @@ class CharacterCreatorService:
         self, draft_id: str, patch: CharacterCreatorDraftUpdate
     ) -> CharacterCreatorDraftResponse:
         record = self._get_record_or_raise(draft_id)
-        updates = patch.model_dump(exclude_unset=True)
+        updates = patch.model_dump(exclude_unset=True, mode="json")
         if "metadata" in updates and updates["metadata"] is not None:
             updates["metadata"] = {**record.draft.metadata, **updates["metadata"]}
-        updated_draft = record.draft.model_copy(update=updates)
-        # Re-validate copied updates because model_copy is intentionally permissive.
-        updated_draft = CharacterCreatorDraft.model_validate(
-            updated_draft.model_dump(mode="json")
-        )
+        draft_payload = {**record.draft.model_dump(mode="json"), **updates}
+        # Re-validate copied updates because raw patch merging is intentionally permissive.
+        updated_draft = CharacterCreatorDraft.model_validate(draft_payload)
         saved = self._draft_repository.upsert(
             record.model_copy(
                 update={"draft": updated_draft, "updated_at": utc_now_iso()}
@@ -456,17 +593,36 @@ class CharacterCreatorService:
                 avoid_style_rules=draft.avoid_style,
                 initiative_in_conversation=draft.initiative_in_conversation,
             ),
-            integrity_policy=CharacterIntegrityPolicy(independence=draft.independence),
+            roleplay_policy=RoleplayPolicy(
+                fiction_first_mode=draft.roleplay.fiction_first_mode,
+                lecture_avoidance=True,
+                adult_roleplay_allowed=True,
+                safeword_policy=draft.meta.safeword_policy.policy_note,
+            ),
+            integrity_policy=CharacterIntegrityPolicy(
+                in_character_pushback=draft.integrity.in_character_pushback,
+                independence=draft.independence,
+                disagreement_style=draft.integrity.disagreement_style,
+                fiction_first_mode=draft.roleplay.fiction_first_mode,
+                lecture_avoidance=True,
+            ),
+            meta_consent_policy=MetaConsentAndSafewordPolicy(
+                safeword=draft.meta.safeword_policy.safeword,
+                ooc_marker=draft.meta.safeword_policy.ooc_marker,
+                pause_commands=draft.meta.safeword_policy.pause_commands,
+                fade_to_black_preference=draft.meta.safeword_policy.fade_to_black_preference,
+            ),
             visual_identity=draft.visual_identity,
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p00a_runtime_draft",
+                    "source": "m6_p04_roleplay_policy_draft",
                     "migration_note": (
-                        "API-only draft; persist explicitly in a later draft "
-                        "repository before save flows."
+                        "API-only draft roleplay policy fields are mapped into "
+                        "runtime CharacterBlueprint structures before final save."
                     ),
                 },
+                "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
                 **draft.metadata,
             },
         )
