@@ -21,7 +21,11 @@ from app.services.character_creator_service import (
     CharacterCreatorDraftResponse,
     CharacterCreatorDraftUpdate,
     CharacterCreatorService,
+    CreatorDuplicateRequest,
+    CreatorExportEnvelope,
+    CreatorImportRequest,
     CreatorDraftNotFoundError,
+    DraftReviewResponse,
     DraftMomentCaptureRequest,
     DraftValidationResponse,
     DraftPreviewRequest,
@@ -29,6 +33,7 @@ from app.services.character_creator_service import (
     CharacterCreatorDraft,
     PersistedDraftMomentCaptureRequest,
     PersistedDraftPreviewRequest,
+    FinalizedCharacterDeleteRequest,
 )
 from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.moment_capture_service import MomentCaptureResponse
@@ -163,6 +168,89 @@ def validate_persisted_creator_draft(
 ) -> DraftValidationResponse:
     try:
         return service.validate_persisted_draft(draft_id)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
+    "/creator/import", response_model=CharacterCreatorDraftResponse | CharacterResponse
+)
+def import_creator_data(
+    request: CreatorImportRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftResponse | CharacterResponse:
+    try:
+        imported = service.import_envelope(request)
+        if hasattr(imported, "character_id"):
+            return CharacterResponse(character=imported)
+        return imported
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+    except CharacterRepositoryError as exc:
+        raise _repository_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
+@router.post("/creator/drafts/{draft_id}/review", response_model=DraftReviewResponse)
+def review_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> DraftReviewResponse:
+    try:
+        return service.review_persisted_draft(draft_id)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post("/creator/drafts/{draft_id}/finalize", response_model=CharacterResponse)
+def finalize_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterResponse:
+    try:
+        return CharacterResponse(character=service.finalize_draft(draft_id))
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+    except CharacterRepositoryError as exc:
+        raise _repository_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/duplicate", response_model=CharacterCreatorDraftResponse
+)
+def duplicate_creator_draft(
+    draft_id: str,
+    request: CreatorDuplicateRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return service.duplicate_draft(draft_id, request)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.get("/creator/drafts/{draft_id}/export", response_model=CreatorExportEnvelope)
+def export_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CreatorExportEnvelope:
+    try:
+        return service.export_draft(draft_id)
     except CreatorDraftNotFoundError as exc:
         raise _draft_not_found_exception(exc) from exc
     except CreatorDraftRepositoryError as exc:
@@ -326,6 +414,35 @@ def list_characters(
         raise _repository_exception(exc) from exc
 
 
+@router.post("/{character_id}/duplicate", response_model=CharacterResponse)
+def duplicate_character(
+    character_id: str,
+    request: CreatorDuplicateRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CharacterResponse:
+    try:
+        return CharacterResponse(
+            character=service.duplicate_character(character_id, request)
+        )
+    except CharacterNotFoundError as exc:
+        raise _not_found_exception(exc) from exc
+    except CharacterRepositoryError as exc:
+        raise _repository_exception(exc) from exc
+
+
+@router.get("/{character_id}/export", response_model=CreatorExportEnvelope)
+def export_character(
+    character_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CreatorExportEnvelope:
+    try:
+        return service.export_character(character_id)
+    except CharacterNotFoundError as exc:
+        raise _not_found_exception(exc) from exc
+    except CharacterRepositoryError as exc:
+        raise _repository_exception(exc) from exc
+
+
 @router.get("/{character_id}", response_model=CharacterResponse)
 def get_character(
     character_id: str,
@@ -361,12 +478,17 @@ def update_character(
 )
 def delete_character(
     character_id: str,
-    service: Annotated[CharacterService, Depends(get_character_service)],
+    request: FinalizedCharacterDeleteRequest,
+    creator_service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
 ) -> None:
     try:
-        if not service.delete(character_id):
+        if not creator_service.delete_character_safely(character_id, request):
             raise CharacterNotFoundError(character_id)
     except CharacterNotFoundError as exc:
         raise _not_found_exception(exc) from exc
     except CharacterRepositoryError as exc:
         raise _repository_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc

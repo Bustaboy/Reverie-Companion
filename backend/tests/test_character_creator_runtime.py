@@ -39,7 +39,10 @@ from app.services.character_creator_service import (
     DraftMomentCaptureRequest,
     DraftMomentSource,
     PersistedDraftMomentCaptureRequest,
+    CreatorImportRequest,
+    FinalizedCharacterDeleteRequest,
 )
+from app.services.character_service import CharacterService
 from app.services.moment_capture_service import MomentCaptureService
 
 from test_image_generation_service import FakeAdapter, FakeCoordinator, make_service
@@ -1069,3 +1072,92 @@ def test_persisted_creator_preview_methods_load_draft_without_persisting_preview
     assert repository.get(created.record.draft_id) is not None
     assert greeting.metadata["storage"] == "not_persisted"
     assert dialogues.metadata["storage"] == "not_persisted"
+
+
+def test_creator_review_finalize_duplicate_export_import_and_safe_delete(
+    tmp_path,
+) -> None:
+    draft_repo = CreatorDraftRepository(tmp_path / "creator.sqlite3")
+    char_repo = CharacterRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(
+        draft_repository=draft_repo,
+        character_service=CharacterService(char_repo),
+    )
+    created = service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    review = service.review_persisted_draft(created.record.draft_id)
+    assert review.valid is True
+    assert review.summary["identity"]["display_name"] == "Aria"
+    assert review.validation.blueprint is not None
+    assert review.preview_quality.passed is True
+
+    finalized = service.finalize_draft(created.record.draft_id)
+    assert finalized.character_id
+    assert (
+        finalized.metadata["creator_finalization"]["draft_id"]
+        == created.record.draft_id
+    )
+    assert char_repo.get(finalized.character_id) is not None
+
+    draft_copy = service.duplicate_draft(created.record.draft_id, None)
+    assert draft_copy.record.draft_id != created.record.draft_id
+    assert draft_copy.record.draft.display_name == "Aria Copy"
+    assert draft_copy.record.draft.character_id is None
+
+    char_copy = service.duplicate_character(finalized.character_id, None)
+    assert char_copy.character_id != finalized.character_id
+    assert char_copy.identity.display_name == "Aria Copy"
+    assert char_copy.metadata["duplicated_from_character_id"] == finalized.character_id
+
+    exported_draft = service.export_draft(created.record.draft_id)
+    assert exported_draft.kind == "draft"
+    imported_draft = service.import_envelope(
+        CreatorImportRequest(envelope=exported_draft, as_draft=True)
+    )
+    assert imported_draft.record.draft_id != created.record.draft_id
+    assert imported_draft.validation.valid is True
+
+    exported_character = service.export_character(finalized.character_id)
+    imported_character = service.import_envelope(
+        CreatorImportRequest(envelope=exported_character, as_draft=False)
+    )
+    assert imported_character.character_id != finalized.character_id
+    assert char_repo.get(imported_character.character_id) is not None
+
+    try:
+        service.delete_character_safely(
+            finalized.character_id, FinalizedCharacterDeleteRequest(confirm=False)
+        )
+    except ValueError as exc:
+        assert "confirm=true" in str(exc)
+    else:
+        raise AssertionError("finalized character delete should require confirmation")
+
+    assert (
+        service.delete_character_safely(
+            finalized.character_id,
+            FinalizedCharacterDeleteRequest(confirm=True, expected_display_name="Aria"),
+        )
+        is True
+    )
+    assert char_repo.get(finalized.character_id) is None
+
+
+def test_creator_management_flows_enforce_adult_policy(tmp_path) -> None:
+    service = CharacterCreatorService(
+        draft_repository=CreatorDraftRepository(tmp_path / "creator.sqlite3"),
+        character_service=CharacterService(
+            CharacterRepository(tmp_path / "characters.sqlite3")
+        ),
+    )
+    invalid = _draft().model_copy(update={"adult_only_confirmed": False})
+    created = service.create_draft(CharacterCreatorDraftCreate(draft=invalid))
+    review = service.review_persisted_draft(created.record.draft_id)
+    assert review.valid is False
+    assert review.preview_quality.passed is False
+    try:
+        service.finalize_draft(created.record.draft_id)
+    except ValueError as exc:
+        assert "review" in str(exc)
+    else:
+        raise AssertionError("invalid adult baseline must not finalize")
