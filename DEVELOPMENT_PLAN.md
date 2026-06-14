@@ -3,7 +3,7 @@
 **Version**: 2.8
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, and communication style fields.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, and roleplay policy/integrity/boundary controls.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -554,7 +554,7 @@ M6 must reuse the existing systems instead of creating parallel ones:
 | Character-specific authored VN/live-preview assets | M3/M4 | M6-lite / M7 | M6-P05, M7-P10 | M6 may attach/import references. M7 owns immersive live-preview asset workflow. |
 | Dialogue/scenario preview generator | Matrix | M6-blocking | M6-P08 | Required before exposing behavioral creator fields. |
 | Creator draft to runtime mapping | Matrix | Foundation complete | M6-P01 complete | Current draft fields map into valid `CharacterBlueprint` previews; later UI steps must extend mapping only for approved fields. |
-| Relationship/boundary baseline for creator choices | Matrix | Partially complete | M6-P02 complete; M6-P04 pending | M6-P02 documents draft-backed identity and premise/relationship starting-frame fields. Boundary, safeword/OOC, and roleplay policy controls remain M6-P04. |
+| Relationship/boundary baseline for creator choices | Matrix | Complete foundation | M6-P02 and M6-P04 complete | M6-P02 documents draft-backed identity and premise/relationship starting-frame fields. M6-P04 documents draft-backed boundary, safeword/OOC, and roleplay policy controls. |
 | Memory/growth preference baseline | Matrix | M6-blocking | M6-P07 | Basic policy enforcement and clear preview copy. Deep trust dashboard stays M8. |
 | First portrait validation using Moment Capture | M5/M6 | Foundation complete / UI pending | M6-P00A/P01 complete; M6-P05, M6-P09 pending | Drafts can queue evidence-only first-portrait captures; creator validation UI, reference selection, and save flow remain later M6 work. |
 | Packaged Tauri backend connectivity check | M1/M3 | Needs verification | M8-P09 | Dev mode is not packaged app validation. Humanity keeps learning this and forgetting it. |
@@ -667,7 +667,7 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, and M6-P03 documented draft-supported personality and communication capabilities. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, and M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
 
 ### M6 success criteria
 
@@ -761,7 +761,7 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 - Real Chat/VN Moment Capture wiring is split into `M6-P00A` so first portrait validation uses the M5 Moment Capture runtime instead of generic image generation.
 - `M6-P01` must keep creator drafts separate from saved `CharacterBlueprint` data and provide deterministic draft-to-blueprint mapping.
 - `M6-P08` must cover first greeting, alternate greeting/example dialogue storage where needed, and dialogue/scenario preview generation before greeting/dialogue behavior is promised; M6-P03 documented the existing personality and communication draft fields without adding those preview systems.
-- `M6-P04` must establish the relationship, boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
+- `M6-P04` established the draft-supported relationship boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
 - `M6-P05` must adapt existing Moment Capture review/feedback into first portrait validation without adding a parallel visual canon store.
 - `M6-P06` must keep world/default scene support lore-lite and avoid full lorebook/canon retrieval.
 - `M6-P07` must make memory/growth preferences either enforceable at baseline or visibly preview-only.
@@ -769,9 +769,9 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 - `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
 
 
-### M6-P00/P00A/P01/P02/P03 foundation status
+### M6-P00/P00A/P01/P02/P03/P04 foundation status
 
-The first M6 foundation series is complete through the personality/communication documentation pass:
+The first M6 foundation series is complete through the roleplay policy and boundary documentation pass:
 
 | Task | Status | Delivered outcome |
 |---|---|---|
@@ -780,6 +780,7 @@ The first M6 foundation series is complete through the personality/communication
 | M6-P01 — Creator architecture and draft persistence | Complete | Added a versioned `CharacterCreatorDraft` service/repository/API foundation, persisted drafts separately from finalized characters, provided create/load/list/update/validate/delete operations, and mapped drafts into valid `CharacterBlueprint` previews. |
 | M6-P02 — Identity, adult baseline, and companion premise steps | Complete | Documented the draft-supported identity fields (`display_name`, `pronouns`, `species_or_type`, `adult_age_range`, `adult_only_confirmed`) and premise/relationship starting-frame fields (`starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, `user_desired_experience`), including validation and mapping into `CharacterIdentity` and `RelationshipState`. |
 | M6-P03 — Personality and communication steps with examples | Complete | Documented the draft-supported personality fields (`core_traits`, `independence`, `devotion`, `dominance_or_initiative`, `values_or_ideals`, `flaws`, `fears`, `vulnerabilities`) and communication fields (`communication_style`, `avoid_style`, `initiative_in_conversation`), including validation and mapping into `PersonalityProfile`, `CommunicationProfile`, and integrity-policy independence. |
+| M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls | Complete | Documented the draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields (`integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`), including validation and mapping into `CharacterIntegrityPolicy`, `RoleplayPolicy`, `MetaConsentAndSafewordPolicy`, and draft metadata. |
 
 Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
@@ -1020,6 +1021,10 @@ Definition of Done:
 ---
 
 #### M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls
+
+**Status**: Complete.
+
+**Delivered**: Creator drafts now document and preserve roleplay-first policy fields for in-character pushback, disagreement style, fiction-first mode, safeword/OOC controls, fade-to-black preference, and lightweight content boundaries. These fields map into `CharacterIntegrityPolicy`, `RoleplayPolicy`, `MetaConsentAndSafewordPolicy`, and draft metadata without introducing a generic anti-sycophancy layer.
 
 **Goal**: Let the user configure roleplay posture and meta-controls without turning the creator into a compliance spreadsheet.
 
@@ -1670,7 +1675,7 @@ Winner is not automatically the larger implementation. Bigger diffs are often ju
 
 ## 15. Immediate Next Actions
 
-1. Continue with **M6-P04 — Roleplay policy, boundaries, safeword, and OOC controls** on top of the persisted draft foundation and the documented M6-P02/P03 identity, premise, personality, and communication draft contracts.
+1. Continue with **M6-P05 — Visual identity step, asset/reference attachment, and first portrait validation** on top of the persisted draft foundation and the documented M6-P02/P03/P04 identity, premise, personality, communication, roleplay policy, and boundary draft contracts.
 2. Keep `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` as the field gate before exposing any new creator field.
 3. Use `docs/creator-draft-system.md` as the practical draft-system reference for future creator tasks.
 4. Preserve the separation between editable drafts and finalized `CharacterBlueprint` records.
