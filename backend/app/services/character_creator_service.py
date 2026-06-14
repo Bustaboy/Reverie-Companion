@@ -7,6 +7,12 @@ first-portrait Moment Capture through the existing non-blocking capture service.
 Persistence/migration note: ``CharacterCreatorDraft`` is API-only for P00A. If
 later milestones persist drafts, store the draft schema version alongside the
 mapped blueprint ID and preserve ``metadata`` losslessly for forward migration.
+
+Draft first-portrait captures add flat metadata keys (``creator_draft``,
+``draft_id``, ``source_context``, ``capture_intent``, and ``rollback_note``) to
+Moment Capture requests/records and mirror the same lightweight provenance into
+scene metadata so image job events can be filtered without mutating canonical
+character data.
 """
 
 from __future__ import annotations
@@ -192,8 +198,18 @@ class CharacterCreatorService:
         self, request: DraftMomentCaptureRequest
     ) -> MomentCaptureResponse:
         blueprint = self.draft_to_blueprint(request.draft)
-        scene_state = request.scene_state or self._default_scene_state(
-            blueprint, source=request.source
+        scene_state = self._scene_state_with_draft_metadata(
+            request.scene_state or self._default_scene_state(
+                blueprint, source=request.source
+            ),
+            draft=request.draft,
+            source=request.source,
+            capture_intent=request.capture_intent,
+        )
+        capture_metadata = self._draft_capture_metadata(
+            draft=request.draft,
+            source=request.source,
+            capture_intent=request.capture_intent,
         )
         capture_request = MomentCaptureRequest.from_chat_turn(
             character_id=blueprint.character_id,
@@ -216,13 +232,7 @@ class CharacterCreatorService:
                 blueprint.visual_identity.updated_at,
             ),
             quality_preset=request.quality_preset,
-            metadata={
-                "capture_intent": request.capture_intent,
-                "creator_draft_id": request.draft.draft_id,
-                "creator_runtime_source": request.source.value,
-                "provenance": "character_creator_draft_first_portrait",
-                "queue_policy": "non_blocking_preview_8gb",
-            },
+            metadata=capture_metadata,
         )
         service = self._moment_capture_service
         draft_character_service = DraftCharacterService(blueprint)
@@ -262,3 +272,50 @@ class CharacterCreatorService:
             wrong_appearance=list(blueprint.visual_identity.rejected_traits),
             metadata={"source": source.value, "creator_first_portrait": True},
         )
+
+    def _draft_capture_metadata(
+        self,
+        *,
+        draft: CharacterCreatorDraft,
+        source: DraftMomentSource,
+        capture_intent: str,
+    ) -> dict[str, Any]:
+        """Return flat, filterable provenance for evidence-only draft captures.
+
+        These keys are intentionally duplicated rather than nested so future
+        gallery/review filters and draft migration jobs can distinguish creator
+        evidence from canonical character captures with a simple metadata lookup.
+        """
+
+        return {
+            "creator_draft": True,
+            "draft_id": draft.draft_id,
+            "source_context": source.value,
+            "capture_intent": capture_intent,
+            "rollback_note": (
+                "Creator draft first-portrait capture is evidence-only; it does "
+                "not mutate canonical character data unless a later reviewed "
+                "save/migration flow explicitly applies it."
+            ),
+            "creator_draft_id": draft.draft_id,
+            "creator_runtime_source": source.value,
+            "provenance": "character_creator_draft_first_portrait",
+            "capture_kind": "creator_draft_first_portrait",
+            "queue_policy": "non_blocking_preview_8gb",
+        }
+
+    def _scene_state_with_draft_metadata(
+        self,
+        scene_state: SceneState,
+        *,
+        draft: CharacterCreatorDraft,
+        source: DraftMomentSource,
+        capture_intent: str,
+    ) -> SceneState:
+        metadata = {
+            **scene_state.metadata,
+            **self._draft_capture_metadata(
+                draft=draft, source=source, capture_intent=capture_intent
+            ),
+        }
+        return scene_state.model_copy(update={"metadata": metadata})

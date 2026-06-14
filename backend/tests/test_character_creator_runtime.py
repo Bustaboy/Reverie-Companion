@@ -137,16 +137,35 @@ def test_creator_draft_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
         assert vn_response.job.status == ImageJobStatus.queued
         assert chat_response.record.character_id == "draft_aria"
         assert vn_response.record.metadata["creator_runtime_source"] == "visual_novel"
+        assert chat_response.record.metadata["creator_draft"] is True
+        assert chat_response.record.metadata["draft_id"] == "draft-aria"
+        assert chat_response.record.metadata["source_context"] == "chat"
+        assert (
+            chat_response.record.metadata["capture_intent"]
+            == "first portrait for this new character draft"
+        )
+        assert "evidence-only" in chat_response.record.metadata["rollback_note"]
+        assert "does not mutate canonical character data" in chat_response.record.metadata[
+            "rollback_note"
+        ]
         assert (
             chat_response.record.metadata["provenance"]
             == "character_creator_draft_first_portrait"
         )
         assert image_service._jobs[chat_response.job.job_id].source == "moment_capture"
+        chat_job_context = image_service._jobs[chat_response.job.job_id].context[
+            "moment_capture"
+        ]
+        vn_job_context = image_service._jobs[vn_response.job.job_id].context[
+            "moment_capture"
+        ]
+        assert vn_job_context["character_id"] == "draft_aria"
+        assert chat_job_context["scene_state"]["metadata"]["creator_draft"] is True
+        assert chat_job_context["scene_state"]["metadata"]["draft_id"] == "draft-aria"
+        assert chat_job_context["scene_state"]["metadata"]["source_context"] == "chat"
         assert (
-            image_service._jobs[vn_response.job.job_id].context["moment_capture"][
-                "character_id"
-            ]
-            == "draft_aria"
+            chat_job_context["scene_state"]["metadata"]["capture_kind"]
+            == "creator_draft_first_portrait"
         )
         assert (
             "first portrait validation"
