@@ -27,6 +27,9 @@ from app.services.character_creator_service import (
     CharacterCreatorDraftCreate,
     CharacterCreatorDraftUpdate,
     CharacterCreatorService,
+    DraftIntegrityPolicy,
+    DraftRoleplayPolicy,
+    DraftSafewordPolicy,
     DraftMomentCaptureRequest,
     DraftMomentSource,
     PersistedDraftMomentCaptureRequest,
@@ -50,6 +53,24 @@ def _draft() -> CharacterCreatorDraft:
         nsfw_pacing=RelationshipPacing.user_led,
         default_intimacy_level=DefaultIntimacyLevel.flirtatious,
         user_desired_experience="tender magical romance",
+        integrity=DraftIntegrityPolicy(
+            in_character_pushback="tease, negotiate, and resist in character when her heart disagrees",
+            disagreement_style="affectionate defiance, in-world doubts, and playful challenges",
+            reality_boundary_style="step out only for real-world harm or explicit OOC stop controls",
+        ),
+        roleplay=DraftRoleplayPolicy(
+            fiction_first_mode=True,
+            lecture_avoidance=True,
+            adult_roleplay_allowed=True,
+        ),
+        meta=DraftSafewordPolicy(
+            safeword="starlight",
+            ooc_marker="((OOC))",
+            pause_commands=["pause", "stop", "starlight"],
+            fade_to_black_preference="prefer",
+            policy_summary="Respect ((OOC)), starlight, stop, pause, or clear distress immediately.",
+        ),
+        content_boundaries=["no underage sexual content", "fade to black on request"],
         core_traits=["warm", "playful", "protective"],
         independence=0.72,
         devotion=0.68,
@@ -112,6 +133,32 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert blueprint.personality.fears == ["being forgotten"]
     assert blueprint.personality.vulnerabilities == ["softens when praised sincerely"]
     assert blueprint.integrity_policy.independence == 0.72
+    assert (
+        blueprint.integrity_policy.in_character_pushback
+        == "tease, negotiate, and resist in character when her heart disagrees"
+    )
+    assert blueprint.integrity_policy.disagreement_style == (
+        "affectionate defiance, in-world doubts, and playful challenges"
+    )
+    assert blueprint.integrity_policy.fiction_first_mode is True
+    assert blueprint.integrity_policy.lecture_avoidance is True
+    assert blueprint.roleplay_policy.fiction_first_mode is True
+    assert blueprint.roleplay_policy.lecture_avoidance is True
+    assert blueprint.roleplay_policy.safeword_policy == (
+        "Respect ((OOC)), starlight, stop, pause, or clear distress immediately."
+    )
+    assert blueprint.meta_consent_policy.safeword == "starlight"
+    assert blueprint.meta_consent_policy.ooc_marker == "((OOC))"
+    assert blueprint.meta_consent_policy.pause_commands == [
+        "pause",
+        "stop",
+        "starlight",
+    ]
+    assert blueprint.meta_consent_policy.fade_to_black_preference == "prefer"
+    assert blueprint.metadata["content_boundaries"] == [
+        "no underage sexual content",
+        "fade to black on request",
+    ]
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
     assert blueprint.communication.avoid_style_rules == [
         "clinical assistant tone",
@@ -127,6 +174,91 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
     assert blueprint.metadata["creator_draft"]["source"] == "m6_p00a_runtime_draft"
+
+
+def test_creator_draft_roleplay_policy_fields_can_be_updated_and_persisted(
+    tmp_path,
+) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            integrity=DraftIntegrityPolicy(
+                in_character_pushback="hold her ground in-character instead of blindly agreeing",
+                disagreement_style="warm teasing, emotional honesty, and embodied boundaries",
+                reality_boundary_style="briefly leave fiction only for real-world harm or OOC stop",
+            ),
+            roleplay=DraftRoleplayPolicy(
+                fiction_first_mode=True,
+                lecture_avoidance=True,
+                adult_roleplay_allowed=True,
+            ),
+            meta=DraftSafewordPolicy(
+                safeword="moonfall",
+                ooc_marker="[OOC]",
+                pause_commands=["pause", "moonfall", "pause"],
+                fade_to_black_preference="allow",
+                policy_summary="Pause immediately for [OOC], moonfall, stop, pause, or clear distress.",
+            ),
+            content_boundaries=[
+                "fade to black on request",
+                "no underage sexual content",
+            ],
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria")
+    assert loaded.record.draft.meta.safeword == "moonfall"
+    assert loaded.record.draft.meta.pause_commands == ["pause", "moonfall"]
+    assert loaded.record.draft.content_boundaries == [
+        "fade to black on request",
+        "no underage sexual content",
+    ]
+    assert updated.validation.blueprint is not None
+    blueprint = updated.validation.blueprint
+    assert blueprint.integrity_policy.in_character_pushback == (
+        "hold her ground in-character instead of blindly agreeing"
+    )
+    assert blueprint.integrity_policy.disagreement_style == (
+        "warm teasing, emotional honesty, and embodied boundaries"
+    )
+    assert blueprint.roleplay_policy.fiction_first_mode is True
+    assert blueprint.roleplay_policy.lecture_avoidance is True
+    assert blueprint.meta_consent_policy.safeword == "moonfall"
+    assert blueprint.meta_consent_policy.pause_commands == ["pause", "moonfall"]
+    assert blueprint.meta_consent_policy.fade_to_black_preference == "allow"
+    assert blueprint.metadata["creator_draft"]["content_boundaries"] == [
+        "fade to black on request",
+        "no underage sexual content",
+    ]
+
+
+def test_creator_draft_rejects_invalid_roleplay_policy_and_boundary_values() -> None:
+    invalid_kwargs = (
+        {
+            "integrity": DraftIntegrityPolicy(
+                in_character_pushback="argue in character",
+                disagreement_style="adult disagreement",
+                reality_boundary_style="step out for real-world harm",
+            ),
+            "content_boundaries": ["childlike sexual presentation"],
+        },
+        {"meta": {"safeword": " ", "pause_commands": ["stop"]}},
+        {"meta": {"safeword": "red", "pause_commands": []}},
+        {"meta": {"fade_to_black_preference": "always"}},
+        {"integrity": {"in_character_pushback": "teen-coded resistance"}},
+    )
+
+    for kwargs in invalid_kwargs:
+        try:
+            CharacterCreatorDraft(display_name="Aria", **kwargs)
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"Expected invalid roleplay values to fail: {kwargs}")
 
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
