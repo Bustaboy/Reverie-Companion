@@ -8,8 +8,13 @@ Persistence/migration note: ``CharacterCreatorDraft`` is API-only for P00A. If
 later milestones persist drafts, store the draft schema version alongside the
 mapped blueprint ID and preserve ``metadata`` losslessly for forward migration.
 Draft first-portrait captures add lightweight provenance fields to request,
-record, image-job context, and follow-up visual-change events: ``creator_draft``,
-``draft_id``, ``source_context``, ``capture_intent``, and ``rollback_note``.
+record, image-job context, and follow-up visual-change events. The draft-capture
+metadata contract intentionally uses a ``draft_`` prefix for draft-specific keys:
+``draft_capture``, ``draft_id``, ``draft_character_id``,
+``draft_source_context``, ``draft_capture_intent``, and
+``draft_rollback_note``. Non-prefixed fields such as ``provenance``,
+``evidence_only``, and ``canonical_mutation_allowed`` describe generic review and
+rollback semantics shared with non-draft capture metadata.
 """
 
 from __future__ import annotations
@@ -48,6 +53,26 @@ from app.services.moment_capture_service import (
 
 
 LOGGER = logging.getLogger(__name__)
+
+# Draft capture metadata contract
+# --------------------------------
+# These keys are duplicated onto MomentCaptureRequest.metadata, SceneState.metadata,
+# MomentCaptureRecord.metadata, image-job context, and VisualChangeEvent.metadata.
+# Keeping the draft-specific keys under a consistent ``draft_`` prefix makes them
+# cheap to filter in gallery/review views, keeps provenance visible while the
+# CharacterBlueprint is still unsaved, and gives rollback/review flows enough
+# context to avoid mutating canonical character data by accident.
+DRAFT_CAPTURE_METADATA_KEYS: tuple[str, ...] = (
+    "draft_capture",
+    "draft_id",
+    "draft_character_id",
+    "draft_source_context",
+    "draft_capture_intent",
+    "draft_rollback_note",
+    "provenance",
+    "evidence_only",
+    "canonical_mutation_allowed",
+)
 
 
 class DraftMomentSource(StrEnum):
@@ -232,10 +257,10 @@ class CharacterCreatorService:
         LOGGER.info(
             "Queued creator draft first-portrait Moment Capture",
             extra={
-                "creator_draft": True,
+                "draft_capture": True,
                 "draft_id": request.draft.draft_id,
                 "character_id": blueprint.character_id,
-                "source_context": request.source.value,
+                "draft_source_context": request.source.value,
             },
         )
         service = self._moment_capture_service
@@ -278,10 +303,10 @@ class CharacterCreatorService:
             wrong_appearance=list(blueprint.visual_identity.rejected_traits),
             metadata={
                 "source": source.value,
-                "creator_draft": True,
-                "source_context": source.value,
-                "creator_first_portrait": True,
-                "rollback_note": self._draft_rollback_note(),
+                "draft_capture": True,
+                "draft_source_context": source.value,
+                "draft_first_portrait": True,
+                "draft_rollback_note": self._draft_capture_rollback_note(),
             },
         )
 
@@ -290,10 +315,10 @@ class CharacterCreatorService:
     ) -> SceneState:
         metadata = {
             **scene_state.metadata,
-            "creator_draft": True,
-            "source_context": source.value,
-            "creator_first_portrait": True,
-            "rollback_note": self._draft_rollback_note(),
+            "draft_capture": True,
+            "draft_source_context": source.value,
+            "draft_first_portrait": True,
+            "draft_rollback_note": self._draft_capture_rollback_note(),
         }
         continuity_notes = list(scene_state.continuity_notes)
         for note in (
@@ -309,22 +334,25 @@ class CharacterCreatorService:
     def _draft_capture_metadata(
         self, *, request: DraftMomentCaptureRequest, character_id: str
     ) -> dict[str, Any]:
-        """Return filterable provenance for evidence-only draft captures.
+        """Return the standardized draft-capture metadata contract.
 
-        These fields are intentionally duplicated at the top level of capture
-        records and image-job context so future gallery/review migration tasks
-        can filter draft captures without parsing nested draft structures.
+        Expected draft-triggered captures carry the ``draft_``-prefixed fields
+        below on the ``MomentCaptureRequest`` and resulting ``MomentCaptureRecord``.
+        ``SceneState.metadata`` carries the scene-relevant subset
+        (``draft_capture``, ``draft_source_context``, ``draft_first_portrait``,
+        and ``draft_rollback_note``). ``VisualChangeEvent.metadata`` copies the
+        fields listed in ``DRAFT_CAPTURE_METADATA_KEYS`` so feedback, provenance,
+        filtering, and rollback review can distinguish evidence-only draft images
+        from canonical character captures without opening nested draft payloads.
         """
 
         return {
-            "creator_draft": True,
+            "draft_capture": True,
             "draft_id": request.draft.draft_id,
             "draft_character_id": character_id,
-            "source_context": request.source.value,
-            "capture_intent": request.capture_intent,
-            "rollback_note": self._draft_rollback_note(),
-            "creator_draft_id": request.draft.draft_id,
-            "creator_runtime_source": request.source.value,
+            "draft_source_context": request.source.value,
+            "draft_capture_intent": request.capture_intent,
+            "draft_rollback_note": self._draft_capture_rollback_note(),
             "provenance": "character_creator_draft_first_portrait",
             "queue_policy": "non_blocking_preview_8gb",
             "evidence_only": True,
@@ -332,7 +360,7 @@ class CharacterCreatorService:
         }
 
     @staticmethod
-    def _draft_rollback_note() -> str:
+    def _draft_capture_rollback_note() -> str:
         return (
             "Creator draft capture is evidence-only for first-portrait review; "
             "it does not mutate canonical character data unless a later explicit "

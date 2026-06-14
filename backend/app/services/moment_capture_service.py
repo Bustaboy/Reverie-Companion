@@ -104,6 +104,7 @@ class MomentCaptureService:
         scene_state = request.scene_state.model_dump(mode="json")
         capture_intent = str(
             request.metadata.get("capture_intent")
+            or request.metadata.get("draft_capture_intent")
             or request.metadata.get("user_instruction")
             or "capture this moment"
         )
@@ -683,14 +684,18 @@ class MomentCaptureService:
                 or (record.output_paths[0] if record.output_paths else None),
                 "image_job_id": record.image_job_id,
                 "prompt_hash": record.prompt_hash,
+                # Draft first-portrait metadata uses draft-prefixed keys so
+                # feedback events can be filtered, traced to the unsaved draft,
+                # and rolled back/reviewed without mutating canon by accident.
                 **{
                     key: record.metadata[key]
                     for key in (
-                        "creator_draft",
+                        "draft_capture",
                         "draft_id",
-                        "source_context",
-                        "capture_intent",
-                        "rollback_note",
+                        "draft_character_id",
+                        "draft_source_context",
+                        "draft_capture_intent",
+                        "draft_rollback_note",
                         "provenance",
                         "evidence_only",
                         "canonical_mutation_allowed",
