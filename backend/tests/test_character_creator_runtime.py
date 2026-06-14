@@ -16,7 +16,7 @@ from app.schemas.moment_capture import (
     VisualFeedbackAction,
     VisualFeedbackRequest,
 )
-from app.schemas.relationship_state import RelationshipPhase
+from app.schemas.relationship_state import RelationshipPacing, RelationshipPhase
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_creator_service import (
     CharacterCreatorDraft,
@@ -39,6 +39,10 @@ def _draft() -> CharacterCreatorDraft:
         display_name="Aria",
         pronouns="she/her",
         relationship_dynamic="devoted slow-burn companion",
+        starting_relationship_phase=RelationshipPhase.newly_met,
+        relationship_pacing=RelationshipPacing.slow_burn,
+        romantic_pacing=RelationshipPacing.slow_burn,
+        nsfw_pacing=RelationshipPacing.user_led,
         user_desired_experience="tender magical romance",
         core_traits=["warm", "playful", "protective"],
         communication_style="soft teasing with emotional honesty",
@@ -74,6 +78,10 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert (
         blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
     )
+    assert blueprint.relationship.relationship_pacing == RelationshipPacing.slow_burn
+    assert blueprint.relationship.romantic_pacing == RelationshipPacing.slow_burn
+    assert blueprint.relationship.nsfw_pacing == RelationshipPacing.user_led
+    assert blueprint.relationship.user_desired_experience == "tender magical romance"
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
     assert blueprint.visual_identity.identity_anchors == [
@@ -84,7 +92,10 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert (
         blueprint.visual_identity.adult_only_policy.adult_age_range == "mid_20s_adult"
     )
-    assert blueprint.metadata["creator_draft"]["source"] == "m6_p00a_runtime_draft"
+    assert (
+        blueprint.metadata["creator_draft"]["source"]
+        == "m6_p02_identity_premise_draft_fields"
+    )
 
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
@@ -104,6 +115,93 @@ def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
 
     assert response.valid is False
     assert any("adult" in error.lower() for error in response.errors)
+
+
+def test_identity_fields_are_stored_loaded_updated_and_mapped(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            display_name="  Nyra Vale  ",
+            pronouns=" they/she ",
+            species_or_type="  adult star-demon companion  ",
+            adult_age_range="adult_30s",
+            adult_only_confirmed=True,
+        ),
+    )
+
+    draft = service.load_draft("draft-aria").record.draft
+    assert draft.display_name == "Nyra Vale"
+    assert draft.pronouns == "they/she"
+    assert draft.species_or_type == "adult star-demon companion"
+    assert draft.adult_age_range == "adult_30s"
+    assert draft.adult_only_confirmed is True
+    assert updated.validation.blueprint is not None
+    assert updated.validation.blueprint.identity.display_name == "Nyra Vale"
+    assert updated.validation.blueprint.identity.pronouns == "they/she"
+    assert updated.validation.blueprint.identity.species_or_type == "adult star-demon companion"
+    assert (
+        updated.validation.blueprint.visual_identity.adult_only_policy.adult_age_range
+        == "adult_30s"
+    )
+
+
+def test_premise_fields_are_stored_loaded_updated_and_mapped(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            starting_relationship_phase=RelationshipPhase.friends,
+            relationship_dynamic=" playful rivals with tender trust ",
+            user_desired_experience=" slow cozy romance with emotional safety ",
+            relationship_pacing=RelationshipPacing.user_led,
+            romantic_pacing=RelationshipPacing.slow_burn,
+            nsfw_pacing=RelationshipPacing.direct,
+        ),
+    )
+
+    draft = service.load_draft("draft-aria").record.draft
+    assert draft.starting_relationship_phase == RelationshipPhase.friends
+    assert draft.relationship_dynamic == "playful rivals with tender trust"
+    assert draft.user_desired_experience == "slow cozy romance with emotional safety"
+    assert draft.relationship_pacing == RelationshipPacing.user_led
+    assert draft.romantic_pacing == RelationshipPacing.slow_burn
+    assert draft.nsfw_pacing == RelationshipPacing.direct
+    assert updated.validation.blueprint is not None
+    assert updated.validation.blueprint.relationship.phase == RelationshipPhase.friends
+    assert updated.validation.blueprint.relationship.relationship_pacing == RelationshipPacing.user_led
+    assert updated.validation.blueprint.relationship.romantic_pacing == RelationshipPacing.slow_burn
+    assert updated.validation.blueprint.relationship.nsfw_pacing == RelationshipPacing.direct
+
+
+def test_invalid_identity_and_premise_values_are_rejected(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    for patch in (
+        CharacterCreatorDraftUpdate(display_name="   "),
+        CharacterCreatorDraftUpdate(species_or_type="   "),
+        CharacterCreatorDraftUpdate(relationship_dynamic="   "),
+    ):
+        try:
+            service.update_draft("draft-aria", patch)
+        except ValidationError as exc:
+            assert "cannot be empty" in str(exc) or "at least 1 character" in str(exc)
+        else:  # pragma: no cover - defensive clarity
+            raise AssertionError("invalid creator draft patch was accepted")
+
+    invalid_adult = service.update_draft(
+        "draft-aria", CharacterCreatorDraftUpdate(adult_only_confirmed=False)
+    )
+    assert invalid_adult.validation.valid is False
+    assert any("adult" in error.lower() for error in invalid_adult.validation.errors)
 
 
 def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) -> None:

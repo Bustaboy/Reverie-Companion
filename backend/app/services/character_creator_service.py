@@ -24,7 +24,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.models.image import ImageQualityPreset
 from app.schemas.character_blueprint import (
@@ -42,6 +42,7 @@ from app.schemas.moment_capture import (
 )
 from app.schemas.relationship_state import (
     DefaultIntimacyLevel,
+    RelationshipPacing,
     RelationshipPhase,
     RelationshipState,
 )
@@ -75,6 +76,9 @@ class CharacterCreatorDraft(BaseModel):
         default="warm, emotionally attentive companion", min_length=1, max_length=240
     )
     starting_relationship_phase: RelationshipPhase = RelationshipPhase.newly_met
+    relationship_pacing: RelationshipPacing = RelationshipPacing.natural
+    romantic_pacing: RelationshipPacing = RelationshipPacing.natural
+    nsfw_pacing: RelationshipPacing = RelationshipPacing.user_led
     default_intimacy_level: DefaultIntimacyLevel = DefaultIntimacyLevel.romantic
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] = Field(
@@ -89,6 +93,30 @@ class CharacterCreatorDraft(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("display_name", "pronouns", "species_or_type", "relationship_dynamic", mode="after")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("Creator identity and premise fields cannot be empty.")
+        return normalized
+
+    @field_validator("user_desired_experience", "communication_style", "creator_notes", mode="after")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().split())
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_adult_premise(self) -> "CharacterCreatorDraft":
+        if not self.adult_only_confirmed:
+            # Draft construction may represent an incomplete form, but validation
+            # surfaces the adult-only requirement through draft_to_blueprint().
+            return self
+        return self
 
     @field_validator("character_id", "draft_id", mode="after")
     @classmethod
@@ -120,6 +148,9 @@ class CharacterCreatorDraftUpdate(BaseModel):
     species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
     relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=240)
     starting_relationship_phase: RelationshipPhase | None = None
+    relationship_pacing: RelationshipPacing | None = None
+    romantic_pacing: RelationshipPacing | None = None
+    nsfw_pacing: RelationshipPacing | None = None
     default_intimacy_level: DefaultIntimacyLevel | None = None
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
@@ -312,6 +343,9 @@ class CharacterCreatorService:
                 current_relationship_phase=draft.starting_relationship_phase,
                 phase=draft.starting_relationship_phase,
                 relationship_dynamic=draft.relationship_dynamic,
+                relationship_pacing=draft.relationship_pacing,
+                romantic_pacing=draft.romantic_pacing,
+                nsfw_pacing=draft.nsfw_pacing,
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
             ),
@@ -321,7 +355,7 @@ class CharacterCreatorService:
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p00a_runtime_draft",
+                    "source": "m6_p02_identity_premise_draft_fields",
                     "migration_note": (
                         "API-only draft; persist explicitly in a later draft "
                         "repository before save flows."
