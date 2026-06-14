@@ -58,6 +58,7 @@ from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_service import (
     CharacterNotFoundError,
     CharacterPromptCompiler,
+    CharacterService,
 )
 from app.services.moment_capture_service import (
     MomentCaptureResponse,
@@ -705,6 +706,43 @@ class DraftValidationResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class DraftReviewResponse(BaseModel):
+    draft_id: str | None = None
+    character_id: str
+    summary: dict[str, Any]
+    validation: DraftValidationResponse
+    preview_quality: PreviewQualityReport
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class FinalizeDraftRequest(BaseModel):
+    delete_draft_after_finalize: bool = False
+
+
+class CharacterDuplicateRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=80)
+    character_id: str | None = Field(default=None, max_length=80)
+
+
+class CharacterManagementExport(BaseModel):
+    format_version: str = "reverie.character_management.v1"
+    kind: str = Field(..., pattern="^(draft|character)$")
+    exported_at: str = Field(default_factory=utc_now_iso)
+    data: dict[str, Any]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class CharacterManagementImportRequest(BaseModel):
+    payload: dict[str, Any]
+    import_as: str | None = Field(default=None, pattern="^(draft|character)$")
+    duplicate_ids: bool = True
+
+
+class CharacterDeleteRequest(BaseModel):
+    confirm: bool = False
+    expected_display_name: str | None = None
+
+
 class CharacterCreatorDraftCreate(BaseModel):
     draft: CharacterCreatorDraft
 
@@ -840,15 +878,20 @@ class CharacterCreatorService:
         self,
         moment_capture_service: MomentCaptureService | None = None,
         draft_repository: Any | None = None,
+        character_service: CharacterService | None = None,
     ) -> None:
         self._moment_capture_service = moment_capture_service
         self._draft_repository = draft_repository
+        self._character_service = character_service
 
     @classmethod
     def from_settings(cls, settings: Any) -> "CharacterCreatorService":
         from app.repositories.creator_draft_repo import CreatorDraftRepository
 
-        return cls(draft_repository=CreatorDraftRepository(settings.character_db_path))
+        return cls(
+            draft_repository=CreatorDraftRepository(settings.character_db_path),
+            character_service=CharacterService.from_settings(settings),
+        )
 
     def create_draft(
         self, request: CharacterCreatorDraftCreate | CharacterCreatorDraft
@@ -909,6 +952,250 @@ class CharacterCreatorService:
 
     def validate_persisted_draft(self, draft_id: str) -> DraftValidationResponse:
         return self.validate_draft(self._get_record_or_raise(draft_id).draft)
+
+    def review_draft(self, draft: CharacterCreatorDraft) -> DraftReviewResponse:
+        validation = self.validate_draft(draft)
+        if validation.blueprint is not None:
+            blueprint = validation.blueprint
+            summary = self._review_summary(blueprint, draft)
+            preview_quality = self.generate_greeting_preview(
+                draft, include_prompt_context=False
+            ).quality
+            character_id = blueprint.character_id
+        else:
+            character_id = draft.character_id or f"draft_{draft.draft_id or 'unsaved'}"
+            summary = {
+                "identity": {
+                    "display_name": draft.display_name,
+                    "pronouns": draft.pronouns,
+                    "adult_age_range": draft.adult_age_range.value,
+                    "adult_only_confirmed": draft.adult_only_confirmed,
+                    "species_or_type": draft.species_or_type,
+                },
+                "draft_fields": draft.model_dump(mode="json"),
+                "validation_errors": validation.errors,
+            }
+            preview_quality = PreviewQualityReport(
+                passed=False,
+                issues=[
+                    PreviewQualityIssue(
+                        code="draft_validation_failed",
+                        message="Preview quality is blocked until draft validation passes.",
+                        severity="error",
+                    )
+                ],
+            )
+        return DraftReviewResponse(
+            draft_id=draft.draft_id,
+            character_id=character_id,
+            summary=summary,
+            validation=validation,
+            preview_quality=preview_quality,
+            provenance={
+                "source": "m6_p09_creator_management_review",
+                "reviewed_at": utc_now_iso(),
+                "policy": "adult_only_roleplay_first_validation_applied",
+            },
+        )
+
+    def review_persisted_draft(self, draft_id: str) -> DraftReviewResponse:
+        return self.review_draft(self._get_record_or_raise(draft_id).draft)
+
+    def finalize_draft(
+        self, draft_id: str, request: FinalizeDraftRequest | None = None
+    ) -> CharacterBlueprint:
+        self._require_character_service()
+        record = self._get_record_or_raise(draft_id)
+        validation = self.validate_draft(record.draft)
+        if not validation.valid or validation.blueprint is None:
+            raise ValueError(
+                "Creator draft must pass validation before finalization: "
+                + "; ".join(validation.errors)
+            )
+        now = utc_now_iso()
+        blueprint = validation.blueprint.model_copy(
+            update={
+                "created_at": validation.blueprint.created_at,
+                "updated_at": now,
+                "metadata": {
+                    **validation.blueprint.metadata,
+                    "creator_finalization": {
+                        "draft_id": draft_id,
+                        "finalized_at": now,
+                        "source": "m6_p09_finalize_draft",
+                        "review_required": True,
+                    },
+                },
+            }
+        )
+        saved = self._character_service.save(
+            CharacterBlueprint.model_validate(blueprint)
+        )
+        if request and request.delete_draft_after_finalize:
+            self.delete_draft(draft_id)
+        return saved
+
+    def duplicate_draft(self, draft_id: str) -> CharacterCreatorDraftResponse:
+        record = self._get_record_or_raise(draft_id)
+        new_id = f"draft_{uuid4().hex[:12]}"
+        draft = record.draft.model_copy(
+            update={
+                "draft_id": new_id,
+                "character_id": None,
+                "display_name": f"{record.draft.display_name} Copy",
+                "metadata": {
+                    **record.draft.metadata,
+                    "duplicated_from_draft_id": draft_id,
+                },
+            }
+        )
+        return self.create_draft(CharacterCreatorDraftCreate(draft=draft))
+
+    def duplicate_character(
+        self, character_id: str, request: CharacterDuplicateRequest | None = None
+    ) -> CharacterBlueprint:
+        self._require_character_service()
+        source = self._character_service.load_by_id(character_id)
+        new_id = (
+            request.character_id
+            if request and request.character_id
+            else f"char_{uuid4().hex[:12]}"
+        )
+        display_name = (
+            request.display_name
+            if request and request.display_name
+            else f"{source.identity.display_name} Copy"
+        )
+        now = utc_now_iso()
+        duplicate = source.model_copy(
+            update={
+                "character_id": new_id,
+                "identity": source.identity.model_copy(
+                    update={"display_name": display_name}
+                ),
+                "relationship": source.relationship.model_copy(
+                    update={"character_id": new_id}
+                ),
+                "growth_policy": source.growth_policy.model_copy(
+                    update={"character_id": new_id}
+                ),
+                "created_at": now,
+                "updated_at": now,
+                "metadata": {
+                    **source.metadata,
+                    "duplicated_from_character_id": character_id,
+                    "duplicate_created_at": now,
+                },
+            }
+        )
+        return self._character_service.save(
+            CharacterBlueprint.model_validate(duplicate)
+        )
+
+    def export_draft(self, draft_id: str) -> CharacterManagementExport:
+        record = self._get_record_or_raise(draft_id)
+        return CharacterManagementExport(
+            kind="draft",
+            data=record.model_dump(mode="json"),
+            provenance={"source": "m6_p09_export", "draft_id": draft_id},
+        )
+
+    def export_character(self, character_id: str) -> CharacterManagementExport:
+        self._require_character_service()
+        bp = self._character_service.load_by_id(character_id)
+        return CharacterManagementExport(
+            kind="character",
+            data=bp.model_dump(mode="json"),
+            provenance={"source": "m6_p09_export", "character_id": character_id},
+        )
+
+    def import_payload(
+        self, request: CharacterManagementImportRequest
+    ) -> CharacterCreatorDraftResponse | CharacterBlueprint:
+        payload = request.payload
+        kind = request.import_as or payload.get("kind")
+        data = payload.get("data", payload)
+        if kind == "character":
+            self._require_character_service()
+            bp = CharacterBlueprint.model_validate(data)
+            if request.duplicate_ids:
+                bp = bp.model_copy(
+                    update={
+                        "character_id": f"char_{uuid4().hex[:12]}",
+                        "created_at": utc_now_iso(),
+                        "updated_at": utc_now_iso(),
+                    }
+                )
+                bp = bp.model_copy(
+                    update={
+                        "relationship": bp.relationship.model_copy(
+                            update={"character_id": bp.character_id}
+                        ),
+                        "growth_policy": bp.growth_policy.model_copy(
+                            update={"character_id": bp.character_id}
+                        ),
+                    }
+                )
+            bp.metadata["import"] = {
+                "source": "m6_p09_import",
+                "imported_at": utc_now_iso(),
+                "format_version": payload.get("format_version", "unknown"),
+            }
+            return self._character_service.save(CharacterBlueprint.model_validate(bp))
+        record = (
+            CharacterCreatorDraftRecord.model_validate(data)
+            if "draft" in data
+            else None
+        )
+        draft = record.draft if record else CharacterCreatorDraft.model_validate(data)
+        if request.duplicate_ids:
+            draft = draft.model_copy(
+                update={"draft_id": f"draft_{uuid4().hex[:12]}", "character_id": None}
+            )
+        draft.metadata["import"] = {
+            "source": "m6_p09_import",
+            "imported_at": utc_now_iso(),
+            "format_version": payload.get("format_version", "unknown"),
+        }
+        return self.create_draft(CharacterCreatorDraftCreate(draft=draft))
+
+    def delete_character(
+        self, character_id: str, request: CharacterDeleteRequest
+    ) -> bool:
+        self._require_character_service()
+        bp = self._character_service.load_by_id(character_id)
+        if (
+            not request.confirm
+            or request.expected_display_name != bp.identity.display_name
+        ):
+            raise ValueError(
+                "Deleting a finalized character requires confirm=true and the exact display name."
+            )
+        return self._character_service.delete(character_id)
+
+    def _require_character_service(self) -> None:
+        if self._character_service is None:
+            raise RuntimeError("Character persistence service is not configured.")
+
+    def _review_summary(
+        self, blueprint: CharacterBlueprint, draft: CharacterCreatorDraft
+    ) -> dict[str, Any]:
+        return {
+            "identity": blueprint.identity.model_dump(mode="json"),
+            "relationship": blueprint.relationship.model_dump(mode="json"),
+            "personality": blueprint.personality.model_dump(mode="json"),
+            "communication": blueprint.communication.model_dump(mode="json"),
+            "policies": {
+                "roleplay": blueprint.roleplay_policy.model_dump(mode="json"),
+                "integrity": blueprint.integrity_policy.model_dump(mode="json"),
+                "meta_consent": blueprint.meta_consent_policy.model_dump(mode="json"),
+                "memory": blueprint.memory_policy.model_dump(mode="json"),
+                "growth": blueprint.growth_policy.model_dump(mode="json"),
+            },
+            "visual_identity": blueprint.visual_identity.model_dump(mode="json"),
+            "world_scene": draft.world_scene.model_dump(mode="json"),
+            "metadata_keys": sorted(blueprint.metadata.keys()),
+        }
 
     def _require_repository(self) -> None:
         if self._draft_repository is None:

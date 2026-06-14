@@ -36,6 +36,10 @@ from app.services.character_creator_service import (
     CreatorDraftVisualIdentity,
     CreatorDraftWorldScene,
     CharacterCreatorService,
+    CharacterDuplicateRequest,
+    CharacterManagementImportRequest,
+    CharacterCreatorDraftResponse,
+    CharacterDeleteRequest,
     DraftMomentCaptureRequest,
     DraftMomentSource,
     PersistedDraftMomentCaptureRequest,
@@ -1069,3 +1073,112 @@ def test_persisted_creator_preview_methods_load_draft_without_persisting_preview
     assert repository.get(created.record.draft_id) is not None
     assert greeting.metadata["storage"] == "not_persisted"
     assert dialogues.metadata["storage"] == "not_persisted"
+
+
+def test_creator_review_summarizes_validation_and_preview_quality() -> None:
+    service = CharacterCreatorService()
+
+    review = service.review_draft(_draft())
+
+    assert review.validation.valid is True
+    assert review.summary["identity"]["display_name"] == "Aria"
+    assert review.summary["policies"]["roleplay"]["fiction_first_mode"] is True
+    assert review.preview_quality.passed is True
+    assert review.provenance["source"] == "m6_p09_creator_management_review"
+
+
+def test_finalize_duplicate_export_import_and_delete_flows(tmp_path) -> None:
+    db_path = tmp_path / "characters.sqlite3"
+    draft_repo = CreatorDraftRepository(db_path)
+    character_repo = CharacterRepository(db_path)
+    character_service = __import__(
+        "app.services.character_service", fromlist=["CharacterService"]
+    ).CharacterService(character_repo)
+    service = CharacterCreatorService(
+        draft_repository=draft_repo, character_service=character_service
+    )
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    finalized = service.finalize_draft("draft-aria")
+    assert finalized.character_id == "draft_aria"
+    assert finalized.metadata["creator_finalization"]["draft_id"] == "draft-aria"
+    assert character_service.load_by_id("draft_aria").identity.display_name == "Aria"
+
+    draft_copy = service.duplicate_draft("draft-aria")
+    assert draft_copy.record.draft_id != "draft-aria"
+    assert draft_copy.record.draft.display_name == "Aria Copy"
+
+    char_copy = service.duplicate_character(
+        "draft_aria", CharacterDuplicateRequest(display_name="Aria Twin")
+    )
+    assert char_copy.character_id != "draft_aria"
+    assert char_copy.identity.display_name == "Aria Twin"
+    assert char_copy.relationship.character_id == char_copy.character_id
+
+    exported_draft = service.export_draft("draft-aria")
+    imported_draft = service.import_payload(
+        CharacterManagementImportRequest(payload=exported_draft.model_dump(mode="json"))
+    )
+    assert isinstance(imported_draft, CharacterCreatorDraftResponse)
+    assert imported_draft.record.draft_id != "draft-aria"
+    assert imported_draft.record.draft.metadata["import"]["source"] == "m6_p09_import"
+
+    exported_character = service.export_character("draft_aria")
+    imported_character = service.import_payload(
+        CharacterManagementImportRequest(
+            payload=exported_character.model_dump(mode="json"), import_as="character"
+        )
+    )
+    assert imported_character.character_id != "draft_aria"
+    assert imported_character.metadata["import"]["source"] == "m6_p09_import"
+
+    try:
+        service.delete_character(
+            "draft_aria",
+            CharacterDeleteRequest(confirm=True, expected_display_name="wrong"),
+        )
+    except ValueError as exc:
+        assert "requires" in str(exc).lower()
+    else:
+        raise AssertionError(
+            "Expected finalized character delete to require exact confirmation"
+        )
+
+    assert (
+        service.delete_character(
+            "draft_aria",
+            CharacterDeleteRequest(confirm=True, expected_display_name="Aria"),
+        )
+        is True
+    )
+    assert character_service.get("draft_aria") is None
+
+
+def test_finalize_and_import_enforce_adult_roleplay_policy(tmp_path) -> None:
+    db_path = tmp_path / "characters.sqlite3"
+    service = CharacterCreatorService(
+        draft_repository=CreatorDraftRepository(db_path),
+        character_service=__import__(
+            "app.services.character_service", fromlist=["CharacterService"]
+        ).CharacterService(CharacterRepository(db_path)),
+    )
+    invalid = _draft().model_copy(update={"adult_only_confirmed": False})
+    service.create_draft(CharacterCreatorDraftCreate(draft=invalid))
+
+    try:
+        service.finalize_draft("draft-aria")
+    except ValueError as exc:
+        assert "adult" in str(exc).lower()
+    else:
+        raise AssertionError("Expected invalid adult baseline to block finalization")
+
+    exported = service.export_draft("draft-aria")
+    exported.data["draft"]["display_name"] = "teen-coded import"
+    try:
+        service.import_payload(
+            CharacterManagementImportRequest(payload=exported.model_dump(mode="json"))
+        )
+    except Exception as exc:
+        assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
+    else:
+        raise AssertionError("Expected policy validation to block unsafe import")
