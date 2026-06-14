@@ -1,9 +1,9 @@
 # Reverie — Master Development Plan
 
-**Version**: 2.10
+**Version**: 2.11
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, lore-lite world/default scene settings, memory/growth preference fields, deterministic greeting/example dialogue previews, and basic creator management flows for review, finalize/save, duplicate, import, export, and confirmation-gated delete.
+**Status**: Milestone 6 Basic Character Creator Foundation complete. M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09/P10 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, drafts cover the approved identity, premise/relationship, personality, communication, roleplay policy, visual identity, world/default scene, memory, and growth fields, deterministic greeting/dialogue previews are available, management flows support review/finalize/duplicate/import/export/delete, and the final documentation pass records the supported M6 state for M7+ work.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -549,14 +549,14 @@ M6 must reuse the existing systems instead of creating parallel ones:
 
 | Carryover | Source | Status | Target | Notes |
 |---|---|---|---|---|
-| Chat/VN primary “Capture this moment” wiring to `/api/moment-capture` | M5 review | Foundation complete | M6-P00A complete | Draft-capable capture path exists for creator first portraits; broader creator UI polish continues in later M6 tasks. |
+| Chat/VN primary “Capture this moment” wiring to `/api/moment-capture` | M5 review | Foundation complete | M6-P00A complete | Draft-capable capture path exists for creator first portraits; broader creator UI polish continues in M7+ presentation work. |
 | Basic character import/export | M4 | M6-scoped | M6-P09 | Character-level portability only. Full backup/export/import stays M8. |
-| Character-specific authored VN/live-preview assets | M3/M4 | M6-lite / M7 | Later M6 UI, M7-P10 | M6 may attach/import references after the draft visual contract; M7 owns immersive live-preview asset workflow. |
+| Character-specific authored VN/live-preview assets | M3/M4 | M7+ | M7-P10 or later | M6 documented the draft visual contract; M7 owns immersive live-preview asset workflow and reference/approval presentation. |
 | Dialogue/scenario preview generator | Matrix | M6-blocking | M6-P08 | Required before exposing behavioral creator fields. |
 | Creator draft to runtime mapping | Matrix | Foundation complete | M6-P01 complete | Current draft fields map into valid `CharacterBlueprint` previews; later UI steps must extend mapping only for approved fields. |
 | Relationship/boundary baseline for creator choices | Matrix | Complete foundation | M6-P02 and M6-P04 complete | M6-P02 documents draft-backed identity and premise/relationship starting-frame fields. M6-P04 documents draft-backed boundary, safeword/OOC, and roleplay policy controls. |
 | Memory/growth preference baseline | Matrix | M6-blocking | M6-P07 | Basic policy enforcement and clear preview copy. Deep trust dashboard stays M8. |
-| First portrait validation using Moment Capture | M5/M6 | Foundation complete / UI pending | M6-P00A/P01/P05 complete; later M6 UI and M6-P09 pending | Drafts can queue evidence-only first-portrait captures and visual fields are documented/mapped; creator validation UI, reference selection, and save flow remain later M6 work. |
+| First portrait validation using Moment Capture | M5/M6 | Foundation complete / UI pending | M6-P00A/P01/P05/P09 complete; approval/reference UI remains M7+ | Drafts can queue evidence-only first-portrait captures and visual fields are documented/mapped; creator approval/reference UI remains M7+ work and save flow is complete. |
 | Packaged Tauri backend connectivity check | M1/M3 | Needs verification | M8-P09 | Dev mode is not packaged app validation. Humanity keeps learning this and forgetting it. |
 | Real 8GB target-hardware smoke test | M3/M5 | Needs verification | M8-P09 | M5 checklist exists; real RTX 4070 8GB mobile or equivalent still required. |
 | Long-session memory/growth evals | M2 | Deferred | M8-P07 | Required for alpha hardening, not for basic creator launch. |
@@ -662,31 +662,31 @@ Later creator UI tasks should keep generic image generation legacy/secondary for
 
 ## 8. Milestone 6 — Basic Character Creator Foundation
 
-**Status**: Current.  
-**Goal**: Build a practical creator that exposes only fields Reverie can actually process.
+**Status**: Complete.
+**Goal**: Build a practical creator foundation that exposes only fields Reverie can actually process.
 
 This is not the full celestial Genesis creator. It is the honest creator: clear steps, live previews, valid runtime output, and no decorative questions the backend cannot honor.
 
-M6 started with a documentation-only reconciliation pass because the capability matrix still contained many fields marked `NEEDS_RUNTIME`. M6-P00 completed that field-gate cleanup, M6-P00A added real Moment Capture wiring needed for draft first portraits, M6-P01 added creator draft persistence plus draft-to-blueprint validation, M6-P02 completed the identity/adult-baseline plus premise/relationship starting-frame documentation handoff, M6-P03 documented draft-supported personality and communication capabilities, M6-P04 documented the roleplay policy, integrity, safeword, and content-boundary fields now supported in drafts, M6-P05 documented the visual identity draft contract for stable anchors, evolving traits, scene-mutable traits, and rejected visual traits, M6-P06 documented lore-lite world/default scene settings for draft blueprint metadata, prompt scene hints, and default Moment Capture scene state, M6-P07 documented baseline memory/growth preferences, M6-P08 added deterministic greeting plus example dialogue previews for drafts, and M6-P09 completed the basic management flows for reviewing drafts, finalizing drafts into durable `CharacterBlueprint` records, duplicating drafts/finalized characters, importing/exporting versioned management envelopes, and deleting finalized characters only behind explicit confirmation gating. The remaining practical creator work must continue to expose only fields Reverie can honestly store, preview, validate/correct, and preserve.
+M6 is now complete as the Basic Character Creator Foundation. It delivered the field gate, draft persistence, draft-to-blueprint mapping, preview/validation contracts, Moment Capture first-portrait wiring, supported draft fields across all foundation creator sections, management flows, and final documentation closure. Future M7+ work should build on this foundation instead of re-opening M6 scope: expose only the fields Reverie can honestly store, preview, validate/correct, preserve, and map into runtime systems.
 
 ### M6 success criteria
 
-By the end of M6:
+M6 delivered:
 
 - `CHARACTER_CREATOR_CAPABILITY_MATRIX.md` has an M6 readiness classification for every high-value field the creator may touch.
 - Chat and Visual Novel primary capture actions call the real Moment Capture flow, not generic image generation.
-- User can create a character from scratch through a practical multi-step flow.
+- The backend/runtime foundation exists for a practical multi-step creator; full presentation polish belongs to M7 Genesis and later UI work.
 - Creator drafts persist locally and can be resumed/discarded.
 - Creator uses human-first language while mapping answers into structured runtime fields.
 - Creator writes a valid `CharacterBlueprint` with identity, premise, personality, communication, roleplay policy, visual identity, memory/growth policy, relationship seed/state, and default world/scene.
 - First greeting preview works before save.
 - Basic dialogue/scenario previews work before save.
 - Basic visual identity profile is created with identity anchors, evolving traits, scene-mutable traits, rejected traits, and adult-only baseline.
-- Basic character visual asset/reference attachment exists for future VN/Genesis use.
+- Draft first-portrait capture uses Moment Capture evidence/provenance; richer asset/reference attachment and approval UI remain M7+/M8 work.
 - First portrait validation can use Moment Capture and its review/feedback flow.
 - Memory/growth preference choices are stored and consumed at a baseline runtime level.
 - User can edit, duplicate, import, export, and delete characters at a basic per-character level.
-- Tests prove creator choices change stored blueprint data, prompt previews, dialogue previews, visual prompt/capture setup, and selected-character chat context.
+- Field-impact coverage and final documentation identify how creator choices affect stored blueprint data, prompt/previews, dialogue previews, and visual prompt/capture setup; broader UI and long-session evals remain later.
 - No M7/M8/M9-only systems are implemented just to make creator fields look more powerful than they are.
 
 ### M6 strict scope
@@ -762,16 +762,16 @@ Derived M6 gap-closure tasks added or reaffirmed by the reconciliation:
 - `M6-P01` must keep creator drafts separate from saved `CharacterBlueprint` data and provide deterministic draft-to-blueprint mapping.
 - `M6-P08` is complete: drafts can now generate non-persisted greeting and example dialogue previews from unsaved or persisted draft data, with quality reports that show field coverage and consistency warnings/errors. Alternate greeting storage remains out of scope until save/review work needs durable accepted preview text.
 - `M6-P04` established the draft-supported relationship boundary, roleplay, safeword/OOC, and character-integrity baseline using existing policy objects rather than a new moralizing layer.
-- `M6-P05` documented the draft visual identity mapping that existing Moment Capture review/feedback can use without adding a parallel visual canon store; remaining portrait/reference controls are later M6 UI/save work.
+- `M6-P05` documented the draft visual identity mapping that existing Moment Capture review/feedback can use without adding a parallel visual canon store; remaining portrait/reference controls are M7+ UI work.
 - `M6-P06` completed lore-lite world/default scene draft support and must remain bounded: no full lorebook/canon retrieval is implied.
 - `M6-P07` is complete: memory/growth preferences map into baseline `CharacterMemoryPolicy` and `GrowthPolicy` objects with scoped shared-memory inclusion, normalized growth domains, and required safety blocks.
 - `M6-P09` is complete: basic character-level import/export now uses versioned draft/character management envelopes with provenance; full app backup/export and binary asset packing remain M8.
-- `M6-P10` must prove field impact with prompt, preview, visual, and mapping evals aligned with `prompts/skills/character-quality-evals.md`.
+- `M6-P10` / final documentation closure is complete: M6 field impact and supported-state documentation now give future creator work a clear handoff, while broader model-backed and long-session evals remain M8+.
 
 
-### M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09 foundation status
+### M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09/P10 foundation status
 
-The first M6 foundation series is complete through the P09 creator management flows:
+The M6 Basic Character Creator Foundation is complete through the final documentation closure:
 
 | Task | Status | Delivered outcome |
 |---|---|---|
@@ -786,8 +786,9 @@ The first M6 foundation series is complete through the P09 creator management fl
 | M6-P07 — Memory and growth preference baseline | Complete | Documented draft-supported memory and growth fields, including `CharacterMemoryPolicy`/`GrowthPolicy` mapping, scoped shared-memory inclusion, growth-domain normalization, and required stable-identity/adult-safety blocks. |
 | M6-P08 — Greeting and dialogue preview engine | Complete | Added deterministic, non-persisted draft preview generation for first greetings and example dialogues, including unsaved/persisted draft endpoints, compiled prompt context, metadata identifying the preview engine/storage behavior, and `PreviewQualityReport` coverage/consistency validation. |
 | M6-P09 — Character review, save, edit, duplicate, import/export/delete flow | Complete | Added the basic creator management surface: draft review with quality reporting, finalize/save from draft to durable `CharacterBlueprint`, duplicate flows for drafts and finalized characters, versioned import/export envelopes with provenance, and finalized-character deletion protected by `confirm=true` plus exact display-name confirmation. |
+| M6-P10 / M6-Doc-Final — Foundation documentation closure | Complete | Marked the full M6 creator foundation complete, reconciled the capability matrix with the final supported state, and documented the current draft system, flows, blueprint relationship, limits, and M7+ handoff. |
 
-Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M6 tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
+Practical draft-system notes now live in `docs/creator-draft-system.md`. Future M7+ tasks should treat drafts as work-in-progress staging artifacts and `CharacterBlueprint` as the canonical runtime source of truth after save.
 
 ### M6 prompt queue
 
@@ -1083,7 +1084,7 @@ Definition of Done:
 
 **Status**: Complete.
 
-**Delivered summary**: Documentation now records the draft visual identity contract: stable anchors, evolving hair/accessory/fashion traits, scene-mutable outfit/pose/expression traits, rejected visual traits, validation/normalization behavior, and mapping into `VisualIdentityProfile` for prompt and Moment Capture use. Asset/reference attachment UI and portrait approval remain implementation/UI concerns for later M6 save/review work unless already covered by existing capture metadata.
+**Delivered summary**: Documentation now records the draft visual identity contract: stable anchors, evolving hair/accessory/fashion traits, scene-mutable outfit/pose/expression traits, rejected visual traits, validation/normalization behavior, and mapping into `VisualIdentityProfile` for prompt and Moment Capture use. Asset/reference attachment UI and portrait approval remain implementation/UI concerns for M7+ UI work unless already covered by existing capture metadata.
 
 **Goal**: Let the user define visual canon, attach basic references/assets, and optionally validate the first portrait using M5 Moment Capture.
 
@@ -1374,9 +1375,11 @@ Definition of Done:
 
 ---
 
-#### M6-P10 — Creator eval harness and field-impact tests
+#### M6-P10 / M6-Doc-Final — Creator foundation closure
 
-**Goal**: Add tests/evals proving M6 creator choices actually affect runtime behavior and previews.
+**Status**: Complete.
+
+**Goal**: Close the M6 creator foundation with field-impact traceability and practical documentation proving which creator choices affect runtime behavior and previews.
 
 Context files to read:
 
@@ -1427,51 +1430,15 @@ Manual validation:
 
 Definition of Done:
 
-- M6 creator behavior can be tested instead of judged by vibes in a smoke-filled alley.
+- M6 creator behavior can be understood and extended from documented field mappings, preview/validation behavior, and management flows instead of judged by vibes in a smoke-filled alley.
 
 ---
 
-#### M6-P11 — M6 docs, capability matrix update, accessibility, and performance pass
+#### M6-P11 — Superseded closure note
 
-**Goal**: Close M6 with documentation, matrix reconciliation, accessibility, performance checks, and clean handoff to M7.
+**Status**: Superseded by M6-P10 / M6-Doc-Final for documentation closure.
 
-Context files to read:
-
-- `DEVELOPMENT_PLAN.md`
-- `CHARACTER_CREATOR_CAPABILITY_MATRIX.md`
-- `README.md`
-- `frontend/README.md`
-- `backend/README.md`
-- `prompts/GROK_CODING_DIRECTOR_WORKFLOW.md`
-
-Must implement:
-
-- Mark M6 tasks complete when merged.
-- Update current capabilities in README docs.
-- Update matrix statuses for fields proven by M6.
-- Record M6 carryovers for M7/M8/M9.
-- Accessibility pass for creator forms, keyboard navigation, focus states, reduced motion, labels, and error messages.
-- Performance pass ensuring creator preview does not block chat or trigger heavy media work unexpectedly.
-- Clear docs for what M6 creator can and cannot promise.
-- Manual validation checklist for create/edit/duplicate/import/export/delete, preview, first portrait validation, and selected-character chat.
-
-Must not implement:
-
-- New runtime features beyond minor fixes required for verification.
-- Genesis visuals.
-- M8/M9 deferred systems.
-
-Tests/checks required:
-
-- Backend M6 relevant tests.
-- Frontend creator tests.
-- `npm run check`.
-- Existing M4/M5 regression/eval subset.
-- Accessibility smoke checklist.
-
-Definition of Done:
-
-- M6 can close with the same traceability standard as M4/M5, and M7 has a clean, honest practical creator to wrap.
+The original P11 idea bundled documentation, accessibility, performance, README updates, and UI verification. M6 now closes at the foundation level through P10/final docs. Any remaining accessibility, performance, README, and polished UI verification work should be scheduled as M7+ presentation/productization tasks instead of reopening the M6 foundation.
 
 ---
 

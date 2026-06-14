@@ -1,6 +1,20 @@
 # Creator Draft System
 
-**Status:** M6-P09 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6 Basic Character Creator Foundation complete through the final documentation pass. This is a practical overview for future creator tasks, not a full user guide.
+
+## M6 foundation at a glance
+
+M6 built the honest creator foundation: a local draft can capture the supported creator answers, validate them through the same runtime structures used by saved characters, preview their effect before save, and then finalize into a durable `CharacterBlueprint` only when the user explicitly saves. The foundation is intentionally practical rather than immersive; M7 can wrap it in the Companion Genesis experience without inventing unsupported fields.
+
+Current M6 capabilities include:
+
+- draft persistence and resume/discard semantics separate from finalized characters;
+- blueprint-based validation and summaries before save;
+- deterministic greeting and example dialogue previews with quality reports;
+- draft first-portrait Moment Capture using existing visual identity, scene, provenance, feedback, and rollback-safe evidence patterns;
+- review and finalize/save flows that turn a valid draft into canonical `CharacterBlueprint` data;
+- duplicate, import, export, and confirmation-gated delete flows for character-level management;
+- clear limits for work that belongs in M7+ instead of being implied by M6.
 
 ## What a draft is
 
@@ -309,7 +323,7 @@ This separation matters for product trust: previews are evidence and editing fee
 
 ## Creator management flows
 
-M6-P09 adds the basic management layer around the draft system. These flows are intentionally character-level and local-first. They are not full app backup, cloud sync, binary asset packing, or a replacement for the later practical creator UI polish.
+M6 adds the basic management layer around the draft system. These flows are intentionally character-level and local-first. They are not full app backup, cloud sync, binary asset packing, or a replacement for M7+ creator presentation polish.
 
 ### Review flow with quality reporting
 
@@ -457,12 +471,16 @@ Draft capture metadata uses the `draft_` prefix consistently, including the draf
 
 This means first portraits can use the same M5 capture, gallery, feedback, review, and rollback patterns without creating a parallel visual canon store. Approved portrait/canon behavior still belongs to later portrait approval/reference UI work; draft captures are evidence for validation until finalization.
 
-## Current limits and next-task guidance
+## Current limits and M7+ handoff
 
-- There is no full practical creator UI yet; the foundation is backend/runtime-facing.
-- Drafts are not backend-synced beyond local app persistence.
-- Draft finalization into a durable saved character is available through the M6-P09 finalize/save flow.
-- Basic draft/character import and export are available through the M6-P09 management envelope; full app backup/export, binary asset packing, and cloud sync remain out of scope.
-- Richer field-impact evals remain later M6 work; greeting/dialogue previews are available now as deterministic, non-persisted draft previews.
-- Full lorebooks/canon retrieval, remember/never-remember category controls, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P09 behavior.
+M6 is complete as a foundation, but it deliberately does not claim to be the full creator product. Future work should build presentation, polish, and deeper runtime systems on top of these contracts rather than bypassing them.
+
+Current limits:
+
+- The immersive Companion Genesis presentation belongs to M7; M6 documents the draft/runtime foundation and management contracts.
+- Drafts are local app persistence artifacts, not cloud-synced records.
+- Draft finalization into a durable saved character is available through the M6 finalize/save flow, but previews themselves are not canon and do not create chat sessions, memories, reflection entries, training data, or approved visual canon.
+- Basic draft/character import and export use the M6 management envelope; full app backup/export, binary asset packing, linked asset migration, and cloud sync remain out of scope.
+- Deterministic preview quality reports provide foundation field-impact evidence; broader model-backed evals, long-session memory/growth evals, and productized QA dashboards remain M8+.
+- Full lorebooks/canon retrieval, remember/never-remember category controls, relationship timeline receipts, asset/reference attachment UI, portrait approval UI, real LoRA training, proactive planning, and autonomous relationship evolution are M7+/M8/M9 work.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.
