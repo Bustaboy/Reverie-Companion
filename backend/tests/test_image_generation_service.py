@@ -6,9 +6,14 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import pytest
+
 from app.core.config import Settings
 from app.models.image import ImageGenerateRequest, ImageJobStatus, ImageQualityPreset
 from app.services.image_generation_service import (
+    PRESET_CONFIGS,
+    ComfyUIFluxAdapter,
+    ImageJob,
     ImageGenerationError,
     ImageGenerationService,
 )
@@ -61,7 +66,10 @@ class FakeAdapter:
 
 
 def make_service(
-    tmp_path, coordinator: FakeCoordinator, adapter: FakeAdapter
+    tmp_path,
+    coordinator: FakeCoordinator,
+    adapter: FakeAdapter,
+    chat_model_unloader=None,
 ) -> ImageGenerationService:
     settings = Settings(
         image_generation_output_dir=str(tmp_path / "images"),
@@ -70,7 +78,199 @@ def make_service(
         image_generation_resume_poll_seconds=0.01,
         image_generation_comfy_timeout_seconds=2.0,
     )
-    return ImageGenerationService(settings, coordinator=coordinator, adapter=adapter)  # type: ignore[arg-type]
+    return ImageGenerationService(
+        settings,
+        coordinator=coordinator,
+        adapter=adapter,  # type: ignore[arg-type]
+        chat_model_unloader=chat_model_unloader,
+    )
+
+
+def make_job() -> ImageJob:
+    return ImageJob(
+        job_id="img_template",
+        prompt="engineered positive prompt",
+        negative_prompt="engineered negative prompt",
+        context={"character": {"name": "Mira"}},
+        conversation_id="default",
+        source=None,
+        source_message_id=None,
+        character_id=None,
+        session_id=None,
+        moment_capture_id=None,
+        scene_summary=None,
+        prompt_hash=None,
+        feedback_status="pending",
+        review_status="unreviewed",
+        canon_status="not_requested",
+        requested_preset=ImageQualityPreset.preview_8gb,
+        active_preset=ImageQualityPreset.preview_8gb,
+    )
+
+
+def test_comfyui_adapter_applies_exported_workflow_template(tmp_path) -> None:
+    workflow_path = tmp_path / "workflow.api.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "3": {
+                    "class_type": "KSampler",
+                    "inputs": {"seed": 123, "steps": 4, "cfg": 1.0},
+                },
+                "5": {
+                    "class_type": "EmptyLatentImage",
+                    "inputs": {"width": 64, "height": 64, "batch_size": 1},
+                },
+                "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "old"}},
+                "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "old"}},
+                "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "old"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        image_generation_comfyui_workflow_path=str(workflow_path),
+        image_generation_comfyui_positive_node_id="6",
+        image_generation_comfyui_negative_node_id="7",
+        image_generation_comfyui_width_node_id="5",
+        image_generation_comfyui_height_node_id="5",
+        image_generation_comfyui_steps_node_id="3",
+        image_generation_comfyui_guidance_node_id="3",
+        image_generation_comfyui_guidance_input="cfg",
+        image_generation_comfyui_seed_node_id="3",
+        image_generation_comfyui_save_node_id="9",
+    )
+    workflow = ComfyUIFluxAdapter(settings)._build_flux_workflow(
+        make_job(), PRESET_CONFIGS[ImageQualityPreset.preview_8gb]
+    )
+
+    assert workflow["6"]["inputs"]["text"] == "engineered positive prompt"
+    assert workflow["7"]["inputs"]["text"] == "engineered negative prompt"
+    assert workflow["5"]["inputs"]["width"] == 512
+    assert workflow["5"]["inputs"]["height"] == 512
+    assert workflow["3"]["inputs"]["steps"] == 4
+    assert workflow["3"]["inputs"]["cfg"] == 1.0
+    assert workflow["3"]["inputs"]["seed"] == 0
+    assert workflow["9"]["inputs"]["filename_prefix"] == "reverie_img_template"
+
+
+def test_comfyui_adapter_reports_invalid_exported_workflow_node(tmp_path) -> None:
+    workflow_path = tmp_path / "workflow.api.json"
+    workflow_path.write_text(
+        json.dumps({"6": {"class_type": "CLIPTextEncode", "inputs": {"text": "old"}}}),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        image_generation_comfyui_workflow_path=str(workflow_path),
+        image_generation_comfyui_positive_node_id="missing",
+    )
+
+    with pytest.raises(ImageGenerationError) as exc_info:
+        ComfyUIFluxAdapter(settings)._build_flux_workflow(
+            make_job(), PRESET_CONFIGS[ImageQualityPreset.preview_8gb]
+        )
+
+    assert exc_info.value.code == "image_comfy_workflow_invalid"
+    assert exc_info.value.retryable is False
+
+
+def test_comfyui_adapter_reports_invalid_exported_workflow_input(tmp_path) -> None:
+    workflow_path = tmp_path / "workflow.api.json"
+    workflow_path.write_text(
+        json.dumps({"6": {"class_type": "CLIPTextEncode", "inputs": {"text": "old"}}}),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        image_generation_comfyui_workflow_path=str(workflow_path),
+        image_generation_comfyui_positive_node_id="6",
+        image_generation_comfyui_positive_input="missing_input",
+    )
+
+    with pytest.raises(ImageGenerationError) as exc_info:
+        ComfyUIFluxAdapter(settings)._build_flux_workflow(
+            make_job(), PRESET_CONFIGS[ImageQualityPreset.preview_8gb]
+        )
+
+    assert exc_info.value.code == "image_comfy_workflow_invalid"
+    assert exc_info.value.details["input"] == "missing_input"
+
+
+def test_comfyui_adapter_reports_execution_error_history() -> None:
+    class ErrorHistoryAdapter(ComfyUIFluxAdapter):
+        def __init__(self) -> None:
+            super().__init__(Settings())
+
+        def _post_json(self, path, payload):  # noqa: ANN001
+            return {"prompt_id": "prompt-error"}
+
+        def _get_json(self, path):  # noqa: ANN001
+            return {
+                "prompt-error": {
+                    "outputs": {},
+                    "status": {
+                        "status_str": "error",
+                        "completed": False,
+                        "messages": [
+                            [
+                                "execution_error",
+                                {
+                                    "node_id": "1",
+                                    "node_type": "CheckpointLoaderSimple",
+                                    "exception_type": "torch.AcceleratorError",
+                                    "exception_message": "CUDA error: unknown error",
+                                },
+                            ]
+                        ],
+                    },
+                }
+            }
+
+    async def run_test() -> None:
+        with pytest.raises(ImageGenerationError) as exc_info:
+            await ErrorHistoryAdapter().generate(
+                make_job(), PRESET_CONFIGS[ImageQualityPreset.preview_8gb]
+            )
+
+        assert exc_info.value.code == "image_comfy_execution_failed"
+        assert exc_info.value.retryable is True
+        assert exc_info.value.details["prompt_id"] == "prompt-error"
+        assert exc_info.value.details["node_id"] == "1"
+        assert exc_info.value.details["exception_type"] == "torch.AcceleratorError"
+
+    asyncio.run(run_test())
+
+
+def test_comfyui_adapter_reports_completed_history_without_outputs() -> None:
+    class EmptyHistoryAdapter(ComfyUIFluxAdapter):
+        def __init__(self) -> None:
+            super().__init__(Settings())
+
+        def _post_json(self, path, payload):  # noqa: ANN001
+            return {"prompt_id": "prompt-empty"}
+
+        def _get_json(self, path):  # noqa: ANN001
+            return {
+                "prompt-empty": {
+                    "outputs": {},
+                    "status": {
+                        "status_str": "success",
+                        "completed": True,
+                        "messages": [],
+                    },
+                }
+            }
+
+    async def run_test() -> None:
+        with pytest.raises(ImageGenerationError) as exc_info:
+            await EmptyHistoryAdapter().generate(
+                make_job(), PRESET_CONFIGS[ImageQualityPreset.preview_8gb]
+            )
+
+        assert exc_info.value.code == "image_comfy_no_outputs"
+        assert exc_info.value.retryable is True
+        assert exc_info.value.details["prompt_id"] == "prompt-empty"
+
+    asyncio.run(run_test())
 
 
 def test_image_job_completes_with_progress_events(tmp_path) -> None:
@@ -95,6 +295,33 @@ def test_image_job_completes_with_progress_events(tmp_path) -> None:
         assert completed.status == ImageJobStatus.completed
         assert completed.output_paths == [f"{job.job_id}.png"]
         assert adapter.calls[0][0] == ImageQualityPreset.preview_8gb
+
+    asyncio.run(run_test())
+
+
+def test_image_job_fails_when_adapter_returns_no_outputs(tmp_path) -> None:
+    class EmptyAdapter(FakeAdapter):
+        async def generate(self, job, preset):
+            self.calls.append((job.active_preset, preset.width, preset.height))
+            return []
+
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        service = make_service(tmp_path, coordinator, EmptyAdapter())
+
+        job = await service.submit(ImageGenerateRequest(prompt="empty result"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        failed = service.get_job(job.job_id)
+        assert failed.status == ImageJobStatus.failed
+        assert failed.output_paths == []
+        assert failed.error is not None
+        assert failed.error["code"] == "image_no_outputs"
+        assert service.list_history("default").items == []
 
     asyncio.run(run_test())
 
@@ -453,6 +680,34 @@ def test_image_job_unloads_idle_auxiliary_models_before_generation(tmp_path) -> 
             await asyncio.sleep(0.01)
 
         assert unloaded == ["image_generation_start"]
+        phases = [event.phase for event in service._jobs[job.job_id].events]
+        assert "unloaded_auxiliary_models" in phases
+
+    asyncio.run(run_test())
+
+
+def test_image_job_unloads_chat_models_before_generation(tmp_path) -> None:
+    async def run_test() -> None:
+        coordinator = FakeCoordinator(free_vram_mb=7000)
+        adapter = FakeAdapter()
+        unload_reasons: list[str] = []
+
+        async def unload_chat_models(reason: str) -> list[str]:
+            unload_reasons.append(reason)
+            return ["ollama:llama3.1:8b"]
+
+        service = make_service(
+            tmp_path, coordinator, adapter, chat_model_unloader=unload_chat_models
+        )
+
+        job = await service.submit(ImageGenerateRequest(prompt="headroom portrait"))
+        while service.get_job(job.job_id).status not in {
+            ImageJobStatus.completed,
+            ImageJobStatus.failed,
+        }:
+            await asyncio.sleep(0.01)
+
+        assert unload_reasons == ["image_generation_start"]
         phases = [event.phase for event in service._jobs[job.job_id].events]
         assert "unloaded_auxiliary_models" in phases
 

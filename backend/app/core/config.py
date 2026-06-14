@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     default_top_p: float = Field(default=0.9, ge=0.0, le=1.0)
     default_num_predict: int = Field(default=512, gt=0)
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:1420", "http://localhost:5173"]
+    )
 
     # Extension foundations stay declarative and disabled-by-default for third-party
     # manifests. Core contracts always load, while optional local manifests are small
@@ -119,19 +121,30 @@ class Settings(BaseSettings):
     personal_lora_max_example_chars: int = Field(default=1600, gt=200, le=4000)
     personal_lora_max_examples_per_job: int = Field(default=128, gt=0, le=512)
 
-    # TTS defaults are local-first and 8GB-aware. Orpheus TTS 3B is the
-    # primary high-quality emotional backend and is loaded lazily with 4-bit
-    # quantization by default; Piper stays available as a fast CPU fallback.
+    # TTS defaults are local-first and 8GB-aware. Orpheus is the emotional
+    # quality target; the default local runtime uses the llama.cpp-compatible
+    # Orpheus GGUF path with CPU layers so voice does not compete with ComfyUI.
+    # Piper remains the fast fallback when Orpheus is unavailable or degraded.
     tts_enabled: bool = True
     tts_primary_backend: str = Field(default="orpheus", pattern="^(orpheus|piper)$")
+    tts_orpheus_runtime: str = Field(default="cpp", pattern="^(cpp|speech)$")
     tts_orpheus_model_id: str = "canopylabs/orpheus-3b-0.1-ft"
+    tts_orpheus_cpp_model_id: str = "isaiahbjork/orpheus-3b-0.1-ft-Q4_K_M-GGUF"
     tts_orpheus_model_path: str | None = None
-    tts_orpheus_timeout_seconds: float = Field(default=20.0, gt=0)
+    tts_orpheus_timeout_seconds: float = Field(default=120.0, gt=0)
+    tts_orpheus_default_voice_id: str = "tara"
+    tts_orpheus_cpp_language: str = Field(
+        default="en", pattern="^(en|es|fr|de|it|hi|zh|ko)$"
+    )
+    tts_orpheus_cpp_n_gpu_layers: int = Field(default=0, ge=-1, le=256)
+    tts_orpheus_cpp_n_threads: int = Field(default=0, ge=0, le=256)
+    tts_orpheus_cpp_n_ctx: int = Field(default=4096, ge=512, le=32768)
+    tts_orpheus_cpp_pre_buffer_seconds: float = Field(default=1.0, gt=0, le=5)
     tts_piper_binary_path: str | None = None
     tts_piper_voice_dir: str = "./models/piper"
     tts_piper_model_path: str | None = None
-    tts_piper_timeout_seconds: float = Field(default=8.0, gt=0)
-    tts_device: str = Field(default="auto", pattern="^(auto|cuda|cpu)$")
+    tts_piper_timeout_seconds: float = Field(default=20.0, gt=0)
+    tts_device: str = Field(default="cpu", pattern="^(auto|cuda|cpu)$")
     tts_quantization: str = Field(default="4bit", pattern="^(4bit|8bit|none)$")
     tts_min_free_vram_mb: int = Field(default=3600, ge=0, le=8192)
     tts_default_voice_id: str = "reverie_default"
@@ -151,11 +164,36 @@ class Settings(BaseSettings):
     tts_max_text_chars: int = Field(default=2000, gt=0, le=8000)
     tts_stream_chunk_size_bytes: int = Field(default=64_000, gt=0, le=1_000_000)
 
+    # Local model hotswap keeps the 8GB GPU from holding chat and image models at
+    # the same time. Unload calls are best-effort and must never break chat or
+    # image generation if a local backend is absent.
+    local_ai_hotswap_enabled: bool = True
+    local_ai_hotswap_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    local_ai_unload_ollama_before_images: bool = True
+    local_ai_unload_comfyui_before_chat: bool = True
+
     # Image generation is a queued, low-priority media workload. Defaults target
-    # RTX 4070 8GB laptops: ComfyUI must run in lowvram mode with Flux GGUF,
+    # RTX 4070 8GB laptops: ComfyUI must run in lowvram mode with Flux Schnell,
     # batch size 1, conservative resolutions, and TTS always preempts images.
     image_generation_enabled: bool = True
     image_generation_comfyui_url: str = "http://127.0.0.1:8188"
+    image_generation_comfyui_workflow_path: str | None = None
+    image_generation_comfyui_positive_node_id: str | None = None
+    image_generation_comfyui_positive_input: str = "text"
+    image_generation_comfyui_negative_node_id: str | None = None
+    image_generation_comfyui_negative_input: str = "text"
+    image_generation_comfyui_width_node_id: str | None = None
+    image_generation_comfyui_width_input: str = "width"
+    image_generation_comfyui_height_node_id: str | None = None
+    image_generation_comfyui_height_input: str = "height"
+    image_generation_comfyui_steps_node_id: str | None = None
+    image_generation_comfyui_steps_input: str = "steps"
+    image_generation_comfyui_guidance_node_id: str | None = None
+    image_generation_comfyui_guidance_input: str = "guidance"
+    image_generation_comfyui_seed_node_id: str | None = None
+    image_generation_comfyui_seed_input: str = "seed"
+    image_generation_comfyui_save_node_id: str | None = None
+    image_generation_comfyui_save_input: str = "filename_prefix"
     image_generation_output_dir: str = "./data/images/generated"
     image_generation_history_path: str = "./data/images/history.json"
     character_assets_dir: str = "./data/characters"

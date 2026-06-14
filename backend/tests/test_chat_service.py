@@ -126,6 +126,65 @@ class ChatServiceReflectionTests(unittest.TestCase):
     ) -> None:
         asyncio.run(self._assert_character_context_injected())
 
+    def test_chat_releases_media_cache_before_ollama(self) -> None:
+        asyncio.run(self._assert_chat_releases_media_cache_before_ollama())
+
+    async def _assert_chat_releases_media_cache_before_ollama(self) -> None:
+        ollama = FakeOllamaClient()
+        unload_reasons: list[str] = []
+
+        async def unload_media(reason: str) -> list[str]:
+            unload_reasons.append(reason)
+            return ["comfyui"]
+
+        service = ChatService(
+            settings=Settings(memory_enabled=False, reflection_enabled=False),
+            ollama_client=ollama,  # type: ignore[arg-type]
+            media_cache_unloader=unload_media,
+        )
+
+        await service.chat(
+            ChatRequest(
+                stream=False,
+                messages=[ChatMessage(role="user", content="Say hello.")],
+            ),
+            request_id="req-hotswap",
+        )
+
+        self.assertEqual(unload_reasons, ["chat_start"])
+        self.assertEqual(len(ollama.requests), 1)
+
+    def test_streaming_chat_releases_media_cache_before_ollama(self) -> None:
+        asyncio.run(self._assert_streaming_chat_releases_media_cache_before_ollama())
+
+    async def _assert_streaming_chat_releases_media_cache_before_ollama(self) -> None:
+        ollama = FakeOllamaClient()
+        unload_reasons: list[str] = []
+
+        async def unload_media(reason: str) -> list[str]:
+            unload_reasons.append(reason)
+            return ["comfyui"]
+
+        service = ChatService(
+            settings=Settings(memory_enabled=False, reflection_enabled=False),
+            ollama_client=ollama,  # type: ignore[arg-type]
+            media_cache_unloader=unload_media,
+        )
+
+        frames = [
+            frame
+            async for frame in await service.stream_chat(
+                ChatRequest(
+                    stream=True,
+                    messages=[ChatMessage(role="user", content="Stream hello.")],
+                ),
+                request_id="req-stream-hotswap",
+            )
+        ]
+
+        self.assertEqual(unload_reasons, ["chat_start"])
+        self.assertTrue(any("event: message" in frame for frame in frames))
+
     async def _assert_character_context_injected(self) -> None:
         ollama = FakeOllamaClient()
         character_service = FakeCharacterService()

@@ -111,7 +111,7 @@ class LocalResourceCoordinator:
     async def tts_priority_section(
         self, *, request_id: str | None = None
     ) -> AsyncIterator[None]:
-        """Mark Orpheus/Piper synthesis as active so media work pauses."""
+        """Mark local TTS synthesis as active so media work pauses."""
 
         async with self._condition:
             self._active_tts += 1

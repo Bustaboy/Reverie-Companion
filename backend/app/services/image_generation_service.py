@@ -3,7 +3,7 @@
 Resource budget (RTX 4070 laptop 8GB target):
 feature: "in-chat image generation"
 interactive_required: false
-primary_gpu_models: ["ComfyUI Flux GGUF Q4/Q5 lowvram"]
+primary_gpu_models: ["ComfyUI Flux Schnell FP8 or GGUF lowvram"]
 peak_vram_mb_estimate: 4200-6200 depending preset
 steady_vram_mb_estimate: 0 in Reverie process; ComfyUI owns model memory
 cpu_ram_mb_estimate: 1500-6000 depending ComfyUI model/offload behavior
@@ -30,6 +30,7 @@ import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,7 @@ from app.models.image import (
     ImageSaveToAssetsResponse,
 )
 from app.services.image_prompt_engine import ImagePromptEngine
+from app.services.local_model_hotswap import OllamaModelUnloader
 from app.services.resource_coordinator import (
     LocalResourceCoordinator,
     ResourcePressure,
@@ -56,6 +58,7 @@ from app.services.resource_coordinator import (
 )
 
 logger = logging.getLogger(__name__)
+ChatModelUnloader = Callable[[str], Awaitable[list[str]]]
 
 
 class ImageGenerationError(Exception):
@@ -97,26 +100,26 @@ PRESET_CONFIGS: dict[ImageQualityPreset, ImagePresetConfig] = {
     ImageQualityPreset.preview_8gb: ImagePresetConfig(
         width=512,
         height=512,
-        steps=12,
-        guidance=3.0,
+        steps=4,
+        guidance=1.0,
         min_free_vram_mb=2800,
-        model_hint="flux1-dev-q4_0.gguf lowvram preview",
+        model_hint="flux1-schnell-fp8.safetensors lowvram preview",
     ),
     ImageQualityPreset.balanced_8gb: ImagePresetConfig(
         width=768,
         height=768,
-        steps=20,
-        guidance=3.5,
+        steps=6,
+        guidance=1.0,
         min_free_vram_mb=4200,
-        model_hint="flux1-dev-q4_k_m.gguf lowvram balanced",
+        model_hint="flux1-schnell-fp8.safetensors lowvram balanced",
     ),
     ImageQualityPreset.high_8gb: ImagePresetConfig(
         width=896,
         height=896,
-        steps=28,
-        guidance=4.0,
+        steps=8,
+        guidance=1.0,
         min_free_vram_mb=5600,
-        model_hint="flux1-dev-q5_k_m.gguf lowvram high",
+        model_hint="flux1-schnell-fp8.safetensors lowvram high",
     ),
 }
 
@@ -249,14 +252,14 @@ class ImageJob:
 
 
 class ComfyUIFluxAdapter:
-    """Minimal ComfyUI HTTP adapter for Flux GGUF lowvram workflows."""
+    """Minimal ComfyUI HTTP adapter for Flux lowvram workflows."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = settings.image_generation_comfyui_url.rstrip("/")
 
     async def generate(self, job: ImageJob, preset: ImagePresetConfig) -> list[str]:
-        """Submit a conservative Flux GGUF workflow and wait for completion."""
+        """Submit a conservative Flux workflow and wait for completion."""
 
         client_id = f"reverie-{job.job_id}"
         workflow = self._build_flux_workflow(job, preset)
@@ -280,7 +283,17 @@ class ComfyUIFluxAdapter:
         while asyncio.get_running_loop().time() < deadline:
             history = await asyncio.to_thread(self._get_json, f"/history/{prompt_id}")
             if prompt_id in history:
-                return self._extract_output_paths(history[prompt_id])
+                history_entry = history[prompt_id]
+                self._raise_for_history_error(history_entry, prompt_id=prompt_id)
+                outputs = self._extract_output_paths(history_entry)
+                if not outputs:
+                    raise ImageGenerationError(
+                        "ComfyUI finished without returning an image output.",
+                        code="image_comfy_no_outputs",
+                        retryable=True,
+                        details={"prompt_id": prompt_id},
+                    )
+                return outputs
             await asyncio.sleep(1.0)
         raise ImageGenerationError(
             "ComfyUI image generation timed out.",
@@ -318,7 +331,7 @@ class ComfyUIFluxAdapter:
                 return json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.URLError as exc:
             raise ImageGenerationError(
-                "Local ComfyUI is not reachable. Start ComfyUI with --lowvram and Flux GGUF models, then retry.",
+                "Local ComfyUI is not reachable. Start ComfyUI with --lowvram and the Flux Schnell model, then retry.",
                 code="image_comfy_unreachable",
                 retryable=True,
                 details={"url": self._base_url},
@@ -333,8 +346,12 @@ class ComfyUIFluxAdapter:
     def _build_flux_workflow(
         self, job: ImageJob, preset: ImagePresetConfig
     ) -> dict[str, Any]:
+        exported_workflow = self._load_exported_workflow()
+        if exported_workflow is not None:
+            return self._apply_exported_workflow_inputs(exported_workflow, job, preset)
+
         # This foundation keeps workflow metadata explicit and conservative. Users
-        # can map these class_type names to their installed Flux GGUF ComfyUI nodes
+        # can map these class_type names to their installed Flux ComfyUI nodes
         # without Reverie importing diffusion libraries or holding model memory.
         return {
             "1": {
@@ -365,6 +382,130 @@ class ComfyUIFluxAdapter:
             },
         }
 
+    def _load_exported_workflow(self) -> dict[str, Any] | None:
+        workflow_path = self._settings.image_generation_comfyui_workflow_path
+        if not workflow_path:
+            return None
+        path = Path(workflow_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ImageGenerationError(
+                "Configured ComfyUI workflow file could not be read.",
+                code="image_comfy_workflow_unreadable",
+                retryable=False,
+                details={"workflow_path": str(path)},
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise ImageGenerationError(
+                "Configured ComfyUI workflow file is not valid JSON.",
+                code="image_comfy_workflow_invalid_json",
+                retryable=False,
+                details={"workflow_path": str(path)},
+            ) from exc
+
+        prompt = raw.get("prompt") if isinstance(raw, dict) else None
+        if isinstance(prompt, dict):
+            raw = prompt
+        if not self._looks_like_comfyui_api_workflow(raw):
+            raise ImageGenerationError(
+                "Configured ComfyUI workflow must be exported with ComfyUI's API workflow format.",
+                code="image_comfy_workflow_invalid",
+                retryable=False,
+                details={"workflow_path": str(path)},
+            )
+        return json.loads(json.dumps(raw))
+
+    def _looks_like_comfyui_api_workflow(self, value: Any) -> bool:
+        return isinstance(value, dict) and all(
+            isinstance(node, dict)
+            and isinstance(node.get("class_type"), str)
+            and isinstance(node.get("inputs"), dict)
+            for node in value.values()
+        )
+
+    def _apply_exported_workflow_inputs(
+        self, workflow: dict[str, Any], job: ImageJob, preset: ImagePresetConfig
+    ) -> dict[str, Any]:
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_positive_node_id,
+            self._settings.image_generation_comfyui_positive_input,
+            job.prompt,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_negative_node_id,
+            self._settings.image_generation_comfyui_negative_input,
+            job.negative_prompt,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_width_node_id,
+            self._settings.image_generation_comfyui_width_input,
+            preset.width,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_height_node_id,
+            self._settings.image_generation_comfyui_height_input,
+            preset.height,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_steps_node_id,
+            self._settings.image_generation_comfyui_steps_input,
+            preset.steps,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_guidance_node_id,
+            self._settings.image_generation_comfyui_guidance_input,
+            preset.guidance,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_seed_node_id,
+            self._settings.image_generation_comfyui_seed_input,
+            0,
+        )
+        self._set_workflow_input(
+            workflow,
+            self._settings.image_generation_comfyui_save_node_id,
+            self._settings.image_generation_comfyui_save_input,
+            f"reverie_{job.job_id}",
+        )
+        return workflow
+
+    def _set_workflow_input(
+        self,
+        workflow: dict[str, Any],
+        node_id: str | None,
+        input_name: str,
+        value: Any,
+    ) -> None:
+        if not node_id:
+            return
+        node = workflow.get(str(node_id))
+        if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+            raise ImageGenerationError(
+                "Configured ComfyUI workflow node was not found or has no inputs.",
+                code="image_comfy_workflow_invalid",
+                retryable=False,
+                details={"node_id": str(node_id), "input": input_name},
+            )
+        inputs = node["inputs"]
+        if input_name not in inputs:
+            raise ImageGenerationError(
+                "Configured ComfyUI workflow input was not found on that node.",
+                code="image_comfy_workflow_invalid",
+                retryable=False,
+                details={"node_id": str(node_id), "input": input_name},
+            )
+        inputs[input_name] = value
+
     def _extract_output_paths(self, history_entry: dict[str, Any]) -> list[str]:
         outputs: list[str] = []
         for node_output in (history_entry.get("outputs") or {}).values():
@@ -373,8 +514,56 @@ class ComfyUIFluxAdapter:
             ):
                 filename = image.get("filename")
                 if filename:
-                    outputs.append(str(filename))
+                    subfolder = str(image.get("subfolder") or "").strip("/\\")
+                    output_type = str(image.get("type") or "output")
+                    if subfolder or output_type != "output":
+                        params = {"filename": str(filename), "type": output_type}
+                        if subfolder:
+                            params["subfolder"] = subfolder
+                        outputs.append(f"?{urllib.parse.urlencode(params)}")
+                    else:
+                        outputs.append(str(filename))
         return outputs
+
+    def _raise_for_history_error(
+        self, history_entry: dict[str, Any], *, prompt_id: str
+    ) -> None:
+        status = (
+            history_entry.get("status") if isinstance(history_entry, dict) else None
+        )
+        if not isinstance(status, dict):
+            return
+        status_str = str(status.get("status_str") or "").lower()
+        messages = status.get("messages") if isinstance(status.get("messages"), list) else []
+        execution_error = self._first_execution_error(messages)
+        if status_str != "error" and execution_error is None:
+            return
+
+        details: dict[str, object] = {"prompt_id": prompt_id}
+        if execution_error is not None:
+            for key in ("node_id", "node_type", "exception_type"):
+                value = execution_error.get(key)
+                if isinstance(value, str) and value:
+                    details[key] = value
+        raise ImageGenerationError(
+            "ComfyUI reported an error while generating the image.",
+            code="image_comfy_execution_failed",
+            retryable=True,
+            details=details,
+        )
+
+    def _first_execution_error(
+        self, messages: list[Any]
+    ) -> dict[str, Any] | None:
+        for message in messages:
+            if (
+                isinstance(message, (list, tuple))
+                and len(message) >= 2
+                and message[0] == "execution_error"
+                and isinstance(message[1], dict)
+            ):
+                return message[1]
+        return None
 
 
 class ImageGenerationService:
@@ -387,11 +576,13 @@ class ImageGenerationService:
         coordinator: LocalResourceCoordinator = resource_coordinator,
         adapter: ComfyUIFluxAdapter | None = None,
         prompt_engine: ImagePromptEngine | None = None,
+        chat_model_unloader: ChatModelUnloader | None = None,
     ) -> None:
         self._settings = settings
         self._coordinator = coordinator
         self._adapter = adapter or ComfyUIFluxAdapter(settings)
         self._prompt_engine = prompt_engine or ImagePromptEngine()
+        self._chat_model_unloader = chat_model_unloader
         self._jobs: dict[str, ImageJob] = {}
         self._history_path = Path(settings.image_generation_history_path)
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -769,7 +960,9 @@ class ImageGenerationService:
             )
             return
         async with self._coordinator.image_job_section(job_id=job.job_id):
-            unloaded = self._unload_idle_auxiliary_models("image_generation_start")
+            unloaded = await self._unload_idle_models_for_image(
+                "image_generation_start"
+            )
             if unloaded:
                 self._update(
                     job,
@@ -777,7 +970,7 @@ class ImageGenerationService:
                     phase="unloaded_auxiliary_models",
                     resource_mode="freeing_headroom",
                     progress=0.04,
-                    message="Released idle voice models before image generation to protect 8GB VRAM headroom.",
+                    message="Released idle local AI models before image generation to protect 8GB VRAM headroom.",
                 )
             await self._wait_for_safe_resources(job)
             if job.cancel_requested:
@@ -1038,6 +1231,22 @@ class ImageGenerationService:
                     retryable=True,
                 )
                 return
+            if not outputs:
+                self._fail(
+                    job,
+                    code="image_no_outputs",
+                    message=self._capture_message(
+                        job,
+                        "Moment Capture completed without a usable image output.",
+                        "Image generation completed without a usable image output.",
+                    ),
+                    retryable=True,
+                    details={
+                        "job_id": job.job_id,
+                        "prompt_id": job.comfy_prompt_id,
+                    },
+                )
+                return
             self._update(
                 job,
                 status=ImageJobStatus.completed,
@@ -1110,6 +1319,24 @@ class ImageGenerationService:
             return self._coordinator.unload_auxiliary_models(reason)
         return []
 
+    async def _unload_idle_models_for_image(self, reason: str) -> list[str]:
+        unloaded = list(self._unload_idle_auxiliary_models(reason))
+        if self._chat_model_unloader is not None:
+            try:
+                unloaded.extend(await self._chat_model_unloader(reason))
+            except Exception as exc:  # pragma: no cover - defensive local cleanup path.
+                logger.info(
+                    "Chat model unload before image generation failed; continuing image job",
+                    extra={"reason": reason, "error": str(exc)},
+                )
+        seen: set[str] = set()
+        result: list[str] = []
+        for name in unloaded:
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
+
     def _require_job(self, job_id: str) -> ImageJob:
         try:
             return self._jobs[job_id]
@@ -1138,9 +1365,14 @@ class ImageGenerationService:
             "prompt_id",
             "history_path",
             "manifest_path",
+            "workflow_path",
+            "node_id",
+            "input",
             "job_id",
             "output_index",
             "backend",
+            "node_type",
+            "exception_type",
         }
         safe_details = {
             key: value
@@ -1609,5 +1841,8 @@ def get_image_generation_service(settings: Settings) -> ImageGenerationService:
 
     global _image_service
     if _image_service is None or _image_service._settings is not settings:
-        _image_service = ImageGenerationService(settings)
+        _image_service = ImageGenerationService(
+            settings,
+            chat_model_unloader=OllamaModelUnloader(settings).unload_for_image,
+        )
     return _image_service

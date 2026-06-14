@@ -114,7 +114,7 @@ The TTS system makes replies speakable while preserving chat responsiveness. It 
 
 **Architecture:**
 
-- Backend TTS models support local providers such as Piper-style lightweight fallback and richer Orpheus/XTTS/StyleTTS-class voices.
+- Backend TTS models use Orpheus-CPP as the primary emotional voice backend with Piper as the lightweight fallback.
 - Voice profiles store character voice identity, mood defaults, preview metadata, and clone-foundation inputs.
 - The context router decides whether to use fast, balanced, or quality routing based on message context, character mood, user settings, and resource pressure.
 - The frontend TTS store/player handles playback queueing, streaming audio chunks, retry, stop, and per-message controls.
@@ -122,8 +122,9 @@ The TTS system makes replies speakable while preserving chat responsiveness. It 
 **8GB strategy:**
 
 - TTS is prioritized above image generation because spoken replies are interactive.
-- Fast/Piper-style modes can stay CPU-friendly when GPU is busy.
-- Rich voice models are optional and can be unloaded before exclusive image work.
+- Orpheus-CPP stays CPU-first by default so voice does not compete with ComfyUI for VRAM.
+- Piper remains CPU-friendly fallback when Orpheus is unavailable or degraded.
+- GPU-backed richer voice paths remain optional and can be unloaded before exclusive image work.
 - Speech synthesis is not placed inside the token streaming path.
 
 **Safety and trust:**
@@ -151,7 +152,7 @@ Image generation is an optional local media layer tied to chat and VN context. I
 
 - Default preset is preview-first for RTX 4070 8GB-class machines.
 - Only one exclusive image generation job runs at a time.
-- ComfyUI/Flux GGUF workflows are expected to run with low-VRAM/offload settings.
+- ComfyUI/Flux Schnell workflows are expected to run with low-VRAM/offload settings.
 - The resource coordinator can pause or preempt image work when TTS or chat needs priority.
 - Automatic downgrade explanations are user-facing rather than silent.
 - Capture jobs preserve metadata across retry, cancellation, waiting, downgrade, and safe failure states.
@@ -256,7 +257,7 @@ The 8GB strategy is product architecture, not a late optimization pass.
 
 - Keep normal operation below roughly 7.5-7.8 GB VRAM where practical.
 - Treat reported free VRAM as advisory, not guaranteed allocatable memory.
-- Use conservative defaults: preview image quality, one background task, gentle/balanced context, fast/balanced TTS.
+- Use conservative defaults: preview image quality, one background task, gentle/balanced context, CPU-first TTS.
 - Queue exclusive GPU jobs rather than running image, rich TTS, and training simultaneously.
 - Pause, preempt, or cancel background jobs when higher-priority interactive work starts.
 - Surface downgrade and pause/resume explanations to users.
@@ -301,6 +302,22 @@ Reverie must be intimate without being opaque.
 - **Services:** chat assembly, memory browser, TTS, voice management, image generation, prompt enrichment, resource coordination.
 - **Core modules:** memory, reflection, growth, emotion, LoRA, extensions, config, Ollama client.
 - **Tests:** pytest coverage for chat, memory, reflection, journal, growth, TTS, voices, image generation, resources, extensions, and Personal LoRA foundations.
+
+### Current Local Model Stack
+
+- **Chat LLM:** `llama3.1:8b` through Ollama.
+- **Memory embeddings:** `nomic-embed-text` through Ollama, configured as 768-dimensional embeddings.
+- **Memory extraction/reflection LLM:** reuses the chat model unless `REVERIE_MEMORY_LLM_MODEL` is explicitly set.
+- **Primary TTS:** Orpheus-CPP with `isaiahbjork/orpheus-3b-0.1-ft-Q4_K_M-GGUF`, downloaded as `orpheus-3b-0.1-ft-q4_k_m.gguf` into the local Hugging Face cache.
+- **Orpheus source/quality target:** `canopylabs/orpheus-3b-0.1-ft`.
+- **Orpheus audio decoder:** `onnx-community/snac_24khz-ONNX`.
+- **TTS fallback:** Piper `en_US-lessac-medium.onnx`, stored locally as `backend/models/piper/reverie_default.onnx` with its `.onnx.json` sidecar.
+- **Default image model:** `Comfy-Org/flux1-schnell` file `flux1-schnell-fp8.safetensors`, loaded by `config/comfyui/reverie-flux-schnell-fp8.api.json`.
+- **Optional image experiments:** `flux1-schnell-Q4_0.gguf`, `clip_l.safetensors`, and `t5xxl_fp8_e4m3fn.safetensors` for non-default split Flux/GGUF workflows.
+- **Legacy image workflow:** `v1-5-pruned-emaonly.safetensors` appears only in `config/comfyui/reverie-sd15-preview.api.json`; it is not the default setup.
+- **Not current defaults:** Flux.1 Dev, hosted image APIs, SDXL Turbo, CLIP scoring, resident rerankers, STT/ASR, and a Personal LoRA base model.
+
+The canonical operational inventory lives in `docs/TECH_STACK_MODELS.md`.
 
 ### Frontend
 

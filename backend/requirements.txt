@@ -4,5 +4,11 @@ ollama==0.4.5
 pydantic-settings==2.7.1
 mem0ai==2.0.4
 lancedb==0.33.0
+piper-tts==1.4.2
+# CPU-first Orpheus runtime. Use the CUDA-specific llama-cpp-python extra index
+# from docs/TTS_SETUP.md if CPU synthesis is too slow on target hardware.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python==0.3.29
+orpheus-cpp==0.0.3
 
 python-multipart==0.0.20

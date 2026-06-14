@@ -1,9 +1,9 @@
 """Local-first text-to-speech service with Orpheus primary and Piper fallback.
 
 The service is intentionally lazy: no TTS model is imported or loaded during
-FastAPI startup. Orpheus is attempted first for richer emotional voice quality,
-while Piper is kept as a lightweight CPU fallback for 8GB VRAM systems or
-machines without the optional Orpheus dependencies installed.
+FastAPI startup. Orpheus is the emotional-quality backend, using the CPU
+llama.cpp-compatible runtime by default on Windows. Piper remains a lightweight
+fallback for unavailable, slow, or resource-constrained Orpheus runs.
 """
 
 from __future__ import annotations
@@ -110,12 +110,11 @@ class TTSBackend(Protocol):
 
 
 class OrpheusBackend:
-    """Lazy Orpheus TTS 3B adapter with 8GB-aware quantized loading.
+    """Lazy Orpheus TTS adapter with 8GB-aware runtime selection.
 
-    This adapter supports the community Orpheus package when present. It keeps
-    imports local so Reverie can start without heavyweight GPU dependencies, and
-    it validates CUDA VRAM before trying a 3B model. Piper remains the fallback
-    when the optional package, model path, or VRAM budget is unavailable.
+    The default `cpp` runtime uses orpheus-cpp plus llama.cpp so TTS can stay on
+    CPU. The `speech` runtime keeps compatibility with the vLLM-style
+    orpheus-speech package for users who explicitly choose GPU-backed Orpheus.
     """
 
     name = "orpheus"
@@ -143,7 +142,6 @@ class OrpheusBackend:
             )
 
         model = await self._get_model(request_id=request_id)
-        start = perf_counter()
         try:
             audio_bytes = await asyncio.to_thread(
                 self._generate_with_model, model, text, voice_id, reference_audio_path
@@ -173,7 +171,7 @@ class OrpheusBackend:
             voice_id=voice_id,
             audio_format="wav",
             sample_rate=self._settings.tts_sample_rate,
-            duration_seconds=perf_counter() - start,
+            duration_seconds=estimate_wav_duration(audio_bytes),
         )
 
     async def _get_model(self, *, request_id: str | None) -> object:
@@ -192,7 +190,11 @@ class OrpheusBackend:
         return self._model
 
     def _load_model(self, request_id: str | None) -> None:
-        """Import and initialize Orpheus with quantization only when needed."""
+        """Import and initialize the configured Orpheus runtime only when needed."""
+
+        if self._settings.tts_orpheus_runtime == "cpp":
+            self._load_cpp_model(request_id=request_id)
+            return
 
         self._validate_vram_budget(request_id=request_id)
         try:
@@ -230,6 +232,69 @@ class OrpheusBackend:
             load_in_4bit=self._settings.tts_quantization == "4bit",
             load_in_8bit=self._settings.tts_quantization == "8bit",
         )
+
+    def _load_cpp_model(self, request_id: str | None) -> None:
+        try:
+            from orpheus_cpp import OrpheusCpp  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise TTSBackendUnavailable(
+                "Orpheus CPP dependencies are not installed.",
+                code="tts_orpheus_cpp_dependency_missing",
+                retryable=False,
+                details={
+                    "packages": ["orpheus-cpp", "llama-cpp-python"],
+                    "runtime": "cpp",
+                },
+            ) from exc
+
+        logger.info(
+            "Loading Orpheus CPP TTS backend",
+            extra={
+                "request_id": request_id,
+                "device": self._settings.tts_device,
+                "runtime": self._settings.tts_orpheus_runtime,
+                "model_id": self._settings.tts_orpheus_cpp_model_id,
+                "n_gpu_layers": self._settings.tts_orpheus_cpp_n_gpu_layers,
+                "n_threads": self._settings.tts_orpheus_cpp_n_threads,
+                "n_ctx": self._settings.tts_orpheus_cpp_n_ctx,
+            },
+        )
+        OrpheusCpp.lang_to_model[self._settings.tts_orpheus_cpp_language] = (
+            self._settings.tts_orpheus_cpp_model_id
+        )
+        self._model = self._instantiate_orpheus_cpp(OrpheusCpp)
+
+    def _instantiate_orpheus_cpp(self, orpheus_cpp_type: type) -> object:
+        """Bound Orpheus-CPP llama.cpp context to avoid max-context RAM spikes."""
+
+        try:
+            import llama_cpp  # type: ignore[import-not-found]
+        except ImportError:
+            llama_cpp = None
+
+        if llama_cpp is None or not hasattr(llama_cpp, "Llama"):
+            return orpheus_cpp_type(**self._orpheus_cpp_kwargs())
+
+        original_llama = llama_cpp.Llama
+
+        def bounded_llama(*args, **kwargs):  # type: ignore[no-untyped-def]
+            if int(kwargs.get("n_ctx") or 0) <= 0:
+                kwargs["n_ctx"] = self._settings.tts_orpheus_cpp_n_ctx
+            return original_llama(*args, **kwargs)
+
+        llama_cpp.Llama = bounded_llama
+        try:
+            return orpheus_cpp_type(**self._orpheus_cpp_kwargs())
+        finally:
+            llama_cpp.Llama = original_llama
+
+    def _orpheus_cpp_kwargs(self) -> dict[str, object]:
+        return {
+            "n_gpu_layers": self._settings.tts_orpheus_cpp_n_gpu_layers,
+            "n_threads": self._settings.tts_orpheus_cpp_n_threads,
+            "verbose": False,
+            "lang": self._settings.tts_orpheus_cpp_language,
+        }
 
     def _validate_vram_budget(self, *, request_id: str | None) -> None:
         """Fail early when CUDA memory is clearly too constrained for Orpheus."""
@@ -341,19 +406,24 @@ class OrpheusBackend:
     ) -> bytes:
         """Call common Orpheus package generation APIs and normalize to bytes."""
 
-        for method_name in ("synthesize", "generate_speech", "generate"):
+        for method_name in ("tts", "synthesize", "generate_speech", "generate"):
             method = getattr(model, method_name, None)
             if method is None:
                 continue
             audio = method(
                 **self._orpheus_kwargs(method, text, voice_id, reference_audio_path)
             )
+            coerced = self._coerce_generated_audio(audio)
+            if coerced is not None:
+                return coerced
             if isinstance(audio, bytes):
                 return audio
             if hasattr(audio, "read"):
                 return audio.read()
             if isinstance(audio, str):
                 return Path(audio).read_bytes()
+            if hasattr(audio, "__iter__"):
+                return b"".join(self._coerce_audio_chunk(chunk) for chunk in audio)
         raise TTSBackendUnavailable(
             "Installed Orpheus backend does not expose a supported generation API.",
             code="tts_orpheus_api_unsupported",
@@ -364,6 +434,8 @@ class OrpheusBackend:
         """Return the first recognized streaming method from community Orpheus builds."""
 
         for method_name in (
+            "stream_tts",
+            "stream_tts_sync",
             "stream",
             "stream_speech",
             "synthesize_stream",
@@ -386,10 +458,18 @@ class OrpheusBackend:
             parameters = {}
 
         kwargs: dict[str, object] = {}
+        if "options" in parameters and "voice" not in parameters and "voice_id" not in parameters:
+            kwargs["text" if "text" in parameters else "prompt"] = text
+            kwargs["options"] = {
+                "voice_id": self._orpheus_voice_id(voice_id),
+                "pre_buffer_size": self._settings.tts_orpheus_cpp_pre_buffer_seconds,
+            }
+            return kwargs
+
         text_key = "prompt" if "prompt" in parameters or not parameters else "text"
         voice_key = "voice" if "voice" in parameters or not parameters else "voice_id"
         kwargs[text_key] = text
-        kwargs[voice_key] = voice_id
+        kwargs[voice_key] = self._orpheus_voice_id(voice_id)
 
         if reference_audio_path:
             for key in (
@@ -402,6 +482,21 @@ class OrpheusBackend:
                     kwargs[key] = reference_audio_path
                     break
         return kwargs
+
+    def _orpheus_voice_id(self, voice_id: str) -> str:
+        valid_voices = {"tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"}
+        normalized = voice_id.strip().lower().replace("-", "_")
+        if normalized in valid_voices:
+            return normalized
+        for candidate in valid_voices:
+            if normalized.startswith(f"{candidate}_") or normalized.startswith(candidate):
+                return candidate
+        return self._settings.tts_orpheus_default_voice_id
+
+    def _coerce_generated_audio(self, audio: object) -> bytes | None:
+        if isinstance(audio, tuple) and len(audio) >= 2 and isinstance(audio[0], int):
+            return self._wav_bytes_from_samples(sample_rate=audio[0], samples=audio[1])
+        return None
 
     async def _iter_model_stream(self, stream: object) -> AsyncIterator[bytes]:
         if hasattr(stream, "__aiter__"):
@@ -419,6 +514,10 @@ class OrpheusBackend:
             return bytes(chunk)
         if isinstance(chunk, memoryview):
             return chunk.tobytes()
+        if isinstance(chunk, tuple) and len(chunk) >= 2 and isinstance(chunk[0], int):
+            samples = chunk[1]
+            if hasattr(samples, "tobytes"):
+                return samples.tobytes()
         if isinstance(chunk, tuple) and chunk:
             return self._coerce_audio_chunk(chunk[0])
         if isinstance(chunk, dict):
@@ -433,6 +532,31 @@ class OrpheusBackend:
             code="tts_orpheus_stream_chunk_invalid",
             retryable=True,
         )
+
+    def _wav_bytes_from_samples(self, *, sample_rate: int, samples: object) -> bytes:
+        try:
+            import numpy as np  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover - dependency guard.
+            raise TTSBackendUnavailable(
+                "NumPy is required to encode Orpheus CPP audio.",
+                code="tts_orpheus_numpy_missing",
+                retryable=False,
+            ) from exc
+
+        array = np.asarray(samples).squeeze()
+        if array.dtype.kind == "f":
+            array = np.clip(array, -1.0, 1.0)
+            array = (array * 32767).astype(np.int16)
+        else:
+            array = array.astype(np.int16, copy=False)
+
+        with io.BytesIO() as buffer:
+            with wave.open(buffer, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(array.tobytes())
+            return buffer.getvalue()
 
     def _resolved_device(self) -> str:
         """Resolve auto/cuda/cpu selection without importing torch unless needed."""
@@ -465,7 +589,7 @@ class OrpheusBackend:
 
 
 class PiperBackend:
-    """Subprocess adapter for Piper, Reverie's fast lightweight fallback."""
+    """Subprocess adapter for Piper, Reverie's fast lightweight TTS backend."""
 
     name = "piper"
 
@@ -488,7 +612,6 @@ class PiperBackend:
                 retryable=False,
                 details={"requested_format": audio_format},
             )
-        start = perf_counter()
         audio_bytes = await asyncio.to_thread(
             self._run_piper, text=text, voice_id=voice_id, request_id=request_id
         )
@@ -498,7 +621,7 @@ class PiperBackend:
             voice_id=voice_id,
             audio_format="wav",
             sample_rate=self._settings.tts_sample_rate,
-            duration_seconds=perf_counter() - start,
+            duration_seconds=estimate_wav_duration(audio_bytes),
         )
 
     def _run_piper(self, *, text: str, voice_id: str, request_id: str | None) -> bytes:
@@ -528,7 +651,7 @@ class PiperBackend:
             str(output_path),
         ]
         logger.info(
-            "Running Piper TTS fallback",
+            "Running Piper TTS backend",
             extra={
                 "request_id": request_id,
                 "voice_id": voice_id,
