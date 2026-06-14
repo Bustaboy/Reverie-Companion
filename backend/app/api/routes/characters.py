@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import Settings, get_settings
+from app.api.routes.moment_capture import get_moment_capture_service
 from app.repositories.character_repo import CharacterRepositoryError
 from app.schemas.character_blueprint import (
     CharacterCreate,
@@ -14,7 +15,17 @@ from app.schemas.character_blueprint import (
     CharacterResponse,
     CharacterUpdate,
 )
+from app.services.character_creator_service import (
+    CharacterCreatorDraft,
+    CharacterCreatorService,
+    CharacterDraftValidationResponse,
+    CreatorMomentCaptureRequest,
+)
 from app.services.character_service import CharacterNotFoundError, CharacterService
+from app.services.moment_capture_service import (
+    MomentCaptureResponse,
+    MomentCaptureService,
+)
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
 
@@ -23,6 +34,14 @@ def get_character_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> CharacterService:
     return CharacterService.from_settings(settings)
+
+
+def get_character_creator_service(
+    moment_capture_service: Annotated[
+        MomentCaptureService, Depends(get_moment_capture_service)
+    ],
+) -> CharacterCreatorService:
+    return CharacterCreatorService(moment_capture_service=moment_capture_service)
 
 
 def _not_found_exception(exc: CharacterNotFoundError) -> HTTPException:
@@ -44,6 +63,42 @@ def _repository_exception(exc: CharacterRepositoryError) -> HTTPException:
             "code": "character_library_unavailable",
         },
     )
+
+
+@router.post("/creator/validate", response_model=CharacterDraftValidationResponse)
+def validate_creator_draft(
+    request: CharacterCreatorDraft,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> CharacterDraftValidationResponse:
+    """Validate that a request-scoped creator draft can become a blueprint."""
+
+    return service.validate_draft(request)
+
+
+@router.post(
+    "/creator/portrait-capture",
+    response_model=MomentCaptureResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def capture_creator_first_portrait(
+    request: CreatorMomentCaptureRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> MomentCaptureResponse:
+    """Queue first-portrait Moment Capture from chat or VN creator context."""
+
+    try:
+        return await service.capture_first_portrait(request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "creator_draft_capture_invalid",
+                    "message": str(exc),
+                    "retryable": False,
+                }
+            },
+        ) from exc
 
 
 @router.post("", response_model=CharacterResponse, status_code=status.HTTP_201_CREATED)

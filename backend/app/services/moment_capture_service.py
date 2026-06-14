@@ -92,6 +92,7 @@ class MomentCaptureService:
         self._records_path.parent.mkdir(parents=True, exist_ok=True)
         self._records: dict[str, MomentCaptureRecord] = self._load_records()
         self._events: dict[str, VisualChangeEvent] = self._load_events()
+        self._transient_blueprints: dict[str, Any] = {}
 
     async def capture(self, request: MomentCaptureRequest) -> MomentCaptureResponse:
         """Create a durable capture record and queue image generation.
@@ -101,6 +102,28 @@ class MomentCaptureService:
         """
 
         character = self._character_service.load_by_id(request.character_id)
+        return await self._capture_with_character(request, character)
+
+    async def capture_for_blueprint(
+        self, request: MomentCaptureRequest, character: Any
+    ) -> MomentCaptureResponse:
+        """Queue Moment Capture for a transient draft blueprint.
+
+        This bridge lets creator draft validation reuse the existing Moment
+        Capture prompt/job/record path without requiring draft persistence or a
+        duplicate image-generation abstraction. It remains non-blocking and does
+        not mutate visual canon; feedback/review/rollback still use existing
+        VisualChangeEvent flows after a real character is saved.
+        """
+
+        if character.character_id != request.character_id:
+            raise ValueError("Draft blueprint character_id must match capture request.")
+        self._transient_blueprints[character.character_id] = character
+        return await self._capture_with_character(request, character)
+
+    async def _capture_with_character(
+        self, request: MomentCaptureRequest, character: Any
+    ) -> MomentCaptureResponse:
         scene_state = request.scene_state.model_dump(mode="json")
         capture_intent = str(
             request.metadata.get("capture_intent")
@@ -159,6 +182,7 @@ class MomentCaptureService:
                 "image_job_status": job.status,
                 "image_job_source": job.source,
                 "prompt_bundle_metadata": prompt_bundle.metadata,
+                **self._creator_capture_metadata(request),
                 "request_created_at": request.created_at,
                 **request.metadata,
             },
@@ -535,6 +559,15 @@ class MomentCaptureService:
             "moment_captures.json"
         )
 
+    def _creator_capture_metadata(
+        self, request: MomentCaptureRequest
+    ) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in request.metadata.items()
+            if key in {"source_context", "creator_draft", "draft_id", "non_blocking"}
+        }
+
     def _job_context(
         self,
         *,
@@ -549,6 +582,7 @@ class MomentCaptureService:
             "moment_capture": {
                 "schema_version": request.schema_version,
                 "capture_id": capture_id,
+                "moment_capture_id": capture_id,
                 "character_id": request.character_id,
                 "conversation_id": request.conversation_id,
                 "session_id": request.session_id,
@@ -565,6 +599,7 @@ class MomentCaptureService:
                     for artifact in request.relevant_visual_memories
                 ],
                 "prompt_bundle_metadata": prompt_bundle.metadata,
+                **self._creator_capture_metadata(request),
             },
             "character": {
                 "id": request.character_id,
@@ -642,6 +677,12 @@ class MomentCaptureService:
             return VisualFeedbackAction.reject_style_trait
         return action
 
+    def _visual_identity_for_record(self, record: MomentCaptureRecord):
+        transient = self._transient_blueprints.get(record.character_id)
+        if transient is not None:
+            return transient.visual_identity
+        return self._character_service.get_visual_identity(record.character_id)
+
     def _build_event(
         self,
         record: MomentCaptureRecord,
@@ -656,7 +697,7 @@ class MomentCaptureService:
             or record.scene_state.outfit
             or action.value
         )
-        current = self._character_service.get_visual_identity(record.character_id)
+        current = self._visual_identity_for_record(record)
         previous = None
         if trait_name == "current_appearance":
             previous = current.current_appearance
