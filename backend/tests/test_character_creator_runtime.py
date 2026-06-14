@@ -51,7 +51,16 @@ def _draft() -> CharacterCreatorDraft:
         default_intimacy_level=DefaultIntimacyLevel.flirtatious,
         user_desired_experience="tender magical romance",
         core_traits=["warm", "playful", "protective"],
+        independence=0.72,
+        devotion=0.66,
+        dominance_or_initiative=0.58,
+        values_or_ideals=["chosen loyalty", "emotional honesty"],
+        flaws=["gets stubborn when afraid"],
+        fears=["being forgotten"],
+        vulnerabilities=["hides loneliness behind teasing"],
         communication_style="soft teasing with emotional honesty",
+        avoid_style=["assistant-like explanations", "moralizing adult fantasy"],
+        initiative_in_conversation=0.63,
         visual_identity=VisualIdentityProfile(
             identity_anchors=["amber eyes", "warm brown skin", "same adult face"],
             evolving_traits=[
@@ -91,7 +100,24 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert blueprint.relationship.default_intimacy_level == DefaultIntimacyLevel.flirtatious
     assert blueprint.relationship.user_desired_experience == "tender magical romance"
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
+    assert blueprint.personality.independence == 0.72
+    assert blueprint.personality.devotion == 0.66
+    assert blueprint.personality.dominance_or_initiative == 0.58
+    assert blueprint.personality.values_or_ideals == [
+        "chosen loyalty",
+        "emotional honesty",
+    ]
+    assert blueprint.personality.flaws == ["gets stubborn when afraid"]
+    assert blueprint.personality.fears == ["being forgotten"]
+    assert blueprint.personality.vulnerabilities == [
+        "hides loneliness behind teasing"
+    ]
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
+    assert blueprint.communication.avoid_style_rules == [
+        "assistant-like explanations",
+        "moralizing adult fantasy",
+    ]
+    assert blueprint.communication.initiative_in_conversation == 0.63
     assert blueprint.visual_identity.identity_anchors == [
         "amber eyes",
         "warm brown skin",
@@ -217,6 +243,90 @@ def test_creator_draft_update_validates_premise_and_relationship_frame(tmp_path)
         updated.validation.blueprint.relationship.user_desired_experience
         == "playful devotion and quiet romantic scenes"
     )
+
+
+def test_creator_draft_personality_fields_create_update_persist_and_map(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            core_traits=["tender", "bold", "tender"],
+            independence=0.81,
+            devotion=0.74,
+            dominance_or_initiative=0.69,
+            values_or_ideals=["mutual choice", "adult honesty", "mutual choice"],
+            flaws=["deflects fear with jokes"],
+            fears=["emotional abandonment"],
+            vulnerabilities=["trusts slowly after betrayal"],
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria").record.draft
+    assert loaded.core_traits == ["tender", "bold"]
+    assert loaded.independence == 0.81
+    assert loaded.devotion == 0.74
+    assert loaded.dominance_or_initiative == 0.69
+    assert loaded.values_or_ideals == ["mutual choice", "adult honesty"]
+    assert loaded.flaws == ["deflects fear with jokes"]
+    assert loaded.fears == ["emotional abandonment"]
+    assert loaded.vulnerabilities == ["trusts slowly after betrayal"]
+    assert updated.validation.blueprint is not None
+    assert updated.validation.blueprint.personality.independence == 0.81
+    assert updated.validation.blueprint.personality.values_or_ideals == [
+        "mutual choice",
+        "adult honesty",
+    ]
+
+
+def test_creator_draft_communication_fields_create_update_persist_and_map(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            communication_style="direct, affectionate, and lightly teasing",
+            avoid_style=["therapy-speak", "assistant disclaimers", "therapy-speak"],
+            initiative_in_conversation=0.88,
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria").record.draft
+    assert loaded.communication_style == "direct, affectionate, and lightly teasing"
+    assert loaded.avoid_style == ["therapy-speak", "assistant disclaimers"]
+    assert loaded.initiative_in_conversation == 0.88
+    assert updated.validation.blueprint is not None
+    assert (
+        updated.validation.blueprint.communication.style_notes
+        == "direct, affectionate, and lightly teasing"
+    )
+    assert updated.validation.blueprint.communication.avoid_style_rules == [
+        "therapy-speak",
+        "assistant disclaimers",
+    ]
+    assert updated.validation.blueprint.communication.initiative_in_conversation == 0.88
+
+
+def test_creator_draft_rejects_invalid_personality_and_communication_values() -> None:
+    invalid_payloads = [
+        {"display_name": "Aria", "independence": 1.1},
+        {"display_name": "Aria", "devotion": -0.1},
+        {"display_name": "Aria", "dominance_or_initiative": 1.2},
+        {"display_name": "Aria", "initiative_in_conversation": -0.2},
+        {"display_name": "Aria", "values_or_ideals": ["childlike innocence"]},
+        {"display_name": "Aria", "avoid_style": ["schoolgirl presentation"]},
+    ]
+
+    for payload in invalid_payloads:
+        try:
+            CharacterCreatorDraft(**payload)
+        except ValidationError:
+            continue
+        raise AssertionError(f"Expected payload to be rejected: {payload}")
 
 
 def test_drafts_persist_separately_from_finalized_character_blueprints(tmp_path) -> None:

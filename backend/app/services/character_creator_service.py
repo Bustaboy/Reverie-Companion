@@ -55,7 +55,7 @@ from app.services.moment_capture_service import (
 
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 2
+DRAFT_SCHEMA_VERSION = 3
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -80,6 +80,18 @@ def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> N
                 f"{field_name} must describe a clearly adult companion; "
                 "underage or deliberately childlike sexual presentation is not allowed."
             )
+
+
+def _normalize_creator_list(
+    values: list[str], field_name: str, *, max_item_length: int
+) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = " ".join(str(value).strip().split())[:max_item_length]
+        if item and item not in normalized:
+            _reject_underage_or_childlike_presentation(item, field_name)
+            normalized.append(item)
+    return normalized
 
 
 class DraftMomentSource(StrEnum):
@@ -111,7 +123,16 @@ class CharacterCreatorDraft(BaseModel):
         min_length=1,
         max_length=8,
     )
+    independence: float = Field(default=0.55, ge=0.0, le=1.0)
+    devotion: float = Field(default=0.6, ge=0.0, le=1.0)
+    dominance_or_initiative: float = Field(default=0.45, ge=0.0, le=1.0)
+    values_or_ideals: list[str] = Field(default_factory=list, max_length=12)
+    flaws: list[str] = Field(default_factory=list, max_length=12)
+    fears: list[str] = Field(default_factory=list, max_length=12)
+    vulnerabilities: list[str] = Field(default_factory=list, max_length=12)
     communication_style: str | None = Field(default=None, max_length=240)
+    avoid_style: list[str] = Field(default_factory=list, max_length=8)
+    initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile = Field(
         default_factory=VisualIdentityProfile
     )
@@ -156,15 +177,22 @@ class CharacterCreatorDraft(BaseModel):
     @field_validator("core_traits", mode="after")
     @classmethod
     def normalize_core_traits(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for value in values:
-            item = " ".join(str(value).strip().split())[:80]
-            if item and item not in normalized:
-                _reject_underage_or_childlike_presentation(item, "Core traits")
-                normalized.append(item)
+        normalized = _normalize_creator_list(values, "Core traits", max_item_length=80)
         if not normalized:
             raise ValueError("At least one core trait is required.")
         return normalized
+
+    @field_validator(
+        "values_or_ideals",
+        "flaws",
+        "fears",
+        "vulnerabilities",
+        "avoid_style",
+        mode="after",
+    )
+    @classmethod
+    def normalize_optional_creator_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(values, "Creator draft", max_item_length=80)
 
 
 class DraftValidationResponse(BaseModel):
@@ -194,7 +222,16 @@ class CharacterCreatorDraftUpdate(BaseModel):
     default_intimacy_level: DefaultIntimacyLevel | None = None
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    independence: float | None = Field(default=None, ge=0.0, le=1.0)
+    devotion: float | None = Field(default=None, ge=0.0, le=1.0)
+    dominance_or_initiative: float | None = Field(default=None, ge=0.0, le=1.0)
+    values_or_ideals: list[str] | None = Field(default=None, max_length=12)
+    flaws: list[str] | None = Field(default=None, max_length=12)
+    fears: list[str] | None = Field(default=None, max_length=12)
+    vulnerabilities: list[str] | None = Field(default=None, max_length=12)
     communication_style: str | None = Field(default=None, max_length=240)
+    avoid_style: list[str] | None = Field(default=None, max_length=8)
+    initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile | None = None
     tags: list[str] | None = Field(default=None, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -389,8 +426,21 @@ class CharacterCreatorService:
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
             ),
-            personality=PersonalityProfile(core_traits=draft.core_traits),
-            communication=CommunicationProfile(style_notes=draft.communication_style),
+            personality=PersonalityProfile(
+                core_traits=draft.core_traits,
+                independence=draft.independence,
+                devotion=draft.devotion,
+                dominance_or_initiative=draft.dominance_or_initiative,
+                values_or_ideals=draft.values_or_ideals,
+                flaws=draft.flaws,
+                fears=draft.fears,
+                vulnerabilities=draft.vulnerabilities,
+            ),
+            communication=CommunicationProfile(
+                style_notes=draft.communication_style,
+                avoid_style_rules=draft.avoid_style,
+                initiative_in_conversation=draft.initiative_in_conversation,
+            ),
             visual_identity=draft.visual_identity,
             metadata={
                 "creator_draft": {
