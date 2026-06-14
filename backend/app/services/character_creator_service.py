@@ -31,7 +31,9 @@ from app.schemas.character_blueprint import (
     AdultAgeRange,
     CharacterBlueprint,
     CharacterIdentity,
+    CharacterIntegrityPolicy,
     CommunicationProfile,
+    MAX_LIST_ITEMS,
     PersonalityProfile,
     utc_now_iso,
 )
@@ -53,9 +55,8 @@ from app.services.moment_capture_service import (
     MomentCaptureService,
 )
 
-
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 2
+DRAFT_SCHEMA_VERSION = 3
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -68,6 +69,35 @@ UNDERAGE_PRESENTATION_TERMS = (
     "loli",
     "shota",
 )
+
+
+def _normalize_optional_text(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.strip().split())
+    if not normalized:
+        return None
+    _reject_underage_or_childlike_presentation(normalized, field_name)
+    return normalized
+
+
+def _normalize_creator_list(
+    values: list[str],
+    *,
+    field_name: str,
+    required: bool = False,
+    max_items: int = MAX_LIST_ITEMS,
+    max_item_length: int = 80,
+) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = " ".join(str(value).strip().split())[:max_item_length]
+        if item and item not in normalized:
+            _reject_underage_or_childlike_presentation(item, field_name)
+            normalized.append(item)
+    if required and not normalized:
+        raise ValueError(f"At least one {field_name.lower()} entry is required.")
+    return normalized[:max_items]
 
 
 def _reject_underage_or_childlike_presentation(value: str, field_name: str) -> None:
@@ -111,7 +141,16 @@ class CharacterCreatorDraft(BaseModel):
         min_length=1,
         max_length=8,
     )
+    independence: float = Field(default=0.55, ge=0.0, le=1.0)
+    devotion: float = Field(default=0.6, ge=0.0, le=1.0)
+    dominance_or_initiative: float = Field(default=0.45, ge=0.0, le=1.0)
+    values_or_ideals: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    flaws: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    fears: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    vulnerabilities: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    avoid_style: list[str] = Field(default_factory=list, max_length=8)
+    initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile = Field(
         default_factory=VisualIdentityProfile
     )
@@ -145,26 +184,26 @@ class CharacterCreatorDraft(BaseModel):
     @field_validator("user_desired_experience", "communication_style", mode="after")
     @classmethod
     def strip_optional_creator_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = " ".join(value.strip().split())
-        if not normalized:
-            return None
-        _reject_underage_or_childlike_presentation(normalized, "Creator draft")
-        return normalized
+        return _normalize_optional_text(value, "Creator draft")
 
     @field_validator("core_traits", mode="after")
     @classmethod
     def normalize_core_traits(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for value in values:
-            item = " ".join(str(value).strip().split())[:80]
-            if item and item not in normalized:
-                _reject_underage_or_childlike_presentation(item, "Core traits")
-                normalized.append(item)
-        if not normalized:
-            raise ValueError("At least one core trait is required.")
-        return normalized
+        return _normalize_creator_list(
+            values, field_name="Core traits", required=True, max_items=8
+        )
+
+    @field_validator(
+        "values_or_ideals",
+        "flaws",
+        "fears",
+        "vulnerabilities",
+        "avoid_style",
+        mode="after",
+    )
+    @classmethod
+    def normalize_creator_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(values, field_name="Creator draft")
 
 
 class DraftValidationResponse(BaseModel):
@@ -194,7 +233,16 @@ class CharacterCreatorDraftUpdate(BaseModel):
     default_intimacy_level: DefaultIntimacyLevel | None = None
     user_desired_experience: str | None = Field(default=None, max_length=240)
     core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    independence: float | None = Field(default=None, ge=0.0, le=1.0)
+    devotion: float | None = Field(default=None, ge=0.0, le=1.0)
+    dominance_or_initiative: float | None = Field(default=None, ge=0.0, le=1.0)
+    values_or_ideals: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
+    flaws: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
+    fears: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
+    vulnerabilities: list[str] | None = Field(default=None, max_length=MAX_LIST_ITEMS)
     communication_style: str | None = Field(default=None, max_length=240)
+    avoid_style: list[str] | None = Field(default=None, max_length=8)
+    initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual_identity: VisualIdentityProfile | None = None
     tags: list[str] | None = Field(default=None, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -338,7 +386,9 @@ class CharacterCreatorService:
             updated_draft.model_dump(mode="json")
         )
         saved = self._draft_repository.upsert(
-            record.model_copy(update={"draft": updated_draft, "updated_at": utc_now_iso()})
+            record.model_copy(
+                update={"draft": updated_draft, "updated_at": utc_now_iso()}
+            )
         )
         return CharacterCreatorDraftResponse(
             record=saved, validation=self.validate_draft(saved.draft)
@@ -353,7 +403,9 @@ class CharacterCreatorService:
 
     def _require_repository(self) -> None:
         if self._draft_repository is None:
-            raise RuntimeError("Creator draft persistence repository is not configured.")
+            raise RuntimeError(
+                "Creator draft persistence repository is not configured."
+            )
 
     def _get_record_or_raise(self, draft_id: str) -> CharacterCreatorDraftRecord:
         self._require_repository()
@@ -389,8 +441,22 @@ class CharacterCreatorService:
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
             ),
-            personality=PersonalityProfile(core_traits=draft.core_traits),
-            communication=CommunicationProfile(style_notes=draft.communication_style),
+            personality=PersonalityProfile(
+                core_traits=draft.core_traits,
+                independence=draft.independence,
+                devotion=draft.devotion,
+                dominance_or_initiative=draft.dominance_or_initiative,
+                values_or_ideals=draft.values_or_ideals,
+                flaws=draft.flaws,
+                fears=draft.fears,
+                vulnerabilities=draft.vulnerabilities,
+            ),
+            communication=CommunicationProfile(
+                style_notes=draft.communication_style,
+                avoid_style_rules=draft.avoid_style,
+                initiative_in_conversation=draft.initiative_in_conversation,
+            ),
+            integrity_policy=CharacterIntegrityPolicy(independence=draft.independence),
             visual_identity=draft.visual_identity,
             metadata={
                 "creator_draft": {
