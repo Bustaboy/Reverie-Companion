@@ -1182,3 +1182,67 @@ def test_finalize_and_import_enforce_adult_roleplay_policy(tmp_path) -> None:
         assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
     else:
         raise AssertionError("Expected policy validation to block unsafe import")
+
+
+def test_creator_validation_errors_are_field_scoped_and_actionable() -> None:
+    service = CharacterCreatorService()
+    draft = _draft().model_copy(update={"adult_only_confirmed": False})
+
+    response = service.validate_draft(draft)
+
+    assert response.valid is False
+    assert response.blueprint is None
+    assert response.errors
+    assert all(": " in error for error in response.errors)
+    assert any("adult" in error.lower() for error in response.errors)
+
+
+def test_import_rejects_unknown_kind_with_helpful_choice_message(tmp_path) -> None:
+    service = CharacterCreatorService(
+        draft_repository=CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    )
+
+    try:
+        service.import_payload(
+            CharacterManagementImportRequest(
+                payload={
+                    "kind": "legacy_card",
+                    "data": _draft().model_dump(mode="json"),
+                }
+            )
+        )
+    except ValueError as exc:
+        message = str(exc).lower()
+        assert "unsupported character import kind" in message
+        assert "draft" in message
+        assert "character" in message
+    else:
+        raise AssertionError("Expected unknown import kind to be rejected clearly")
+
+
+def test_delete_character_confirmation_message_names_required_display_name(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "characters.sqlite3"
+    character_service = __import__(
+        "app.services.character_service", fromlist=["CharacterService"]
+    ).CharacterService(CharacterRepository(db_path))
+    service = CharacterCreatorService(
+        draft_repository=CreatorDraftRepository(db_path),
+        character_service=character_service,
+    )
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+    service.finalize_draft("draft-aria")
+
+    try:
+        service.delete_character(
+            "draft_aria",
+            CharacterDeleteRequest(confirm=True, expected_display_name="Aria Moon"),
+        )
+    except ValueError as exc:
+        message = str(exc)
+        assert "confirm=true" in message
+        assert "'Aria'" in message
+        assert "accidental deletion" in message
+    else:
+        raise AssertionError("Expected exact display-name confirmation to be required")

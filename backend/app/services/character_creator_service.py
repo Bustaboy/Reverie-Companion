@@ -822,7 +822,10 @@ class CharacterCreatorDraftListResponse(BaseModel):
 class CreatorDraftNotFoundError(LookupError):
     def __init__(self, draft_id: str) -> None:
         self.draft_id = draft_id
-        super().__init__(f"Creator draft '{draft_id}' was not found.")
+        super().__init__(
+            f"Creator draft '{draft_id}' was not found. It may have been deleted, "
+            "finalized and cleaned up, or never saved. Refresh the draft list before trying again."
+        )
 
 
 class DraftMomentCaptureRequest(BaseModel):
@@ -1115,6 +1118,11 @@ class CharacterCreatorService:
         payload = request.payload
         kind = request.import_as or payload.get("kind")
         data = payload.get("data", payload)
+        if kind not in {None, "draft", "character"}:
+            raise ValueError(
+                "Unsupported character import kind. Choose 'draft' to keep editing "
+                "or 'character' to import a finalized character."
+            )
         if kind == "character":
             self._require_character_service()
             bp = CharacterBlueprint.model_validate(data)
@@ -1169,7 +1177,9 @@ class CharacterCreatorService:
             or request.expected_display_name != bp.identity.display_name
         ):
             raise ValueError(
-                "Deleting a finalized character requires confirm=true and the exact display name."
+                "Deleting a finalized character requires confirm=true and the exact "
+                f"display name '{bp.identity.display_name}'. This protects finalized "
+                "companions from accidental deletion."
             )
         return self._character_service.delete(character_id)
 
@@ -1298,14 +1308,25 @@ class CharacterCreatorService:
         except ValidationError as exc:
             return DraftValidationResponse(
                 valid=False,
-                errors=[
-                    f"{'.'.join(str(p) for p in error['loc'])}: {error['msg']}"
-                    for error in exc.errors()
-                ],
+                errors=self._format_validation_errors(exc),
             )
         except ValueError as exc:
             return DraftValidationResponse(valid=False, errors=[str(exc)])
         return DraftValidationResponse(valid=True, blueprint=blueprint)
+
+    @staticmethod
+    def _format_validation_errors(exc: ValidationError) -> list[str]:
+        """Return creator-friendly validation messages with actionable field paths."""
+
+        messages: list[str] = []
+        for error in exc.errors():
+            loc = ".".join(
+                str(part) for part in error.get("loc", ()) if part != "__root__"
+            )
+            field = loc or "draft"
+            message = str(error.get("msg", "Invalid value"))
+            messages.append(f"{field}: {message}")
+        return messages or ["draft: The creator draft could not be validated."]
 
     def generate_greeting_preview(
         self, draft: CharacterCreatorDraft, *, include_prompt_context: bool = True
