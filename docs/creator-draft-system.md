@@ -1,6 +1,6 @@
 # Creator Draft System
 
-**Status:** M6-P08 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
+**Status:** M6-P09 foundation complete. This is a practical runtime note for future creator tasks, not a full user guide.
 
 ## What a draft is
 
@@ -33,6 +33,11 @@ The draft is therefore not a second character store. It is a staging area. The d
 | Greeting preview | Generates a deterministic, non-persisted first-message preview from either an unsaved draft payload or a persisted draft ID. |
 | Example dialogue previews | Generates deterministic, non-persisted example dialogues from either an unsaved draft payload or a persisted draft ID. |
 | Delete | Removes a persisted draft without touching finalized character blueprints. |
+| Review | Returns a practical review package with a blueprint summary, validation result, preview quality report, and review provenance. |
+| Finalize/save | Saves a valid persisted draft as a durable `CharacterBlueprint` through the character service and records finalization provenance. |
+| Duplicate draft | Creates a new draft copy with a new draft ID, no bound character ID, copy naming, and duplicate provenance. |
+| Import/export | Reads and writes versioned draft or character management envelopes with provenance and import metadata. |
+| Finalized-character duplicate/delete | Duplicates saved characters with fresh IDs and deletes finalized characters only after explicit confirmation. |
 | First portrait capture | Queues Moment Capture from either an unsaved draft payload or a persisted draft ID. |
 
 ## Supported identity fields
@@ -299,7 +304,101 @@ Unsaved preview requests use `DraftPreviewRequest`, which includes the `draft` a
 
 Preview generation does not create a chat session, write memories, write reflection journal entries, create training candidates, approve visual canon, or save a finalized `CharacterBlueprint`. Preview response metadata explicitly marks storage as `not_persisted`.
 
-This separation matters for product trust: previews are evidence and editing feedback while the companion is still a draft. The final character remains created only by a later review/save flow that writes through the character service. Until then, draft previews can be regenerated, compared, discarded, or used for validation without mutating canonical character state.
+This separation matters for product trust: previews are evidence and editing feedback while the companion is still a draft. The final character is created only by the M6-P09 review/finalize save flow that writes through the character service. Until that explicit finalization happens, draft previews can be regenerated, compared, discarded, or used for validation without mutating canonical character state.
+
+
+## Creator management flows
+
+M6-P09 adds the basic management layer around the draft system. These flows are intentionally character-level and local-first. They are not full app backup, cloud sync, binary asset packing, or a replacement for the later practical creator UI polish.
+
+### Review flow with quality reporting
+
+The review flow is the required pre-save checkpoint. It can be run against either an unsaved draft payload or a persisted draft ID:
+
+| Endpoint | Draft source | Behavior |
+|---|---|---|
+| `POST /api/characters/creator/review` | Request body is a full `CharacterCreatorDraft`. | Builds a temporary blueprint preview, summarizes it, validates it, and returns review provenance without persistence. |
+| `POST /api/characters/creator/drafts/{draft_id}/review` | Loads an existing persisted draft. | Returns the same review package for a saved draft without modifying the draft or saving a character. |
+
+A successful review response includes:
+
+- `summary`: practical sections for identity, relationship, personality, communication, roleplay policy, visual identity, world/scene hints, memory, growth, content boundaries, tags, creator notes, and metadata.
+- `validation`: the same blueprint-based validation result used elsewhere, including the temporary `CharacterBlueprint` when valid.
+- `preview_quality`: a `PreviewQualityReport` generated from the deterministic greeting preview path with prompt context omitted for lighter review payloads.
+- `provenance`: `source: "m6_p09_creator_management_review"`, review timestamp, and the applied adult-only/roleplay-first validation policy.
+
+If draft validation fails, review still returns a useful package: the summary falls back to identity plus raw draft fields and validation errors, and the quality report contains an error issue explaining that preview quality is blocked until validation passes. This lets UI show actionable problems instead of silently hiding the review step.
+
+### Finalize / save flow: draft to `CharacterBlueprint`
+
+Finalization is the point where a draft becomes canonical runtime character data. The endpoint is:
+
+| Endpoint | Request | Result |
+|---|---|---|
+| `POST /api/characters/creator/drafts/{draft_id}/finalize` | `FinalizeDraftRequest` with `delete_draft_after_finalize` defaulting to `false`. | Returns the saved `CharacterBlueprint` wrapped as `CharacterResponse` with HTTP 201. |
+
+The service loads the persisted draft, maps it through the normal draft-to-blueprint validator, rejects invalid drafts with `creator_draft_invalid`, and saves only a valid blueprint through the character service. The saved blueprint receives `metadata.creator_finalization` with the source draft ID, `finalized_at`, `source: "m6_p09_finalize_draft"`, and `review_required: true`.
+
+By default, finalization does not delete the draft. If `delete_draft_after_finalize` is true, the draft is removed after the character saves successfully. This keeps recovery safe: a failed save does not destroy creator work-in-progress, and users can keep a draft as a template unless they explicitly choose cleanup.
+
+### Duplicate flows
+
+M6-P09 supports duplication for both unfinished drafts and finalized characters.
+
+| Flow | Endpoint | Behavior |
+|---|---|---|
+| Duplicate draft | `POST /api/characters/creator/drafts/{draft_id}/duplicate` | Creates a new persisted draft with a generated `draft_...` ID, clears `character_id`, appends ` Copy` to the display name, and records `duplicated_from_draft_id` in draft metadata. |
+| Duplicate finalized character | `POST /api/characters/{character_id}/duplicate` | Creates a new saved `CharacterBlueprint` with either requested or generated `character_id`, either requested or copy display name, refreshed timestamps, relationship/growth policy character IDs retargeted to the copy, and duplicate provenance metadata. |
+
+Draft duplication is useful for trying variations before save. Character duplication is useful after finalization when the user wants a new durable character based on an existing one. Neither flow mutates the source object.
+
+### Export flow and envelope format
+
+Exports use one practical management envelope for both drafts and finalized characters:
+
+```json
+{
+  "format_version": "reverie.character_management.v1",
+  "kind": "draft",
+  "exported_at": "2026-06-14T00:00:00Z",
+  "data": {},
+  "provenance": {
+    "source": "m6_p09_export"
+  }
+}
+```
+
+| Endpoint | Kind | Data payload | Provenance |
+|---|---|---|---|
+| `GET /api/characters/creator/drafts/{draft_id}/export` | `draft` | Full `CharacterCreatorDraftRecord` JSON, including draft, timestamps, schema version, validation-facing metadata, and preserved unknown-safe metadata. | Includes `source: "m6_p09_export"` and `draft_id`. |
+| `GET /api/characters/{character_id}/export` | `character` | Full `CharacterBlueprint` JSON, including identity, relationship, visual identity, memory policy, growth policy, roleplay/integrity policy, timestamps, and metadata. | Includes `source: "m6_p09_export"` and `character_id`. |
+
+The envelope is versioned so future importers can migrate formats. Large binary assets are not packed by this flow. Existing asset/capture metadata references may remain inside blueprint or draft metadata when already present, but M6-P09 does not implement a full asset manager or full app backup.
+
+### Import flow and provenance
+
+Imports use a single endpoint:
+
+| Endpoint | Request | Result |
+|---|---|---|
+| `POST /api/characters/creator/import` | `CharacterManagementImportRequest` with `payload`, optional `import_as` (`draft` or `character`), and `duplicate_ids` defaulting to `true`. | Returns either a `CharacterCreatorDraftResponse` or a saved `CharacterResponse`. |
+
+The importer reads `kind` from `import_as` or the envelope's `kind`, then reads `data` from the envelope's `data` field. Draft imports accept either a full exported `CharacterCreatorDraftRecord` or a raw draft-shaped payload. Character imports validate the payload as a `CharacterBlueprint` before saving.
+
+When `duplicate_ids` is true, imported drafts receive a fresh `draft_...` ID and clear any draft-bound `character_id`; imported characters receive a fresh `char_...` ID, refreshed timestamps, and retargeted relationship/growth policy character IDs. Every import records metadata with `source: "m6_p09_import"`, `imported_at`, and the source `format_version` when available.
+
+This provenance matters for review and debugging: imported content can be shown as imported without pretending it was created natively in the current session. Invalid payloads are rejected with `character_import_invalid` rather than partially saving broken character data.
+
+### Safe delete flow with confirmation gating
+
+There are two delete concepts, and they must stay distinct:
+
+| Delete target | Endpoint | Confirmation behavior |
+|---|---|---|
+| Persisted draft | `DELETE /api/characters/creator/drafts/{draft_id}` | Deletes only creator work-in-progress. It does not touch finalized characters. UI should still use discard confirmation because user work can be lost. |
+| Finalized character | `DELETE /api/characters/{character_id}` | Requires request body `confirm: true` and `expected_display_name` exactly matching the saved character's display name. |
+
+If finalized-character confirmation is missing or the display name does not match, the API returns `409` with `code: "character_delete_confirmation_required"`. This prevents accidental deletion from a mis-click, stale UI row, or generic confirm dialog. The delete operation removes the saved character through the character service; it is not a silent cascade for memories, images, or full app data. Later trust/dashboard work may add richer tombstone and linked-data review behavior, but M6-P09's guarantee is the confirmation gate and character-record delete boundary.
 
 ## Draft validation and mapping
 
@@ -348,7 +447,7 @@ This keeps future UI steps honest: if a creator field cannot map into runtime da
 - Pacing and default intimacy are starting-frame hints for chat/prompt behavior; roleplay boundaries, safewords, OOC commands, and fade-to-black preferences now live in the M6-P04 draft policy fields.
 - Personality and communication fields are behavior anchors for compiled prompts and previews; they are not active planning, autonomous outreach, or guaranteed model behavior.
 - Greeting and example dialogue preview controls can call the M6-P08 preview endpoints, but accepted/saved greeting text, alternate greeting storage, and editable dialogue libraries remain review/save or later workflow concerns.
-- Nickname/short name, occupation/role beyond compact story-role text, perspective mode, humor-style subfields, pet names, catchphrases, speech quirks, dedicated art style, asset/reference attachment UI, and portrait approval UI should only be exposed according to the capability matrix status; they are not part of the M6-P08 draft-supported preview contract.
+- Nickname/short name, occupation/role beyond compact story-role text, perspective mode, humor-style subfields, pet names, catchphrases, speech quirks, dedicated art style, asset/reference attachment UI, and portrait approval UI should only be exposed according to the capability matrix status; they are not part of the M6-P09 draft-supported management contract.
 
 ## Moment Capture integration
 
@@ -356,13 +455,14 @@ Creator drafts can trigger first-portrait Moment Capture before the character is
 
 Draft capture metadata uses the `draft_` prefix consistently, including the draft ID, source context (`chat` or `visual_novel`), capture intent, provenance, evidence-only status, rollback note, and the explicit rule that canonical mutation is not allowed while the character is still a draft.
 
-This means first portraits can use the same M5 capture, gallery, feedback, review, and rollback patterns without creating a parallel visual canon store. Approved portrait/canon behavior still belongs to later creator save/review tasks; draft captures are evidence for validation until finalization.
+This means first portraits can use the same M5 capture, gallery, feedback, review, and rollback patterns without creating a parallel visual canon store. Approved portrait/canon behavior still belongs to later portrait approval/reference UI work; draft captures are evidence for validation until finalization.
 
 ## Current limits and next-task guidance
 
 - There is no full practical creator UI yet; the foundation is backend/runtime-facing.
 - Drafts are not backend-synced beyond local app persistence.
-- Draft finalization into a durable saved character remains a later M6 review/save flow.
-- Import/export and richer field-impact evals remain later M6 work; greeting/dialogue previews are available now as deterministic, non-persisted draft previews.
-- Full lorebooks/canon retrieval, remember/never-remember category controls, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P08 behavior.
+- Draft finalization into a durable saved character is available through the M6-P09 finalize/save flow.
+- Basic draft/character import and export are available through the M6-P09 management envelope; full app backup/export, binary asset packing, and cloud sync remain out of scope.
+- Richer field-impact evals remain later M6 work; greeting/dialogue previews are available now as deterministic, non-persisted draft previews.
+- Full lorebooks/canon retrieval, remember/never-remember category controls, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P09 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.
