@@ -101,7 +101,7 @@ def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     assert any("adult" in error.lower() for error in response.errors)
 
 
-def test_creator_draft_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -> None:
+def test_draft_capture_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -> None:
     async def run_test() -> None:
         image_service = make_service(
             tmp_path, FakeCoordinator(free_vram_mb=7000), FakeAdapter()
@@ -136,18 +136,18 @@ def test_creator_draft_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
         assert chat_response.job.status == ImageJobStatus.queued
         assert vn_response.job.status == ImageJobStatus.queued
         assert chat_response.record.character_id == "draft_aria"
-        assert vn_response.record.metadata["creator_runtime_source"] == "visual_novel"
-        assert chat_response.record.metadata["creator_draft"] is True
+        assert vn_response.record.metadata["draft_source_context"] == "visual_novel"
+        assert chat_response.record.metadata["draft_capture"] is True
         assert chat_response.record.metadata["draft_id"] == "draft-aria"
-        assert chat_response.record.metadata["source_context"] == "chat"
+        assert chat_response.record.metadata["draft_source_context"] == "chat"
         assert (
-            chat_response.record.metadata["capture_intent"]
+            chat_response.record.metadata["draft_capture_intent"]
             == "first portrait from creator draft"
         )
-        assert "evidence-only" in chat_response.record.metadata["rollback_note"]
-        assert chat_response.record.metadata["canonical_mutation_allowed"] is False
+        assert "evidence-only" in chat_response.record.metadata["draft_rollback_note"]
+        assert chat_response.record.metadata["draft_canonical_mutation_allowed"] is False
         assert (
-            chat_response.record.metadata["provenance"]
+            chat_response.record.metadata["draft_provenance"]
             == "character_creator_draft_first_portrait"
         )
         assert image_service._jobs[chat_response.job.job_id].source == "moment_capture"
@@ -160,13 +160,13 @@ def test_creator_draft_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
         assert (
             image_service._jobs[chat_response.job.job_id].context["moment_capture"][
                 "request_metadata"
-            ]["creator_draft"]
+            ]["draft_capture"]
             is True
         )
         assert (
             image_service._jobs[chat_response.job.job_id].context["moment_capture"][
                 "scene_state"
-            ]["metadata"]["source_context"]
+            ]["metadata"]["draft_source_context"]
             == "chat"
         )
         assert (
@@ -209,9 +209,9 @@ def test_creator_first_portrait_feedback_uses_existing_review_and_rollback_patte
         assert feedback.visual_change_event is not None
         assert feedback.visual_change_event.rollback_available is True
         assert feedback.visual_change_event.capture_id == response.record.capture_id
-        assert feedback.visual_change_event.metadata["creator_draft"] is True
+        assert feedback.visual_change_event.metadata["draft_capture"] is True
         assert feedback.visual_change_event.metadata["draft_id"] == "draft-aria"
-        assert feedback.visual_change_event.metadata["source_context"] == "chat"
-        assert "evidence-only" in feedback.visual_change_event.metadata["rollback_note"]
+        assert feedback.visual_change_event.metadata["draft_source_context"] == "chat"
+        assert "evidence-only" in feedback.visual_change_event.metadata["draft_rollback_note"]
 
     asyncio.run(run_test())

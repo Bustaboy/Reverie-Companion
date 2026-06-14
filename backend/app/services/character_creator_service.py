@@ -8,8 +8,13 @@ Persistence/migration note: ``CharacterCreatorDraft`` is API-only for P00A. If
 later milestones persist drafts, store the draft schema version alongside the
 mapped blueprint ID and preserve ``metadata`` losslessly for forward migration.
 Draft first-portrait captures add lightweight provenance fields to request,
-record, image-job context, and follow-up visual-change events: ``creator_draft``,
-``draft_id``, ``source_context``, ``capture_intent``, and ``rollback_note``.
+record, image-job context, and follow-up visual-change events. Capture-specific
+fields use the ``draft_`` prefix consistently: ``draft_capture``, ``draft_id``,
+``draft_character_id``, ``draft_source_context``, ``draft_capture_intent``,
+``draft_rollback_note``, ``draft_provenance``, ``draft_evidence_only``, and
+``draft_canonical_mutation_allowed``. These fields identify creator-draft output
+for filtering, explain provenance, and make rollback/review paths explicit before
+the draft is saved as canonical character data.
 """
 
 from __future__ import annotations
@@ -225,17 +230,17 @@ class CharacterCreatorService:
                 blueprint.visual_identity.updated_at,
             ),
             quality_preset=request.quality_preset,
-            metadata=self._draft_capture_metadata(
+            metadata=self._build_draft_capture_metadata(
                 request=request, character_id=blueprint.character_id
             ),
         )
         LOGGER.info(
             "Queued creator draft first-portrait Moment Capture",
             extra={
-                "creator_draft": True,
+                "draft_capture": True,
                 "draft_id": request.draft.draft_id,
                 "character_id": blueprint.character_id,
-                "source_context": request.source.value,
+                "draft_source_context": request.source.value,
             },
         )
         service = self._moment_capture_service
@@ -278,22 +283,31 @@ class CharacterCreatorService:
             wrong_appearance=list(blueprint.visual_identity.rejected_traits),
             metadata={
                 "source": source.value,
-                "creator_draft": True,
-                "source_context": source.value,
-                "creator_first_portrait": True,
-                "rollback_note": self._draft_rollback_note(),
+                "draft_capture": True,
+                "draft_source_context": source.value,
+                "draft_first_portrait": True,
+                "draft_rollback_note": self._build_draft_rollback_note(),
             },
         )
 
     def _with_draft_scene_metadata(
         self, scene_state: SceneState, *, source: DraftMomentSource
     ) -> SceneState:
+        """Attach draft capture markers to SceneState without changing scene intent.
+
+        Draft-triggered SceneState metadata is expected to include
+        ``draft_capture``, ``draft_source_context``, ``draft_first_portrait``,
+        and ``draft_rollback_note``. These fields travel into prompt/job context
+        for filtering and provenance, while continuity notes make the
+        evidence-only rollback expectation visible during review.
+        """
+
         metadata = {
             **scene_state.metadata,
-            "creator_draft": True,
-            "source_context": source.value,
-            "creator_first_portrait": True,
-            "rollback_note": self._draft_rollback_note(),
+            "draft_capture": True,
+            "draft_source_context": source.value,
+            "draft_first_portrait": True,
+            "draft_rollback_note": self._build_draft_rollback_note(),
         }
         continuity_notes = list(scene_state.continuity_notes)
         for note in (
@@ -306,33 +320,41 @@ class CharacterCreatorService:
             update={"metadata": metadata, "continuity_notes": continuity_notes}
         )
 
-    def _draft_capture_metadata(
+    def _build_draft_capture_metadata(
         self, *, request: DraftMomentCaptureRequest, character_id: str
     ) -> dict[str, Any]:
         """Return filterable provenance for evidence-only draft captures.
 
-        These fields are intentionally duplicated at the top level of capture
-        records and image-job context so future gallery/review migration tasks
-        can filter draft captures without parsing nested draft structures.
+        Draft-triggered MomentCaptureRequest metadata is expected to include the
+        complete standardized ``draft_`` field set returned here. These fields
+        are intentionally duplicated at the top level of capture records and
+        image-job context so future gallery/review migration tasks can filter
+        draft captures without parsing nested draft structures.
+
+        Filtering: ``draft_capture``, ``draft_id``, ``draft_character_id``, and
+        ``draft_source_context`` identify draft-originated captures. Provenance:
+        ``draft_capture_intent``, ``draft_provenance``, and
+        ``draft_queue_policy`` explain why/how the capture was queued. Rollback:
+        ``draft_rollback_note``, ``draft_evidence_only``, and
+        ``draft_canonical_mutation_allowed`` document that draft captures cannot
+        mutate canon until an explicit later review flow permits it.
         """
 
         return {
-            "creator_draft": True,
+            "draft_capture": True,
             "draft_id": request.draft.draft_id,
             "draft_character_id": character_id,
-            "source_context": request.source.value,
-            "capture_intent": request.capture_intent,
-            "rollback_note": self._draft_rollback_note(),
-            "creator_draft_id": request.draft.draft_id,
-            "creator_runtime_source": request.source.value,
-            "provenance": "character_creator_draft_first_portrait",
-            "queue_policy": "non_blocking_preview_8gb",
-            "evidence_only": True,
-            "canonical_mutation_allowed": False,
+            "draft_source_context": request.source.value,
+            "draft_capture_intent": request.capture_intent,
+            "draft_rollback_note": self._build_draft_rollback_note(),
+            "draft_provenance": "character_creator_draft_first_portrait",
+            "draft_queue_policy": "non_blocking_preview_8gb",
+            "draft_evidence_only": True,
+            "draft_canonical_mutation_allowed": False,
         }
 
     @staticmethod
-    def _draft_rollback_note() -> str:
+    def _build_draft_rollback_note() -> str:
         return (
             "Creator draft capture is evidence-only for first-portrait review; "
             "it does not mutate canonical character data unless a later explicit "
