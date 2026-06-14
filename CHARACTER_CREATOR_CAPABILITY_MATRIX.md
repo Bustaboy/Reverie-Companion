@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 3.4
-**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state; M6-P07 documented draft-supported memory and growth preference fields and their mapping into `CharacterMemoryPolicy` and `GrowthPolicy`; M6-P08 added deterministic greeting and example dialogue previews with `PreviewQualityReport` validation for unsaved and persisted drafts. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Version:** 3.5
+**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state; M6-P07 documented draft-supported memory and growth preference fields and their mapping into `CharacterMemoryPolicy` and `GrowthPolicy`; M6-P08 added deterministic greeting and example dialogue previews with `PreviewQualityReport` validation for unsaved and persisted drafts; M6-P09 added draft review, finalize/save, duplicate, import/export envelope, and confirmation-gated finalized-character delete flows. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P08
+## 0.1 Current Runtime Reality After M6-P09
 
 The current repo already has these runtime foundations:
 
@@ -43,7 +43,7 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01/P02/P03/P04/P05/P06/P07/P08 added these creator-draft foundations:
+M6-P00A/P01/P02/P03/P04/P05/P06/P07/P08/P09 added these creator-draft and management foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
@@ -63,11 +63,18 @@ M6-P00A/P01/P02/P03/P04/P05/P06/P07/P08 added these creator-draft foundations:
 - `PreviewQualityReport` coverage/consistency checks for identity, personality, communication style, relationship, roleplay policy, world/scene hints, visual identity, memory, growth, avoid-style leakage, hard-limit leakage, and adult-only baseline violations.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
+M6-P09 management additions:
+
+- Draft review returns a blueprint summary, validation result, `PreviewQualityReport`, and review provenance for unsaved or persisted drafts.
+- Draft finalization saves a validated draft as a durable `CharacterBlueprint` through the character service, with `creator_finalization` metadata and optional draft cleanup.
+- Draft and finalized-character duplicate flows create new IDs, preserve intended runtime fields, and record duplicate provenance metadata.
+- Basic import/export uses a versioned `reverie.character_management.v1` envelope for drafts or finalized characters, preserves provenance, and records import metadata.
+- Finalized-character delete is confirmation-gated with `confirm=true` and exact display-name matching; draft delete remains scoped to draft work-in-progress only.
+
 Important current gaps:
 
 - Full practical creator UI is still pending.
-- Draft finalization through review/save into durable character management is still M6-P09 scope.
-- Import/export, asset/reference attachment UI, first-portrait approval UI, and broader field-impact evals remain later M6 tasks.
+- Asset/reference attachment UI, first-portrait approval UI, broader field-impact evals, and full app backup/export remain later tasks.
 
 ---
 
@@ -181,7 +188,7 @@ These fields define who the character is and how all subsystems reference her. B
 | `origin_archetype` | Medium | Chat, lore, creator presets | NOW/STORE | M6-store-only | Stored in `CharacterIdentity`; prompt-consumed | M7 Genesis | Choice card examples |
 | `creator_notes` | Medium | Import/export, debugging | NOW/STORE | M6-store-only | Stored in `CharacterIdentity`; not revealed in prompt | M6 Advanced | Not user-facing by default |
 | `tags` | Medium | Gallery, search, packs | NOW/STORE | M6-ready | Stored and summarized; future index/search richer | M6 Basic Creator | None |
-| `import_source` | Medium | SillyTavern import/export | STORE | M6-blocking runtime | Stored, but M6-P09 must add basic import/export flow | M6 Basic Creator | Import summary |
+| `import_source` | Medium | SillyTavern import/export | STORE/PARTIAL | M6-ready foundation | Basic Reverie draft/character import/export envelopes exist with provenance; broader SillyTavern normalization and asset packing remain limited by existing import-service support | M6 Basic Creator | Import summary |
 | `privacy_scope` | High | Local storage, export/delete | NOW/STORE | M6-ready | Existing `PrivacyScope`; broader trust UI later | M6 Advanced | Settings/trust summary |
 
 ---
@@ -530,7 +537,7 @@ This is not “less fun.” It is what prevents the companion from becoming a cl
 | `meta.safeword_policy` | Critical | Chat, UI, trust | NOW/STORE | M6-ready | Draft-supported safeword, OOC marker, pause commands, fade-to-black preference, and policy note; maps to `MetaConsentAndSafewordPolicy` and `RoleplayPolicy.safeword_policy` | M6 Basic Creator for dark modes | Safeword/OOC test |
 | `healthy_bond_runtime_guardrails_visible` | High | UX/trust | PARTIAL | M8 Alpha | Integrity policy exists; visible health/trust dashboard later | M8+ Alpha | Settings summary |
 | `memory_transparency_level` | Critical | Memory browser | NOW-ish | M6-preview-only | Browser exists; memory receipts later | M6 Basic Creator | Memory receipt preview |
-| `data_export_delete_policy` | Critical | Trust | PARTIAL | M8 Alpha | Character delete exists; full export/import M6/M8 | M8+ Alpha | Trust panel |
+| `data_export_delete_policy` | Critical | Trust | PARTIAL | M6-ready foundation / M8 Alpha | M6-P09 covers per-character export/import envelopes and confirmation-gated finalized-character delete; full app backup/export, asset packing, and trust dashboard stay M8 | M8+ Alpha | Trust panel |
 | `training_data_policy` | Critical | LoRA/future monetization | NOW-ish | M6-ready | Existing opt-in foundation + no training from M5 visual feedback | M6 Basic Creator | Trust panel |
 | `private_journal_policy` | High | Journal/growth | NOW-ish | M6-ready | Existing journal visibility/growth policy | M6 Basic Creator | Journal preview |
 | `serious_real_life_distress_mode` | High | Chat/safety | NEEDS_RUNTIME | M8 Alpha | Safety behavior policy later | M8+ Alpha | Not romanticized |
@@ -579,7 +586,7 @@ These replace the old “fields Reverie cannot fully process yet” list. M4/M5 
 | 6 | Memory preference baseline | Trust-critical creator controls must do something real | `remember_categories`, `never_remember_categories`, review defaults or clear preview-only limits | M6-P07 |
 | 7 | Basic boundary/user preference mapping | Complete foundation: draft roleplay/boundary choices have storage, validation, and blueprint mapping | `integrity`, `roleplay`, `meta.safeword_policy`, and `content_boundaries` draft fields | M6-P04 complete |
 | 8 | First portrait validation | Foundation complete; creator validation UI still pending | Moment Capture from unsaved or persisted draft works with draft provenance; visual identity fields are documented and mapped, while approve/retry/save-reference UX remains later M6 UI work | M6-P00A/P01/P05 complete / UI pending |
-| 9 | Basic character import/export | M4 API lacks full import/export; M6 owns character-level portability | Export/import blueprint + assets metadata, not full app backup | M6-P09 |
+| 9 | Basic character import/export | Complete foundation: M6 owns character-level portability without full app backup | Versioned draft/character management envelope with provenance; large binary asset packing remains out of scope | M6-P09 complete |
 | 10 | Lore-lite/default scene | M6 creator needs a world/default scene without full lorebook | Small default scene/scenario fields + prompt/image preview | M6-P06 |
 | 11 | Creator field-impact eval harness | Prevents wizard from lying | Tests proving field changes prompt/preview/capture metadata | M6-P10 |
 | 12 | Target hardware/package validation | Needed for productization, not M6 creator logic | Real RTX 4070 8GB mobile packaged smoke | M8-P09 |
@@ -833,7 +840,7 @@ Build next:
 4. World/default scene lore-lite step.
 5. Memory/growth preference baseline.
 6. Greeting/dialogue preview engine.
-7. Character review/save/edit/duplicate/import/export/delete.
+7. **M6-P09:** Character review/save, duplicate, import/export, and confirmation-gated delete foundation.
 8. Creator eval harness and docs/accessibility pass.
 
 Do not build full Genesis here. Do not sneak in M8 or M9 runtime just to make the wizard feel larger. Bigger is not better; sometimes bigger is just an error message with ambition.
