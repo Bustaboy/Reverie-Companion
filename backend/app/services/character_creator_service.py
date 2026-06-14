@@ -24,7 +24,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.models.image import ImageQualityPreset
 from app.schemas.character_blueprint import (
@@ -59,7 +59,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 4
+DRAFT_SCHEMA_VERSION = 5
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -231,6 +231,138 @@ class CreatorDraftContentBoundaries(BaseModel):
         return _normalize_optional_text(value, "Content boundaries")
 
 
+class CreatorDraftVisualIdentity(BaseModel):
+    """Creator-facing visual fields with stable anchors separated from scene state.
+
+    These fields are intentionally explicit so the creator can persist user
+    choices without asking users to hand-author ``VisualIdentityProfile`` JSON.
+    Stable identity anchors map to ``VisualIdentityProfile.identity_anchors``;
+    hair/accessory/fashion details map to evolving traits; outfit/pose/expression
+    map only to scene-mutable traits.
+    """
+
+    eye_color: str | None = Field(default=None, max_length=80)
+    skin_tone: str | None = Field(default=None, max_length=120)
+    face_structure: str | None = Field(default=None, max_length=160)
+    body_baseline: str | None = Field(default=None, max_length=160)
+    species_features: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    permanent_marks: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    hair: str | None = Field(default=None, max_length=160)
+    accessories: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    fashion_identity: str | None = Field(default=None, max_length=160)
+    outfit: str | None = Field(default=None, max_length=160)
+    pose: str | None = Field(default=None, max_length=160)
+    expression: str | None = Field(default=None, max_length=160)
+    rejected_visual_traits: list[str] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS
+    )
+
+    @field_validator(
+        "eye_color",
+        "skin_tone",
+        "face_structure",
+        "body_baseline",
+        "hair",
+        "fashion_identity",
+        "outfit",
+        "pose",
+        "expression",
+        mode="after",
+    )
+    @classmethod
+    def normalize_visual_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "Visual identity")
+
+    @field_validator(
+        "species_features",
+        "permanent_marks",
+        "accessories",
+        "rejected_visual_traits",
+        mode="after",
+    )
+    @classmethod
+    def normalize_visual_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(values, field_name="Visual identity")
+
+    @model_validator(mode="after")
+    def validate_anchor_scene_separation(self) -> "CreatorDraftVisualIdentity":
+        scene_words = ("outfit", "clothes", "dress", "pose", "expression", "smile")
+        stable_values = {
+            "eye_color": self.eye_color,
+            "skin_tone": self.skin_tone,
+            "face_structure": self.face_structure,
+            "body_baseline": self.body_baseline,
+        }
+        for field_name, value in stable_values.items():
+            if value and any(word in value.lower() for word in scene_words):
+                raise ValueError(
+                    f"{field_name} must describe stable identity, not scene-mutable outfit, pose, or expression details."
+                )
+        return self
+
+    def to_profile(
+        self, base: VisualIdentityProfile | None = None
+    ) -> VisualIdentityProfile:
+        profile = base or VisualIdentityProfile()
+        anchors = list(profile.identity_anchors)
+        for label, value in (
+            ("eye color", self.eye_color),
+            ("skin tone", self.skin_tone),
+            ("face structure", self.face_structure),
+            ("body baseline", self.body_baseline),
+        ):
+            if value:
+                fragment = f"{label}: {value}"
+                if fragment not in anchors:
+                    anchors.append(fragment)
+        for label, values in (
+            ("species features", self.species_features),
+            ("permanent marks", self.permanent_marks),
+        ):
+            for value in values:
+                fragment = f"{label}: {value}"
+                if fragment not in anchors:
+                    anchors.append(fragment)
+
+        scene_traits = list(profile.scene_mutable_traits)
+        for label, value in (
+            ("outfit", self.outfit),
+            ("pose", self.pose),
+            ("expression", self.expression),
+        ):
+            if value:
+                fragment = f"{label}: {value}"
+                if fragment not in scene_traits:
+                    scene_traits.append(fragment)
+
+        rejected = list(profile.rejected_traits)
+        for value in self.rejected_visual_traits:
+            if value not in rejected:
+                rejected.append(value)
+
+        profile = profile.model_copy(
+            update={
+                "identity_anchors": anchors[:MAX_LIST_ITEMS],
+                "scene_mutable_traits": scene_traits[:MAX_LIST_ITEMS],
+                "rejected_traits": rejected[:MAX_LIST_ITEMS],
+                "updated_at": utc_now_iso(),
+            }
+        )
+        for name, value in (
+            ("hair", self.hair),
+            ("fashion_identity", self.fashion_identity),
+        ):
+            if value:
+                profile = profile.with_evolving_trait(
+                    name, value, provenance="creator_draft_visual_identity"
+                )
+        for accessory in self.accessories:
+            profile = profile.with_evolving_trait(
+                "accessory", accessory, provenance="creator_draft_visual_identity"
+            )
+        return profile
+
+
 class DraftMomentSource(StrEnum):
     chat = "chat"
     visual_novel = "visual_novel"
@@ -280,6 +412,9 @@ class CharacterCreatorDraft(BaseModel):
     )
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
+    visual: CreatorDraftVisualIdentity = Field(
+        default_factory=CreatorDraftVisualIdentity
+    )
     visual_identity: VisualIdentityProfile = Field(
         default_factory=VisualIdentityProfile
     )
@@ -382,6 +517,7 @@ class CharacterCreatorDraftUpdate(BaseModel):
     )
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
+    visual: CreatorDraftVisualIdentity | None = None
     visual_identity: VisualIdentityProfile | None = None
     tags: list[str] | None = Field(default=None, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -612,14 +748,15 @@ class CharacterCreatorService:
                 pause_commands=draft.meta.safeword_policy.pause_commands,
                 fade_to_black_preference=draft.meta.safeword_policy.fade_to_black_preference,
             ),
-            visual_identity=draft.visual_identity,
+            visual_identity=draft.visual.to_profile(draft.visual_identity),
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p04_roleplay_policy_draft",
+                    "source": "m6_p05_visual_identity_draft",
                     "migration_note": (
-                        "API-only draft roleplay policy fields are mapped into "
-                        "runtime CharacterBlueprint structures before final save."
+                        "API-only draft roleplay policy and visual identity fields "
+                        "are mapped into runtime CharacterBlueprint structures "
+                        "before final save."
                     ),
                 },
                 "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
