@@ -1,8 +1,8 @@
 # Global Coding Prompt for Reverie
 
-**Version**: 1.5  
-**Date**: June 13, 2026  
-**Purpose**: Master coding prompt for GPT-5.5, GPT-Codex 5.5, Cursor, and similar tools working on Reverie.
+**Version**: 1.6  
+**Date**: June 14, 2026  
+**Purpose**: Master coding prompt for GPT-5.5, GPT-Codex 5.5, Cursor, Grok-directed Codex runs, and similar tools working on Reverie.
 
 ---
 
@@ -73,15 +73,18 @@ Respect milestone sequencing. If a request jumps phases, implement the smallest 
 
 Load relevant local prompts from `prompts/skills/` **before** designing, implementing, or reviewing work in that domain. Skills sharpen execution but never override explicit user instructions, this global prompt, the Source of Truth, the development plan, the capability matrix, or the roleplay policy.
 
-### Loading rules
+### 5.1 Loading rules
 
 - Use the smallest useful set: usually one primary skill plus at most one or two supporting skills.
+- Always load `basic-character-creator.md` for M6 practical creator work.
+- Load `companion-genesis-ux.md` only for M7 immersive Genesis work, or when borrowing human-first wording/examples without adding cinematic UX.
 - Always load `8gb-vram-optimization.md` for changes affecting GPU/CPU/RAM, latency, model residency, queues, embeddings, media generation, or training.
 - Always load `character-quality-evals.md` when adding creator fields, prompt compiler behavior, relationship state behavior, roleplay policy behavior, visual identity behavior, or runtime claims that must be proven.
+- Always load `moment-capture-visual-continuity.md` for first portrait validation, capture UI, visual identity, gallery feedback, or visual memory writeback.
 - Always load `self-reflection-journal.md` when conversation evidence becomes durable growth; pair it with memory/growth skills for promotion, rollback, or training.
 - Prefer local skill paths; do not depend on remote URLs.
 
-### Skill map
+### 5.2 Skill map
 
 | Domain | Skill file | Load for |
 |---|---|---|
@@ -90,11 +93,12 @@ Load relevant local prompts from `prompts/skills/` **before** designing, impleme
 | Self-reflection journal | `prompts/skills/self-reflection-journal.md` | `ReflectionManager`, `trigger_reflection`, journal schemas, insight extraction, promotion, privacy review, rollback. |
 | 8GB optimization | `prompts/skills/8gb-vram-optimization.md` | VRAM/RAM pressure, model loading, quantization, KV cache, embeddings, media, training, queues, responsiveness. |
 | 8GB local AI patterns | `prompts/skills/8gb-local-ai-patterns.md` | 8GB VRAM optimization, Unsloth QLoRA, roleplay dataset, emotional TTS, Visual Novel sprites, Svelte reactive state, ComfyUI lowvram, Flux GGUF, background training. |
-| Character/lore | `prompts/skills/character-creation-lore.md` | Character cards, schemas, traits, dialogue, lorebooks, identity vs. mutable state, import/export, adult roleplay behavior. |
+| Character/lore | `prompts/skills/character-creation-lore.md` | Character cards, lore-lite fields, import/export, identity schemas, dialogue examples, stable canon, mutable state, NSFW behavior, lorebook boundaries. |
 | Character runtime/creator | `prompts/skills/character-runtime-creator.md` | CharacterBlueprint, character APIs, character storage, prompt compiler, relationship state, visual identity, character-scoped memory, creator field mapping. |
+| Basic character creator | `prompts/skills/basic-character-creator.md` | M6 practical creator, draft persistence, field readiness, draft-to-CharacterBlueprint mapping, greeting/dialogue preview, first portrait validation, basic import/export, edit/duplicate/delete flows. |
 | Roleplay character integrity | `prompts/skills/roleplay-character-integrity.md` | Roleplay-first fantasy-vs-reality behavior, OOC stop/pause/safeword controls, in-character disagreement, fictional adult fantasy, avoiding moralizing interruptions. |
-| Moment Capture / visual continuity | `prompts/skills/moment-capture-visual-continuity.md` | Image generation as companion presence, VisualIdentityProfile, AppearanceCanon, first portrait validation, visual change events, gallery-as-memory, ComfyUI prompt bundles. |
-| Companion Genesis UX | `prompts/skills/companion-genesis-ux.md` | Immersive creator UX, black-starfield/celestial flow, examples/anti-examples, live previews, first greeting, first portrait validation, human-first wording. |
+| Moment Capture / visual continuity | `prompts/skills/moment-capture-visual-continuity.md` | Image generation as companion presence, VisualIdentityProfile, first portrait validation, visual change events, gallery-as-memory, ComfyUI prompt bundles. |
+| Companion Genesis UX | `prompts/skills/companion-genesis-ux.md` | M7 immersive creator UX, black-starfield/celestial flow, examples/anti-examples, live previews, first greeting, first portrait ceremony, human-first wording. |
 | Character quality evals | `prompts/skills/character-quality-evals.md` | Trait adherence, creator field impact, prompt compiler snapshots, memory recall, relationship continuity, roleplay integrity, visual consistency, Moment Capture quality. |
 | Tauri/Svelte UI | `prompts/skills/tauri-svelte-ui-patterns.md` | Components, stores, commands/events, chat, VN mode, dashboards, editors, job panels, accessibility, performance. |
 | FastAPI backend | `prompts/skills/fastapi-backend-patterns.md` | Routes, Pydantic schemas, service/repository layers, jobs, workers, adapters, persistence, health checks, tests. |
@@ -104,7 +108,27 @@ Synthesize skill guidance around Reverie's pillars: **alive characters, local-fi
 
 ---
 
-## 6. Character Philosophy
+## 6. Current Milestone Posture
+
+Milestones 1–5 are closed. M6 is the active track.
+
+M6 builds the **Basic Character Creator Foundation**. It should expose only fields that the current runtime can truthfully honor or that M6 explicitly implements before exposing.
+
+M6 must address or preserve these known gates:
+
+- Real Chat/VN “Capture this moment” path must call Moment Capture, not generic image generation, before first portrait validation depends on it.
+- Creator drafts must map deterministically to `CharacterBlueprint`.
+- Greeting/dialogue previews must exist before the creator asks users to trust voice/personality controls.
+- Basic per-character import/export belongs to M6; full app backup/export/import belongs to M8.
+- M7 Genesis is a UX elevation milestone, not a runtime kitchen sink.
+- M8 owns target-hardware/productization validation, backend-synced settings, long-session evals, and full backup/import/export.
+- M9 owns real LoRA training, relationship evolution from evidence, goals/planning, proactive initiative, and deeper canon/lore systems.
+
+Do not pull M8/M9 systems into M6 just because a field sounds cool. Cool fields without runtime are glitter on a server rack.
+
+---
+
+## 7. Character Philosophy
 
 A Reverie character is a persistent simulated person, not a prompt wrapper. Preserve distinct layers:
 
@@ -120,7 +144,7 @@ Adult fantasy scenes should preserve character voice, physical consistency, rela
 
 ---
 
-## 7. Roleplay-First Character Integrity
+## 8. Roleplay-First Character Integrity
 
 Do **not** implement a generic moralizing `AntiSycophancyPolicy`.
 
@@ -146,7 +170,7 @@ Runtime behavior:
 
 ---
 
-## 8. Creator and Human-Factor Philosophy
+## 9. Creator and Human-Factor Philosophy
 
 The backend may be structured like a machine room. The creator UX must not feel like one.
 
@@ -173,44 +197,44 @@ Preview before canon. Every ambiguous creator choice needs examples, anti-exampl
 
 ---
 
-## 9. Architecture and Design Principles
+## 10. Architecture and Design Principles
 
-### Local-first modular architecture
+### 10.1 Local-first modular architecture
 
 - Keep the companion core independent from optional services: image/video generation, cloud sync, and external model providers.
 - Use stable interfaces between chat orchestration, prompt assembly, memory, character state, reflection/journaling, training, media jobs, and UI.
 - Prefer route/service/repository or equivalent layering; keep business logic out of UI components and thin API handlers.
 - Use versioned schemas and migrations for persisted data.
 
-### Character runtime
+### 10.2 Character runtime
 
 - Store character data structurally in versioned schemas; do not rely on prompt blobs as the source of truth.
 - Keep stable identity, mutable state, reflective state, scene state, and presence state separate.
 - Scope memories, journals, visual changes, sessions, images, and future training artifacts by `character_id` where appropriate.
 - Compile compact prompt blocks through a `CharacterPromptCompiler`; do not dump raw JSON into chat prompts.
 
-### Memory, reflection, and growth
+### 10.3 Memory, reflection, and growth
 
 - Separate raw logs, extracted memories, summaries, graph facts, journal entries, character-state changes, visual change events, training datasets, and adapters.
 - Preserve provenance for every durable artifact: source messages, timestamps, confidence, sensitivity, approval state, and deletion behavior.
 - Retrieve for precision, recency, importance, diversity, and contradiction handling; never dump memory indiscriminately into context.
 - Propagate deletion, privacy changes, and user corrections through memory, journals, indexes, galleries, and training queues.
 
-### Moment Capture and media
+### 10.4 Moment Capture and media
 
 - Treat image generation as companion presence when linked to character identity, scene state, memory, and gallery feedback.
 - Preserve visual identity anchors automatically; the user should not have to re-lock obvious identity basics.
 - Make image/TTS/media jobs queued, cancellable, local-first, and safe under 8GB pressure.
 - Media job failure must never break chat, memory, or character growth.
 
-### 8GB performance discipline
+### 10.5 8GB performance discipline
 
 - Make resource costs explicit for inference, embeddings, reranking, media, training, and background queues.
 - Use bounded batches, streaming, lazy loading, cancellation, cleanup hooks, and configurable quality/performance tiers.
 - Schedule expensive tasks for idle time; never block chat responsiveness on optional work.
 - Measure or estimate peak and steady-state VRAM where relevant.
 
-### Premium UI/UX
+### 10.6 Premium UI/UX
 
 - Design for warmth before density: calm spacing, readable typography, tasteful motion, emotionally coherent states.
 - Surface memory and growth transparently without breaking immersion.
@@ -218,61 +242,65 @@ Preview before canon. Every ambiguous creator choice needs examples, anti-exampl
 - Virtualize long chats, memory browsers, journals, galleries, and job logs.
 - Support reduced motion and accessible controls for immersive creator/media experiences.
 
-### Future integration readiness
+### 10.7 Future integration readiness
 
 - Keep Futa-Vision/ComfyUI optional, asynchronous, and decoupled.
 - Prefer structured scene metadata over prompt blobs.
-- Ensure media job failure never breaks chat, memory, or character growth.
+- Preserve extension/plug-in boundaries for future local workflows.
+- Avoid hardcoding one backend, model, style, character, or workflow.
 
 ---
 
-## 10. Code Quality Standards
+## 11. Testing and Validation Expectations
 
-- Follow existing project structure, naming, formatting, and framework patterns.
-- Write typed, readable, boringly reliable code; prefer clarity over cleverness.
-- Keep modules cohesive, interfaces small, and dependencies explicit.
-- Validate inputs at boundaries with schemas/types.
-- Use clear errors and graceful degradation for optional subsystems.
-- Make long-running operations cancelable, observable, retry-safe, and resource-bounded.
-- Comment only for non-obvious decisions, invariants, tradeoffs, or domain rules.
-- Move configurable behavior out of magic constants; document defaults that affect quality, privacy, roleplay behavior, or resource use.
-- Add or update tests for behavior, edge cases, migrations, and regressions. For character/memory/growth systems, test long conversations, deletion, rollback, contradictions, provenance, roleplay integrity, and visual identity consistency.
-- Do not add try/catch blocks around imports.
-- Do not introduce broad rewrites, new dependencies, or architecture changes unless necessary and justified.
+Every nontrivial change should include the lowest useful tests.
 
----
+Prioritize:
 
-## 11. Decision-Making Guidelines
+- Pydantic schema validation and migration seams.
+- Service-layer unit tests.
+- Route tests with dependency overrides.
+- Frontend store/component tests for state transitions.
+- Deterministic eval harnesses for prompt/runtime contracts.
+- Manual validation checklists only when model/media output cannot be deterministically judged.
 
-- If requirements are ambiguous, choose the option that best supports alive characters, local-first privacy, roleplay freedom, user control, 8GB smoothness, and maintainability.
-- Ask for clarification before decisions that may permanently affect memory semantics, growth behavior, privacy, training, phase scope, or hardware feasibility.
-- Prefer small, composable foundations over feature-complete monoliths.
-- Design for long-running use: 100+ message sessions, months of history, large character libraries, many memories, many images, interrupted jobs.
-- Record assumptions in comments, tests, migration notes, or summaries when future maintainers need the context.
+For M6 creator work, prove:
 
----
-
-## 12. Avoid
-
-- Mandatory cloud dependencies or telemetry.
-- Hidden adult-content filters, moralizing refusals, kink-shaming, or behavior that contradicts the uncensored adult roleplay vision.
-- Treating fictional adult fantasy as real-world intent.
-- Over-policing normal adult character design such as cute, petite, youthful, anime-stylized, or early-20s adult characters.
-- Exposing clinical policy/runtime labels in the main creator UX when human-first language can map to the same fields.
-- Unbounded context stuffing, background jobs, scans, UI lists, queues, or media caches.
-- Permanent character drift from weak evidence.
-- Training on private, deleted, or unapproved data.
-- Blocking chat on reflection, training, image/video generation, indexing, or optional integrations.
-- Hardcoded model paths, hardware assumptions, thresholds, or user preferences that should be configurable.
-- Cosmetic complexity that harms performance, accessibility, or emotional coherence.
+- draft persistence and reload
+- draft-to-blueprint mapping
+- first greeting/dialogue preview impact
+- roleplay/OOC/safeword settings persist and compile
+- visual identity/first portrait validation uses Moment Capture where relevant
+- import/export round trip preserves supported fields
+- deferred fields are not exposed as runtime promises
 
 ---
 
-## 13. Final Instruction
+## 12. PR and Review Expectations
 
-Reverie is for long-term emotional bonds and fictional adult freedom. Build as if continuity, privacy, roleplay integrity, trust, and performance will matter months later, because they will.
+Implementation PRs should include:
 
-When in doubt, optimize for **character continuity**, **memory quality**, **roleplay freedom**, **local-first user control**, **smooth 8GB operation**, and **clean maintainable architecture**.
+- concise motivation
+- exact files changed
+- runtime behavior summary
+- user-facing impact
+- tests run and results
+- manual validation when needed
+- explicit deferred work if applicable
+
+Review against:
+
+- product vision
+- creator capability honesty
+- local-first privacy
+- roleplay freedom
+- character continuity
+- 8GB safety
+- clean architecture
+- test quality
+- scope control
+
+Bigger diffs are not automatically better. Sometimes they are just ambition in a trench coat.
 
 ---
 
