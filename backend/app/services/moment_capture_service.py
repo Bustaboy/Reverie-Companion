@@ -104,6 +104,7 @@ class MomentCaptureService:
         scene_state = request.scene_state.model_dump(mode="json")
         capture_intent = str(
             request.metadata.get("capture_intent")
+            or request.metadata.get("draft_capture_intent")
             or request.metadata.get("user_instruction")
             or "capture this moment"
         )
@@ -685,15 +686,21 @@ class MomentCaptureService:
                 "prompt_hash": record.prompt_hash,
                 **{
                     key: record.metadata[key]
+                    # Preserve the standardized draft_* capture metadata on
+                    # VisualChangeEvent so review, rollback, and gallery filters
+                    # can identify evidence-only creator-draft captures without
+                    # depending on MomentCaptureRecord internals.
                     for key in (
-                        "creator_draft",
+                        "draft_capture",
                         "draft_id",
-                        "source_context",
-                        "capture_intent",
-                        "rollback_note",
-                        "provenance",
-                        "evidence_only",
-                        "canonical_mutation_allowed",
+                        "draft_character_id",
+                        "draft_source_context",
+                        "draft_capture_intent",
+                        "draft_rollback_note",
+                        "draft_provenance",
+                        "draft_queue_policy",
+                        "draft_evidence_only",
+                        "draft_canonical_mutation_allowed",
                     )
                     if key in record.metadata
                 },
