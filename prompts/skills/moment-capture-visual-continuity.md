@@ -1,8 +1,8 @@
-# Skill: Moment Capture & Visual Continuity
+# Skill — Moment Capture & Visual Continuity
 
-**Version:** 1.0  
-**Date:** June 13, 2026  
-**Use for:** Moment Capture, local image generation, visual identity consistency, first portrait validation, gallery-as-memory, visual feedback, ComfyUI prompt bundles, visual change events, and image-generation UX tied to character/memory/scene state.
+**Version:** 1.1  
+**Date:** June 14, 2026  
+**Use for:** Moment Capture, local image generation, visual identity consistency, first portrait validation, gallery-as-memory, visual feedback, ComfyUI prompt bundles, visual change events, image-generation UX tied to character/memory/scene state, and M6 first portrait validation.
 
 ---
 
@@ -30,6 +30,7 @@ Load these before implementation or review:
 - `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md`
 - `prompts/GLOBAL_CODING_PROMPT.md`
 - `prompts/skills/character-runtime-creator.md`
+- `prompts/skills/basic-character-creator.md` for M6 first portrait validation or creator workflows
 - `prompts/skills/8gb-vram-optimization.md`
 - `prompts/skills/8gb-local-ai-patterns.md`
 - `prompts/skills/tauri-svelte-ui-patterns.md` for frontend work
@@ -51,6 +52,8 @@ User-facing language should prefer:
 
 Avoid making the main path feel like a raw prompt editor. Advanced prompt editing can exist, but the default experience should feel companion-native.
 
+For character-linked moments, call the Moment Capture path. Do not route primary Chat/VN capture through generic `/api/images/generate` and then pretend it is memory-linked. That is not Moment Capture. That is prompt gambling with a nicer hat.
+
 ### 3.2 Character identity must stay recognizable
 
 Every generation that includes a character should preserve:
@@ -70,61 +73,85 @@ Follow `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md`.
 
 ---
 
-## 4. Core Data Concepts
+## 4. Current Delivered M5 Concepts
 
-Implement or preserve clean boundaries for:
+M5 delivered the visual continuity foundation:
+
+```text
+VisualPromptCompiler
+VisualPromptBundle
+SceneState
+MomentCaptureRequest
+MomentCaptureRecord
+VisualFeedbackAction
+VisualChangeEvent
+VisualMemoryArtifact
+character-linked gallery metadata
+visual feedback submit/review endpoints
+approve/reject/rollback flow
+character-scoped visual memory writeback
+capture asset metadata compatibility
+8GB capture scheduling/failure UX
+```
+
+Future work should reuse these instead of creating parallel systems.
+
+---
+
+## 5. Core Data Concepts
+
+Preserve clean boundaries for:
 
 ```text
 VisualIdentityProfile
   identity_anchors
   current_appearance
-  mutable_style
+  evolving_traits
+  scene_mutable_traits
   rejected_traits
-  reference_images
-  art_style_preferences
-
-AppearanceCanon
-  base_canon
-  current_canon
-  temporary_scene
-  archived_looks
-  rejected_traits
+  adult_only_policy
 
 VisualChangeEvent
   changed_trait
   previous_value
   new_value
   reason
-  user_reaction
+  feedback_action
   canon_status
   rollback_available
+  rollback_id
 
 MomentCaptureRequest
   character_id
+  conversation_id
   session_id
-  source_message_ids
+  source_message_id
+  source_turn_index
   scene_state
-  emotional_tone
+  relationship_phase_snapshot
   visual_identity_snapshot
-  relevant_visual_memories
+  visual_identity_version
+  visual_identity_updated_at
+  prompt_hash
   quality_preset
+  relevant_visual_memories
 
-MomentCaptureResult
-  image_id
-  file_path
-  prompt_bundle
-  source_context
-  character_id
-  session_id
+MomentCaptureRecord
+  capture_id
+  image_job_id
+  output_paths
   feedback_state
-  canon_writeback_state
+  review_state
+  visual_memory_artifacts
+  rollback_id
+  metadata
 ```
 
 Use versioned schemas and migration seams for persisted artifacts.
 
 ---
 
-## 5. Prompt Bundle Rules
+## 6. Prompt Bundle Rules
 
 Do not pass a single unstructured prompt blob around the app. Assemble a prompt bundle with clear sections:
 
@@ -152,7 +179,7 @@ Do not hardcode one art style or one image backend. ComfyUI/Flux/SD details belo
 
 ---
 
-## 6. Feedback Loop Rules
+## 7. Feedback Loop Rules
 
 Every generated image should be reviewable with lightweight user actions:
 
@@ -177,7 +204,62 @@ Do not silently mutate character canon from a generated image without user confi
 
 ---
 
-## 7. 8GB Performance Rules
+## 8. M6 First Portrait Validation
+
+M6 may use Moment Capture for first portrait validation.
+
+Rules:
+
+- Use `POST /api/moment-capture` or `MomentCaptureService`, not generic `/api/images/generate`.
+- Require selected/draft `character_id`.
+- Use the draft or selected `VisualIdentityProfile` snapshot.
+- Include relationship phase snapshot and scene state.
+- Preserve `prompt_hash`, capture ID, source draft/message/session metadata, and quality preset.
+- First portrait validation should be optional and cancellable.
+- If local image generation, ComfyUI, or target resources are unavailable, allow creator save without portrait validation and explain the limitation clearly.
+- First portrait output is evidence, not automatic canon.
+- User feedback can propose canon updates through the existing `VisualChangeEvent` flow.
+- Rejected traits must feed future negative prompt guidance.
+
+Recommended M6 first portrait scene defaults:
+
+```text
+neutral portrait scene
+clear face and identity anchors
+current appearance visible
+simple background
+adult presentation preserved
+no user face visible unless explicitly requested
+```
+
+Manual validation:
+
+- Create draft character with distinct anchors.
+- Capture first portrait.
+- Mark wrong appearance.
+- Confirm rejected trait enters negative prompt guidance.
+- Mark make canon.
+- Approve canon change.
+- Confirm visual identity changes only after approval.
+- Roll back if available.
+
+---
+
+## 9. Chat/VN Capture Wiring Rule
+
+For M6-P00/M5 follow-up work:
+
+- Chat primary image action should say “Capture this moment.”
+- VN primary scene image action should say “Capture this scene” or “Capture this moment.”
+- These primary actions should call Moment Capture, not generic image generation.
+- Generic image generation may remain as a secondary/advanced/legacy action.
+- The created job/gallery item must have `moment_capture_id`, `character_id`, `session_id`, `source_message_id`, and `prompt_hash` metadata.
+
+Tests should prove the primary Chat/VN action creates a Moment Capture-backed image job.
+
+---
+
+## 10. 8GB Performance Rules
 
 Moment Capture must not block chat.
 
@@ -190,13 +272,16 @@ Required behavior:
 - support preview/balanced/high presets
 - persist job status and error states
 - allow cancellation
+- preserve metadata across retry/cancel/failure
 - store thumbnails/metadata without loading full images into memory-heavy UI lists
 
 When adding or changing image workloads, document expected peak/steady VRAM impact or why it cannot be measured yet.
 
+Target-hardware checks remain M8 unless actually run on the target machine. Do not mark them passed in CI just because the code looks confident.
+
 ---
 
-## 8. Frontend UX Rules
+## 11. Frontend UX Rules
 
 Default flow:
 
@@ -220,7 +305,7 @@ Use accessible motion, reduced-motion support, keyboard navigation, and virtuali
 
 ---
 
-## 9. Tests and Validation
+## 12. Tests and Validation
 
 For backend work, add tests for:
 
@@ -231,13 +316,17 @@ For backend work, add tests for:
 - canon changes require explicit action
 - job errors do not break chat
 - deletion/rollback behavior
+- Moment Capture metadata preservation
+- character-scoped visual memory writeback
 
 For frontend work, add tests where practical for:
 
+- primary Chat/VN capture calls Moment Capture path
 - feedback actions
 - job state rendering
 - resource warning rendering
 - gallery metadata display
+- review panel approve/reject/rollback controls
 
 Manual validation should include:
 
@@ -245,10 +334,11 @@ Manual validation should include:
 - rejected eye/skin/hair traits do not reappear in prompt bundle
 - favorite image creates reviewable memory/metadata when enabled
 - image generation remains queued and cancellable on 8GB preset
+- first portrait validation can be skipped or retried
 
 ---
 
-## 10. Review Rubric
+## 13. Review Rubric
 
 Grok should compare Codex outputs on:
 
@@ -261,3 +351,8 @@ Grok should compare Codex outputs on:
 - human-first UX language
 - no hidden adult-fantasy censorship
 - tests and migration readiness
+- no duplicate image/capture abstraction
+
+---
+
+**End of skill**
