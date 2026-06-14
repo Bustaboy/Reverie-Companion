@@ -3,7 +3,7 @@
 **Version**: 2.9
 **Date**: June 14, 2026  
 **Brand**: Reverie  
-**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, and lore-lite world/default scene settings.
+**Status**: Milestone 6 foundation in progress. M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07 are complete: the creator matrix is reconciled, Moment Capture has draft-capable creator wiring, creator drafts persist separately from finalized `CharacterBlueprint` records, and drafts now cover identity, premise/relationship starting frame, core personality architecture, communication style fields, roleplay policy/integrity/boundary controls, visual identity anchors/evolving traits/scene-mutable traits, lore-lite world/default scene settings, and memory/growth preference fields.
 
 Repo: https://github.com/Bustaboy/Reverie-Companion
 
@@ -1192,6 +1192,8 @@ Definition of Done:
 ---
 
 #### M6-P07 — Memory and growth preference baseline
+
+**Status**: Complete. Drafts now support `memory_enabled`, `memory_scope`, `reflection_frequency`, `growth_pace`, `allowed_growth_domains`, `blocked_growth_domains`, and `major_change_requires_approval`, mapping them into `CharacterMemoryPolicy` and `GrowthPolicy` for persisted draft validation and blueprint previews.
 
 **Goal**: Let the creator set basic memory/growth preferences that are stored, summarized, and honored at a baseline level without implementing M8/M9 deep growth systems.
 

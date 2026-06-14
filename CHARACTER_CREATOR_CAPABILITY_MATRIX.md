@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 3.2
-**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Version:** 3.3
+**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state; M6-P07 documented draft-supported memory and growth preference fields and their mapping into `CharacterMemoryPolicy` and `GrowthPolicy`. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P06
+## 0.1 Current Runtime Reality After M6-P07
 
 The current repo already has these runtime foundations:
 
@@ -43,7 +43,7 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01/P02/P03/P04/P05/P06 added these creator-draft foundations:
+M6-P00A/P01/P02/P03/P04/P05/P06/P07 added these creator-draft foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
@@ -55,6 +55,8 @@ M6-P00A/P01/P02/P03/P04/P05/P06 added these creator-draft foundations:
 - Draft-supported roleplay/integrity fields: `integrity.in_character_pushback`, `integrity.disagreement_style`, `roleplay.fiction_first_mode`, `meta.safeword_policy`, and `content_boundaries`.
 - Draft-supported visual identity fields: stable anchors (`eye_color`, `skin_tone`, `face_structure`, `body_baseline`, `species_features`, `permanent_marks`), evolving traits (`hair`, `accessories`, `fashion_identity`), scene-mutable traits (`outfit`, `pose`, `expression`), and `rejected_visual_traits`.
 - Draft-supported lore-lite world/default scene fields: `default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details`.
+- Draft-supported memory fields: `memory_enabled` and `memory_scope`, mapped into `CharacterMemoryPolicy` with shared-memory inclusion only for `character_plus_shared`.
+- Draft-supported growth fields: `reflection_frequency`, `growth_pace`, `allowed_growth_domains`, `blocked_growth_domains`, and `major_change_requires_approval`, mapped into `GrowthPolicy` with required safety blocks.
 - Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
@@ -62,7 +64,7 @@ Important current gaps:
 
 - Full practical creator UI is still pending.
 - Draft finalization through review/save into durable character management is still M6-P09 scope.
-- Greeting/dialogue previews, memory/growth preference enforcement, import/export, asset/reference attachment UI, first-portrait approval UI, and field-impact evals remain later M6 tasks.
+- Greeting/dialogue previews, import/export, asset/reference attachment UI, first-portrait approval UI, and field-impact evals remain later M6 tasks.
 
 ---
 
@@ -338,8 +340,8 @@ Reverie’s biggest differentiator should be visible continuity: remembered fact
 
 | Field | User value | Runtime consumers | Current support | M6 readiness | Needed capability / note | Wizard exposure | Preview / validation |
 |---|---:|---|---|---|---|---|---|
-| `memory_enabled` | Critical | Memory, chat | NOW | M6-ready | Existing settings/memory layer | M6 Basic Creator | Settings summary |
-| `memory_scope` | Critical | Memory retrieval/writeback | NOW | M6-ready | Existing character-private/shared/global semantics | M6 Advanced | Trust summary |
+| `memory_enabled` | Critical | Memory, chat | NOW | M6-ready | Draft-supported; maps to `CharacterMemoryPolicy.memory_enabled` | M6 Basic Creator | Settings summary |
+| `memory_scope` | Critical | Memory retrieval/writeback | NOW | M6-ready | Draft-supported for `character_private` and `character_plus_shared`; maps to `CharacterMemoryPolicy.scope` and `include_shared_memories` | M6 Advanced | Trust summary |
 | `include_shared_memories` | High | Memory retrieval | NOW/STORE | M6-ready | Existing `CharacterMemoryPolicy` flag | M6 Advanced | Explanation |
 | `remember_categories` | Critical | Memory, reflection | NEEDS_RUNTIME | M6-blocking if exposed | Add basic `remember_categories` or keep as preview-only | M6 Basic Creator | Examples |
 | `never_remember_categories` | Critical | Memory, trust | NEEDS_RUNTIME | M6-blocking runtime | Must enforce before strong exposure | M6 Basic Creator | Clear UI |
@@ -347,12 +349,12 @@ Reverie’s biggest differentiator should be visible continuity: remembered fact
 | `memory_importance_biases` | High | Memory ranking | NEEDS_RUNTIME | M8 Alpha | Needs scoring/eval | M7 Genesis / M8 | Examples |
 | `relationship_memory_priority` | High | Memory retrieval | NEEDS_RUNTIME | M8 Alpha | Typed scoring later | M7 Genesis / M8 | Examples |
 | `visual_memory_priority` | High | Image/gallery/memory | PARTIAL | M8 Alpha | Visual memory type exists; priority/ranking later | M7 Genesis / M8 | Moment Capture examples |
-| `reflection_frequency` | Medium | Reflection/growth | NOW | M6-ready | Existing settings and `GrowthPolicy` | M6 Basic Creator | Simple choices |
+| `reflection_frequency` | Medium | Reflection/growth | NOW | M6-ready | Draft-supported; maps to `GrowthPolicy.reflection_frequency` | M6 Basic Creator | Simple choices |
 | `reflection_sensitivity` | Medium | Reflection/growth | PARTIAL | M6-preview-only | Settings exist; character-specific mapping may need M6-P07 | M6 Basic Creator | Simple choices |
-| `growth_pace` | Critical | Reflection, relationship state | NOW | M6-ready | Existing `GrowthPolicy.growth_pace` | M6 Basic Creator | Growth examples |
-| `allowed_growth_domains` | Critical | Growth, image, chat | NOW | M6-ready | Existing `GrowthPolicy.allowed_growth_domains` | M6 Advanced | Examples |
-| `blocked_growth_domains` | Critical | Trust, rollback | NOW | M6-ready | Existing `GrowthPolicy.blocked_growth_domains` | M6 Advanced | Examples |
-| `major_change_requires_approval` | Critical | Growth, visual, personality | NOW | M6-ready | Existing `GrowthPolicy.major_change_requires_approval`; M5 visual review path exists | M6 Basic Creator | Clear UI |
+| `growth_pace` | Critical | Reflection, relationship state | NOW | M6-ready | Draft-supported; maps to `GrowthPolicy.growth_pace` | M6 Basic Creator | Growth examples |
+| `allowed_growth_domains` | Critical | Growth, image, chat | NOW | M6-ready | Draft-supported; normalized and mapped to `GrowthPolicy.allowed_growth_domains` | M6 Advanced | Examples |
+| `blocked_growth_domains` | Critical | Trust, rollback | NOW | M6-ready | Draft-supported; normalized and mapped to `GrowthPolicy.blocked_growth_domains` with required safety blocks | M6 Advanced | Examples |
+| `major_change_requires_approval` | Critical | Growth, visual, personality | NOW | M6-ready | Draft-supported; maps to `GrowthPolicy.major_change_requires_approval`; M5 visual review path exists | M6 Basic Creator | Clear UI |
 | `journal_visibility` | High | Journal UI | NOW-ish | M6-ready | Existing private inspectable journal behavior | M6 Basic Creator | Settings summary |
 | `growth_notifications_enabled` | Medium | Growth UI | NOW | M6-ready | Existing settings + `GrowthPolicy` | M6 Basic Creator | Examples |
 | `training_collection_opt_in` | Critical | LoRA/data | NOW-ish | M6-ready | Existing Personal LoRA foundation | M6 Basic Creator | Trust copy |
