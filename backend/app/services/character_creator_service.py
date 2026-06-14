@@ -24,7 +24,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.models.image import ImageQualityPreset
 from app.schemas.character_blueprint import (
@@ -51,7 +51,7 @@ from app.schemas.relationship_state import (
     RelationshipPacing,
     RelationshipState,
 )
-from app.schemas.visual_identity import VisualIdentityProfile
+from app.schemas.visual_identity import VisualIdentityProfile, VisualTrait
 from app.services.character_service import CharacterNotFoundError
 from app.services.moment_capture_service import (
     MomentCaptureResponse,
@@ -59,7 +59,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 4
+DRAFT_SCHEMA_VERSION = 5
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -231,6 +231,123 @@ class CreatorDraftContentBoundaries(BaseModel):
         return _normalize_optional_text(value, "Content boundaries")
 
 
+class CreatorDraftVisualAnchors(BaseModel):
+    """Stable visual identity anchors for creator drafts.
+
+    These fields map into ``VisualIdentityProfile.identity_anchors`` and should
+    stay stable unless the user explicitly edits character canon.
+    """
+
+    eye_color: str | None = Field(default=None, max_length=80)
+    skin_tone: str | None = Field(default=None, max_length=120)
+    face_structure: str | None = Field(default=None, max_length=160)
+    body_baseline: str | None = Field(default=None, max_length=160)
+    species_features: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    permanent_marks: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+
+    @field_validator(
+        "eye_color",
+        "skin_tone",
+        "face_structure",
+        "body_baseline",
+        mode="after",
+    )
+    @classmethod
+    def normalize_anchor_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "Visual identity anchors")
+
+    @field_validator("species_features", "permanent_marks", mode="after")
+    @classmethod
+    def normalize_anchor_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(
+            values, field_name="Visual identity anchors", max_item_length=120
+        )
+
+    def prompt_anchors(self) -> list[str]:
+        anchors: list[str] = []
+        if self.eye_color:
+            anchors.append(f"eye color: {self.eye_color}")
+        if self.skin_tone:
+            anchors.append(f"skin tone: {self.skin_tone}")
+        if self.face_structure:
+            anchors.append(f"face structure: {self.face_structure}")
+        if self.body_baseline:
+            anchors.append(f"body baseline: {self.body_baseline}")
+        anchors.extend(f"species feature: {item}" for item in self.species_features)
+        anchors.extend(f"permanent mark: {item}" for item in self.permanent_marks)
+        return anchors
+
+
+class CreatorDraftSceneVisualTraits(BaseModel):
+    """Scene-mutable visual traits for creator drafts.
+
+    Outfit, pose, and expression are temporary scene state, not stable identity
+    anchors. Canonical changes can later be promoted via VisualChangeEvent flows.
+    """
+
+    outfit: str | None = Field(default=None, max_length=160)
+    pose: str | None = Field(default=None, max_length=120)
+    expression: str | None = Field(default=None, max_length=120)
+
+    @field_validator("outfit", "pose", "expression", mode="after")
+    @classmethod
+    def normalize_scene_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "Scene visual traits")
+
+    def prompt_traits(self) -> list[str]:
+        traits: list[str] = []
+        if self.outfit:
+            traits.append(f"outfit: {self.outfit}")
+        if self.pose:
+            traits.append(f"pose: {self.pose}")
+        if self.expression:
+            traits.append(f"expression: {self.expression}")
+        return traits
+
+
+class CreatorDraftVisualIdentityFields(BaseModel):
+    """Draft-native visual fields that evolve without breaking old drafts."""
+
+    anchors: CreatorDraftVisualAnchors = Field(
+        default_factory=CreatorDraftVisualAnchors
+    )
+    evolving_traits: list[VisualTrait] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS
+    )
+    scene: CreatorDraftSceneVisualTraits = Field(
+        default_factory=CreatorDraftSceneVisualTraits
+    )
+    rejected_visual_traits: list[str] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS
+    )
+    current_appearance: str | None = Field(default=None, max_length=480)
+
+    @field_validator("rejected_visual_traits", mode="after")
+    @classmethod
+    def normalize_rejected_traits(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(
+            values, field_name="Rejected visual traits", max_item_length=120
+        )
+
+    @model_validator(mode="after")
+    def validate_evolving_traits_adult_boundary(
+        self,
+    ) -> "CreatorDraftVisualIdentityFields":
+        for trait in self.evolving_traits:
+            _reject_underage_or_childlike_presentation(
+                trait.name, "Evolving visual traits"
+            )
+            _reject_underage_or_childlike_presentation(
+                trait.value, "Evolving visual traits"
+            )
+        return self
+
+    @field_validator("current_appearance", mode="after")
+    @classmethod
+    def normalize_current_appearance(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "Current visual appearance")
+
+
 class DraftMomentSource(StrEnum):
     chat = "chat"
     visual_novel = "visual_novel"
@@ -280,6 +397,9 @@ class CharacterCreatorDraft(BaseModel):
     )
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
+    visual: CreatorDraftVisualIdentityFields = Field(
+        default_factory=CreatorDraftVisualIdentityFields
+    )
     visual_identity: VisualIdentityProfile = Field(
         default_factory=VisualIdentityProfile
     )
@@ -382,6 +502,7 @@ class CharacterCreatorDraftUpdate(BaseModel):
     )
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
+    visual: CreatorDraftVisualIdentityFields | None = None
     visual_identity: VisualIdentityProfile | None = None
     tags: list[str] | None = Field(default=None, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
@@ -612,7 +733,7 @@ class CharacterCreatorService:
                 pause_commands=draft.meta.safeword_policy.pause_commands,
                 fade_to_black_preference=draft.meta.safeword_policy.fade_to_black_preference,
             ),
-            visual_identity=draft.visual_identity,
+            visual_identity=self._visual_identity_from_draft(draft),
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
@@ -625,6 +746,56 @@ class CharacterCreatorService:
                 "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
                 **draft.metadata,
             },
+        )
+
+    def _visual_identity_from_draft(
+        self, draft: CharacterCreatorDraft
+    ) -> VisualIdentityProfile:
+        """Map draft visual fields into runtime visual canon with stable/mutable split."""
+
+        base = draft.visual_identity
+        stable_anchors = [
+            *base.identity_anchors,
+            *draft.visual.anchors.prompt_anchors(),
+        ]
+        scene_traits = [
+            *base.scene_mutable_traits,
+            *draft.visual.scene.prompt_traits(),
+        ]
+        rejected_traits = [
+            *base.rejected_traits,
+            *draft.visual.rejected_visual_traits,
+        ]
+        evolving_traits = [*base.evolving_traits, *draft.visual.evolving_traits]
+        current_appearance = draft.visual.current_appearance or base.current_appearance
+
+        return base.model_copy(
+            update={
+                "identity_anchors": _normalize_creator_list(
+                    stable_anchors,
+                    field_name="Visual identity anchors",
+                    max_items=MAX_LIST_ITEMS,
+                    max_item_length=120,
+                ),
+                "evolving_traits": evolving_traits[:MAX_LIST_ITEMS],
+                "scene_mutable_traits": _normalize_creator_list(
+                    scene_traits,
+                    field_name="Scene visual traits",
+                    max_items=MAX_LIST_ITEMS,
+                    max_item_length=120,
+                ),
+                "rejected_traits": _normalize_creator_list(
+                    rejected_traits,
+                    field_name="Rejected visual traits",
+                    max_items=MAX_LIST_ITEMS,
+                    max_item_length=120,
+                ),
+                "current_appearance": current_appearance,
+                "adult_only_policy": base.adult_only_policy.model_copy(
+                    update={"adult_age_range": draft.adult_age_range.value}
+                ),
+                "updated_at": utc_now_iso(),
+            }
         )
 
     def validate_draft(self, draft: CharacterCreatorDraft) -> DraftValidationResponse:

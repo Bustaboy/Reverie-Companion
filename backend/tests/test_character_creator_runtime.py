@@ -28,6 +28,9 @@ from app.services.character_creator_service import (
     CharacterCreatorDraftUpdate,
     CreatorDraftContentBoundaries,
     CreatorDraftIntegrityPolicy,
+    CreatorDraftSceneVisualTraits,
+    CreatorDraftVisualAnchors,
+    CreatorDraftVisualIdentityFields,
     CreatorDraftMetaPolicy,
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
@@ -176,6 +179,161 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert (
         blueprint.metadata["creator_draft"]["source"] == "m6_p04_roleplay_policy_draft"
     )
+
+
+def test_draft_visual_identity_fields_persist_update_and_map_to_blueprint(
+    tmp_path,
+) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    draft = _draft().model_copy(
+        update={
+            "visual": CreatorDraftVisualIdentityFields(
+                anchors=CreatorDraftVisualAnchors(
+                    eye_color="gold-flecked amber",
+                    skin_tone="warm brown",
+                    face_structure="heart-shaped adult face with sharp cheekbones",
+                    body_baseline="tall athletic adult build",
+                    species_features=["subtle moonlit horns"],
+                    permanent_marks=["silver crescent scar under left eye"],
+                ),
+                evolving_traits=[
+                    {
+                        "name": "hair",
+                        "value": "waist-length black-violet waves",
+                        "provenance": "creator_visual_draft",
+                    }
+                ],
+                scene=CreatorDraftSceneVisualTraits(
+                    outfit="black velvet travel dress",
+                    pose="relaxed three-quarter portrait stance",
+                    expression="soft knowing smile",
+                ),
+                rejected_visual_traits=["blue eyes", "pale skin"],
+                current_appearance="waist-length black-violet waves and moon pendant",
+            )
+        }
+    )
+
+    created = service.create_draft(CharacterCreatorDraftCreate(draft=draft))
+    loaded = service.load_draft("draft-aria")
+
+    assert created.validation.valid is True
+    assert loaded.record.draft.visual.anchors.eye_color == "gold-flecked amber"
+    assert loaded.record.draft.visual.scene.outfit == "black velvet travel dress"
+    blueprint = loaded.validation.blueprint
+    assert blueprint is not None
+    assert "eye color: gold-flecked amber" in blueprint.visual_identity.identity_anchors
+    assert "skin tone: warm brown" in blueprint.visual_identity.identity_anchors
+    assert (
+        "species feature: subtle moonlit horns"
+        in blueprint.visual_identity.identity_anchors
+    )
+    assert (
+        "permanent mark: silver crescent scar under left eye"
+        in blueprint.visual_identity.identity_anchors
+    )
+    assert (
+        "outfit: black velvet travel dress"
+        in blueprint.visual_identity.scene_mutable_traits
+    )
+    assert (
+        "pose: relaxed three-quarter portrait stance"
+        in blueprint.visual_identity.scene_mutable_traits
+    )
+    assert (
+        "expression: soft knowing smile"
+        in blueprint.visual_identity.scene_mutable_traits
+    )
+    assert "pale skin" in blueprint.visual_identity.rejected_traits
+    assert (
+        blueprint.visual_identity.current_appearance
+        == "waist-length black-violet waves and moon pendant"
+    )
+    assert blueprint.visual_identity.evolving_traits[-1].name == "hair"
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            visual=CreatorDraftVisualIdentityFields(
+                anchors=CreatorDraftVisualAnchors(eye_color="molten amber"),
+                scene=CreatorDraftSceneVisualTraits(
+                    outfit="silver festival gown",
+                    pose="standing with one hand over her heart",
+                    expression="bright delighted grin",
+                ),
+                rejected_visual_traits=["green eyes"],
+            )
+        ),
+    )
+
+    assert updated.record.draft.visual.anchors.eye_color == "molten amber"
+    updated_blueprint = updated.validation.blueprint
+    assert updated_blueprint is not None
+    assert (
+        "eye color: molten amber" in updated_blueprint.visual_identity.identity_anchors
+    )
+    assert (
+        "outfit: silver festival gown"
+        in updated_blueprint.visual_identity.scene_mutable_traits
+    )
+    assert "green eyes" in updated_blueprint.visual_identity.rejected_traits
+
+
+def test_creator_draft_rejects_invalid_visual_identity_values() -> None:
+    try:
+        CharacterCreatorDraft(
+            display_name="Aria",
+            visual=CreatorDraftVisualIdentityFields(
+                anchors=CreatorDraftVisualAnchors(face_structure="childlike doll face")
+            ),
+        )
+    except ValidationError as exc:
+        assert "adult" in str(exc).lower()
+    else:
+        raise AssertionError("Expected childlike visual anchor to be rejected.")
+
+    try:
+        CharacterCreatorDraft(
+            display_name="Aria",
+            visual=CreatorDraftVisualIdentityFields(
+                scene=CreatorDraftSceneVisualTraits(outfit="schoolgirl sexual outfit")
+            ),
+        )
+    except ValidationError as exc:
+        assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
+    else:
+        raise AssertionError("Expected invalid scene visual trait to be rejected.")
+
+    try:
+        CharacterCreatorDraft(
+            display_name="Aria",
+            visual=CreatorDraftVisualIdentityFields(
+                rejected_visual_traits=["loli proportions"]
+            ),
+        )
+    except ValidationError as exc:
+        assert "adult" in str(exc).lower()
+    else:
+        raise AssertionError("Expected invalid rejected visual trait to be rejected.")
+
+    try:
+        CharacterCreatorDraft(
+            display_name="Aria",
+            visual=CreatorDraftVisualIdentityFields(
+                evolving_traits=[
+                    {
+                        "name": "body",
+                        "value": "teen-coded proportions",
+                        "provenance": "creator_visual_draft",
+                    }
+                ]
+            ),
+        )
+    except ValidationError as exc:
+        assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
+    else:
+        raise AssertionError("Expected invalid evolving visual trait to be rejected.")
 
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
