@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import Settings, get_settings
 from app.repositories.character_repo import CharacterRepositoryError
+from app.repositories.character_creator_draft_repo import (
+    CharacterCreatorDraftRepositoryError,
+)
 from app.schemas.character_blueprint import (
     CharacterCreate,
     CharacterListResponse,
@@ -15,10 +18,13 @@ from app.schemas.character_blueprint import (
     CharacterUpdate,
 )
 from app.services.character_creator_service import (
+    CharacterCreatorDraft,
+    CharacterCreatorDraftListResponse,
+    CharacterCreatorDraftResponse,
+    CharacterCreatorDraftUpdate,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftValidationResponse,
-    CharacterCreatorDraft,
 )
 from app.services.character_service import CharacterNotFoundError, CharacterService
 from app.services.moment_capture_service import MomentCaptureResponse
@@ -43,6 +49,14 @@ def _not_found_exception(exc: CharacterNotFoundError) -> HTTPException:
     )
 
 
+def get_character_creator_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CharacterCreatorService:
+    return CharacterCreatorService(
+        draft_db_path=settings.character_creator_draft_db_path
+    )
+
+
 def _repository_exception(exc: CharacterRepositoryError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -51,6 +65,119 @@ def _repository_exception(exc: CharacterRepositoryError) -> HTTPException:
             "code": "character_library_unavailable",
         },
     )
+
+
+def _draft_repository_exception(
+    exc: CharacterCreatorDraftRepositoryError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": exc.user_message,
+            "code": "creator_draft_library_unavailable",
+        },
+    )
+
+
+def _draft_not_found_exception(draft_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={
+            "error": "Creator draft was not found.",
+            "code": "creator_draft_not_found",
+            "draft_id": draft_id,
+        },
+    )
+
+
+@router.post(
+    "/creator/drafts",
+    response_model=CharacterCreatorDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_creator_draft(
+    request: CharacterCreatorDraft,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return CharacterCreatorDraftResponse(draft=service.create_draft(request))
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.get("/creator/drafts", response_model=CharacterCreatorDraftListResponse)
+def list_creator_drafts(
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> CharacterCreatorDraftListResponse:
+    try:
+        return CharacterCreatorDraftListResponse(drafts=service.list_drafts())
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.get("/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse)
+def get_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return CharacterCreatorDraftResponse(draft=service.load_draft(draft_id))
+    except KeyError as exc:
+        raise _draft_not_found_exception(draft_id) from exc
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.patch(
+    "/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse
+)
+def update_creator_draft(
+    draft_id: str,
+    request: CharacterCreatorDraftUpdate,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> CharacterCreatorDraftResponse:
+    try:
+        return CharacterCreatorDraftResponse(
+            draft=service.update_draft(draft_id, request)
+        )
+    except KeyError as exc:
+        raise _draft_not_found_exception(draft_id) from exc
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.delete(
+    "/creator/drafts/{draft_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    response_model=None,
+)
+def delete_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> None:
+    try:
+        if not service.delete_draft(draft_id):
+            raise KeyError(draft_id)
+    except KeyError as exc:
+        raise _draft_not_found_exception(draft_id) from exc
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/validate", response_model=DraftValidationResponse
+)
+def validate_persisted_creator_draft(
+    draft_id: str,
+    service: Annotated[CharacterCreatorService, Depends(get_character_creator_service)],
+) -> DraftValidationResponse:
+    try:
+        return service.validate_persisted_draft(draft_id)
+    except KeyError as exc:
+        raise _draft_not_found_exception(draft_id) from exc
+    except CharacterCreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
 
 
 @router.post("/creator/validate", response_model=DraftValidationResponse)

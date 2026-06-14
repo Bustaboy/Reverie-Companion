@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ from app.schemas.character_blueprint import (
     CharacterIdentity,
     CommunicationProfile,
     PersonalityProfile,
+    utc_now_iso,
 )
 from app.schemas.moment_capture import (
     MomentCaptureRequest,
@@ -51,7 +53,6 @@ from app.services.moment_capture_service import (
     MomentCaptureService,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -60,9 +61,22 @@ class DraftMomentSource(StrEnum):
     visual_novel = "visual_novel"
 
 
-class CharacterCreatorDraft(BaseModel):
-    """API-only creator draft shape for basic M6 runtime validation."""
+class CreatorDraftStatus(StrEnum):
+    draft = "draft"
+    deleted = "deleted"
 
+
+CREATOR_DRAFT_SCHEMA_VERSION = 1
+
+
+class CharacterCreatorDraft(BaseModel):
+    """Persistable creator draft shape for basic M6 runtime validation.
+
+    Drafts are intentionally lifecycle-marked and stored in a separate draft table
+    so they cannot be mistaken for finalized CharacterBlueprint records.
+    """
+
+    schema_version: int = Field(default=CREATOR_DRAFT_SCHEMA_VERSION, ge=1)
     draft_id: str | None = Field(default=None, max_length=120)
     character_id: str | None = Field(default=None, max_length=80)
     display_name: str = Field(..., min_length=1, max_length=80)
@@ -88,6 +102,9 @@ class CharacterCreatorDraft(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=12)
     creator_notes: str | None = Field(default=None, max_length=1200)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    status: CreatorDraftStatus = CreatorDraftStatus.draft
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
 
     @field_validator("character_id", "draft_id", mode="after")
     @classmethod
@@ -96,6 +113,32 @@ class CharacterCreatorDraft(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+
+class CharacterCreatorDraftUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    pronouns: str | None = Field(default=None, min_length=1, max_length=40)
+    adult_age_range: AdultAgeRange | None = None
+    adult_only_confirmed: bool | None = None
+    species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
+    relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=240)
+    starting_relationship_phase: RelationshipPhase | None = None
+    default_intimacy_level: DefaultIntimacyLevel | None = None
+    user_desired_experience: str | None = Field(default=None, max_length=240)
+    core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    communication_style: str | None = Field(default=None, max_length=240)
+    visual_identity: VisualIdentityProfile | None = None
+    tags: list[str] | None = Field(default=None, max_length=12)
+    creator_notes: str | None = Field(default=None, max_length=1200)
+    metadata: dict[str, Any] | None = None
+
+
+class CharacterCreatorDraftResponse(BaseModel):
+    draft: CharacterCreatorDraft
+
+
+class CharacterCreatorDraftListResponse(BaseModel):
+    drafts: list[CharacterCreatorDraft]
 
 
 class DraftValidationResponse(BaseModel):
@@ -141,9 +184,76 @@ class CharacterCreatorService:
     """Service boundary used by future creator UI/backend flows."""
 
     def __init__(
-        self, moment_capture_service: MomentCaptureService | None = None
+        self,
+        moment_capture_service: MomentCaptureService | None = None,
+        draft_repository: Any | None = None,
+        draft_db_path: str | Path | None = None,
     ) -> None:
         self._moment_capture_service = moment_capture_service
+        if draft_repository is not None:
+            self._draft_repository = draft_repository
+        else:
+            from app.repositories.character_creator_draft_repo import (
+                CharacterCreatorDraftRepository,
+            )
+
+            self._draft_repository = CharacterCreatorDraftRepository(
+                draft_db_path or "./data/characters/creator_drafts.sqlite3"
+            )
+
+    def create_draft(self, draft: CharacterCreatorDraft) -> CharacterCreatorDraft:
+        draft_id = draft.draft_id or f"draft_{uuid4().hex[:12]}"
+        now = utc_now_iso()
+        persisted = CharacterCreatorDraft.model_validate(
+            draft.model_copy(
+                update={
+                    "draft_id": draft_id,
+                    "status": CreatorDraftStatus.draft,
+                    "created_at": draft.created_at or now,
+                    "updated_at": now,
+                    "metadata": self._with_draft_metadata(
+                        draft.metadata, draft_id=draft_id
+                    ),
+                }
+            ).model_dump()
+        )
+        return self._draft_repository.upsert(persisted)
+
+    def load_draft(self, draft_id: str) -> CharacterCreatorDraft:
+        draft = self._draft_repository.get(draft_id)
+        if draft is None:
+            raise KeyError(draft_id)
+        return draft
+
+    def list_drafts(self) -> list[CharacterCreatorDraft]:
+        return self._draft_repository.list()
+
+    def update_draft(
+        self, draft_id: str, update: CharacterCreatorDraftUpdate
+    ) -> CharacterCreatorDraft:
+        draft = self.load_draft(draft_id)
+        changes = update.model_dump(exclude_unset=True)
+        if "metadata" in changes and changes["metadata"] is not None:
+            changes["metadata"] = self._with_draft_metadata(
+                {**draft.metadata, **changes["metadata"]}, draft_id=draft_id
+            )
+        elif "metadata" not in changes:
+            changes["metadata"] = self._with_draft_metadata(
+                draft.metadata, draft_id=draft_id
+            )
+        changes.update(
+            {"updated_at": utc_now_iso(), "status": CreatorDraftStatus.draft}
+        )
+        persisted = CharacterCreatorDraft.model_validate(
+            draft.model_copy(update=changes).model_dump()
+        )
+        return self._draft_repository.upsert(persisted)
+
+    def delete_draft(self, draft_id: str) -> bool:
+        return self._draft_repository.delete(draft_id)
+
+    def validate_persisted_draft(self, draft_id: str) -> DraftValidationResponse:
+        return self.validate_draft(self.load_draft(draft_id))
 
     def draft_to_blueprint(self, draft: CharacterCreatorDraft) -> CharacterBlueprint:
         character_id = (
@@ -175,13 +285,13 @@ class CharacterCreatorService:
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p00a_runtime_draft",
+                    "source": "m6_p01_persisted_creator_draft",
                     "migration_note": (
-                        "API-only draft; persist explicitly in a later draft "
-                        "repository before save flows."
+                        "Persisted creator draft; remains separate from finalized "
+                        "CharacterBlueprint rows until a later publishing flow."
                     ),
                 },
-                **draft.metadata,
+                **self._with_draft_metadata(draft.metadata, draft_id=draft.draft_id),
             },
         )
 
@@ -255,6 +365,18 @@ class CharacterCreatorService:
             # and rollback paths before the draft is saved. No blueprint is persisted.
             service._character_service = draft_character_service  # type: ignore[attr-defined]
         return await service.capture(capture_request)
+
+    @staticmethod
+    def _with_draft_metadata(
+        metadata: dict[str, Any], *, draft_id: str | None
+    ) -> dict[str, Any]:
+        return {
+            **metadata,
+            "creator_lifecycle": "draft",
+            "draft_id": draft_id,
+            "draft_schema_version": CREATOR_DRAFT_SCHEMA_VERSION,
+            "finalized_character_id": metadata.get("finalized_character_id"),
+        }
 
     def _default_scene_state(
         self, blueprint: CharacterBlueprint, *, source: DraftMomentSource

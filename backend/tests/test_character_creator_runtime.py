@@ -18,6 +18,7 @@ from app.schemas.relationship_state import RelationshipPhase
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_creator_service import (
     CharacterCreatorDraft,
+    CharacterCreatorDraftUpdate,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftMomentSource,
@@ -66,9 +67,7 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert blueprint.identity.tags == ["slow_burn", "fantasy_romance"]
     assert blueprint.relationship.character_id == "draft_aria"
     assert blueprint.relationship.phase == RelationshipPhase.newly_met
-    assert (
-        blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
-    )
+    assert blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
     assert blueprint.visual_identity.identity_anchors == [
@@ -79,7 +78,10 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert (
         blueprint.visual_identity.adult_only_policy.adult_age_range == "mid_20s_adult"
     )
-    assert blueprint.metadata["creator_draft"]["source"] == "m6_p00a_runtime_draft"
+    assert (
+        blueprint.metadata["creator_draft"]["source"]
+        == "m6_p01_persisted_creator_draft"
+    )
 
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
@@ -145,7 +147,9 @@ def test_draft_capture_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
             == "first portrait from creator draft"
         )
         assert "evidence-only" in chat_response.record.metadata["draft_rollback_note"]
-        assert chat_response.record.metadata["draft_canonical_mutation_allowed"] is False
+        assert (
+            chat_response.record.metadata["draft_canonical_mutation_allowed"] is False
+        )
         assert (
             chat_response.record.metadata["draft_provenance"]
             == "character_creator_draft_first_portrait"
@@ -212,6 +216,83 @@ def test_creator_first_portrait_feedback_uses_existing_review_and_rollback_patte
         assert feedback.visual_change_event.metadata["draft_capture"] is True
         assert feedback.visual_change_event.metadata["draft_id"] == "draft-aria"
         assert feedback.visual_change_event.metadata["draft_source_context"] == "chat"
-        assert "evidence-only" in feedback.visual_change_event.metadata["draft_rollback_note"]
+        assert (
+            "evidence-only"
+            in feedback.visual_change_event.metadata["draft_rollback_note"]
+        )
 
     asyncio.run(run_test())
+
+
+def test_creator_drafts_persist_load_update_validate_and_delete(tmp_path) -> None:
+    service = CharacterCreatorService(draft_db_path=tmp_path / "creator_drafts.sqlite3")
+
+    created = service.create_draft(_draft().model_copy(update={"draft_id": None}))
+
+    assert created.draft_id is not None
+    assert created.metadata["creator_lifecycle"] == "draft"
+    loaded = service.load_draft(created.draft_id)
+    assert loaded.display_name == "Aria"
+    assert loaded.status == "draft"
+
+    updated = service.update_draft(
+        created.draft_id,
+        CharacterCreatorDraftUpdate(
+            display_name="Aria Moon",
+            tags=["Mystic", "Mystic"],
+            metadata={"step": "identity"},
+        ),
+    )
+    assert updated.display_name == "Aria Moon"
+    assert updated.metadata["step"] == "identity"
+    assert updated.metadata["creator_lifecycle"] == "draft"
+    assert service.load_draft(created.draft_id).display_name == "Aria Moon"
+
+    validation = service.validate_persisted_draft(created.draft_id)
+    assert validation.valid is True
+    assert validation.blueprint is not None
+    assert validation.blueprint.identity.display_name == "Aria Moon"
+    assert validation.blueprint.metadata["creator_lifecycle"] == "draft"
+    assert (
+        validation.blueprint.metadata["creator_draft"]["draft_id"] == created.draft_id
+    )
+
+    assert service.delete_draft(created.draft_id) is True
+    try:
+        service.load_draft(created.draft_id)
+    except KeyError:
+        missing = True
+    else:
+        missing = False
+    assert missing is True
+
+
+def test_creator_drafts_remain_separate_from_finalized_character_blueprints(
+    tmp_path,
+) -> None:
+    from app.repositories.character_repo import CharacterRepository
+    from app.services.character_service import CharacterService
+    from app.schemas.character_blueprint import CharacterCreate
+
+    character_repo = CharacterRepository(tmp_path / "characters.sqlite3")
+    character_service = CharacterService(repository=character_repo)
+    creator_service = CharacterCreatorService(
+        draft_db_path=tmp_path / "creator_drafts.sqlite3"
+    )
+
+    draft = creator_service.create_draft(_draft())
+    finalized = character_service.create(
+        CharacterCreate(character_id="aria_final", display_name="Aria Final")
+    )
+
+    assert draft.draft_id == "draft-aria"
+    assert character_repo.get("draft-aria") is None
+    assert character_repo.get("draft_aria") is None
+    assert character_repo.get(finalized.character_id) is not None
+    assert [summary.character_id for summary in character_service.list()] == [
+        "aria_final"
+    ]
+    assert (
+        creator_service.load_draft("draft-aria").metadata["creator_lifecycle"]
+        == "draft"
+    )
