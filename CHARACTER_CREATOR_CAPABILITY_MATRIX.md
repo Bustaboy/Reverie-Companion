@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 3.3
-**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state; M6-P07 documented draft-supported memory and growth preference fields and their mapping into `CharacterMemoryPolicy` and `GrowthPolicy`. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
+**Version:** 3.4
+**Context:** M6-P00/P00A/P01/P02/P03/P04/P05/P06/P07/P08 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping; M6-P02 documented the draft-supported identity and premise/relationship starting-frame fields; M6-P03 documented draft-supported personality and communication fields; M6-P04 documented draft-supported roleplay policy, integrity, safeword/OOC, and content-boundary fields; M6-P05 documented draft-supported visual identity fields and their mapping into `VisualIdentityProfile`; M6-P06 documented draft-supported lore-lite world/default scene fields and their mapping into `RelationshipState`, blueprint metadata, prompt scene hints, and draft Moment Capture default scene state; M6-P07 documented draft-supported memory and growth preference fields and their mapping into `CharacterMemoryPolicy` and `GrowthPolicy`; M6-P08 added deterministic greeting and example dialogue previews with `PreviewQualityReport` validation for unsaved and persisted drafts. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M6-P07
+## 0.1 Current Runtime Reality After M6-P08
 
 The current repo already has these runtime foundations:
 
@@ -43,7 +43,7 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-M6-P00A/P01/P02/P03/P04/P05/P06/P07 added these creator-draft foundations:
+M6-P00A/P01/P02/P03/P04/P05/P06/P07/P08 added these creator-draft foundations:
 
 - `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
 - Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
@@ -58,13 +58,16 @@ M6-P00A/P01/P02/P03/P04/P05/P06/P07 added these creator-draft foundations:
 - Draft-supported memory fields: `memory_enabled` and `memory_scope`, mapped into `CharacterMemoryPolicy` with shared-memory inclusion only for `character_plus_shared`.
 - Draft-supported growth fields: `reflection_frequency`, `growth_pace`, `allowed_growth_domains`, `blocked_growth_domains`, and `major_change_requires_approval`, mapped into `GrowthPolicy` with required safety blocks.
 - Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
+- Deterministic, non-persisted greeting previews for unsaved draft payloads and persisted draft IDs.
+- Deterministic, non-persisted example dialogue previews for unsaved draft payloads and persisted draft IDs.
+- `PreviewQualityReport` coverage/consistency checks for identity, personality, communication style, relationship, roleplay policy, world/scene hints, visual identity, memory, growth, avoid-style leakage, hard-limit leakage, and adult-only baseline violations.
 - Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
 
 Important current gaps:
 
 - Full practical creator UI is still pending.
 - Draft finalization through review/save into durable character management is still M6-P09 scope.
-- Greeting/dialogue previews, import/export, asset/reference attachment UI, first-portrait approval UI, and field-impact evals remain later M6 tasks.
+- Import/export, asset/reference attachment UI, first-portrait approval UI, and broader field-impact evals remain later M6 tasks.
 
 ---
 
