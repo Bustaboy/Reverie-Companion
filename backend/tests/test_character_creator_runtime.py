@@ -51,7 +51,16 @@ def _draft() -> CharacterCreatorDraft:
         default_intimacy_level=DefaultIntimacyLevel.flirtatious,
         user_desired_experience="tender magical romance",
         core_traits=["warm", "playful", "protective"],
+        independence=0.72,
+        devotion=0.68,
+        dominance_or_initiative=0.58,
+        values_or_ideals=["mutual trust", "chosen-family loyalty"],
+        flaws=["gets smug when she is nervous"],
+        fears=["being forgotten"],
+        vulnerabilities=["softens when praised sincerely"],
         communication_style="soft teasing with emotional honesty",
+        avoid_style=["clinical assistant tone", "moralizing fictional adult romance"],
+        initiative_in_conversation=0.63,
         visual_identity=VisualIdentityProfile(
             identity_anchors=["amber eyes", "warm brown skin", "same adult face"],
             evolving_traits=[
@@ -82,16 +91,33 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert blueprint.relationship.character_id == "draft_aria"
     assert blueprint.identity.adult_age_range == "late_20s_adult"
     assert blueprint.relationship.phase == RelationshipPhase.friends
-    assert (
-        blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
-    )
+    assert blueprint.relationship.relationship_dynamic == "devoted slow-burn companion"
     assert blueprint.relationship.relationship_pacing == RelationshipPacing.slow_burn
     assert blueprint.relationship.romantic_pacing == RelationshipPacing.slow_burn
     assert blueprint.relationship.nsfw_pacing == RelationshipPacing.user_led
-    assert blueprint.relationship.default_intimacy_level == DefaultIntimacyLevel.flirtatious
+    assert (
+        blueprint.relationship.default_intimacy_level
+        == DefaultIntimacyLevel.flirtatious
+    )
     assert blueprint.relationship.user_desired_experience == "tender magical romance"
     assert blueprint.personality.core_traits == ["warm", "playful", "protective"]
+    assert blueprint.personality.independence == 0.72
+    assert blueprint.personality.devotion == 0.68
+    assert blueprint.personality.dominance_or_initiative == 0.58
+    assert blueprint.personality.values_or_ideals == [
+        "mutual trust",
+        "chosen-family loyalty",
+    ]
+    assert blueprint.personality.flaws == ["gets smug when she is nervous"]
+    assert blueprint.personality.fears == ["being forgotten"]
+    assert blueprint.personality.vulnerabilities == ["softens when praised sincerely"]
+    assert blueprint.integrity_policy.independence == 0.72
     assert blueprint.communication.style_notes == "soft teasing with emotional honesty"
+    assert blueprint.communication.avoid_style_rules == [
+        "clinical assistant tone",
+        "moralizing fictional adult romance",
+    ]
+    assert blueprint.communication.initiative_in_conversation == 0.63
     assert blueprint.visual_identity.identity_anchors == [
         "amber eyes",
         "warm brown skin",
@@ -156,6 +182,45 @@ def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) ->
     assert updated.validation.blueprint.relationship.romantic_pacing == "direct"
     assert updated.validation.blueprint.relationship.nsfw_pacing == "slow_burn"
 
+    personality_update = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            core_traits=["bold", "bold", "tender"],
+            independence=0.8,
+            devotion=0.7,
+            dominance_or_initiative=0.65,
+            values_or_ideals=["freedom", "honest intimacy"],
+            flaws=["deflects fear with teasing"],
+            fears=["losing her sense of self"],
+            vulnerabilities=["needs reassurance after conflict"],
+            communication_style="direct, warm, and playfully provocative",
+            avoid_style=["therapy-bot phrasing", "lecturing about fictional desire"],
+            initiative_in_conversation=0.75,
+        ),
+    )
+
+    updated_draft = personality_update.record.draft
+    assert updated_draft.core_traits == ["bold", "tender"]
+    assert updated_draft.values_or_ideals == ["freedom", "honest intimacy"]
+    assert personality_update.validation.blueprint is not None
+    assert personality_update.validation.blueprint.personality.independence == 0.8
+    assert personality_update.validation.blueprint.personality.devotion == 0.7
+    assert (
+        personality_update.validation.blueprint.personality.dominance_or_initiative
+        == 0.65
+    )
+    assert personality_update.validation.blueprint.personality.flaws == [
+        "deflects fear with teasing"
+    ]
+    assert personality_update.validation.blueprint.communication.avoid_style_rules == [
+        "therapy-bot phrasing",
+        "lecturing about fictional desire",
+    ]
+    assert (
+        personality_update.validation.blueprint.communication.initiative_in_conversation
+        == 0.75
+    )
+
     validation = service.validate_persisted_draft("draft-aria")
     assert validation.valid is True
     assert validation.blueprint is not None
@@ -187,7 +252,40 @@ def test_creator_draft_rejects_invalid_identity_and_premise_values() -> None:
         raise AssertionError("Expected underage relationship premise to be rejected.")
 
 
-def test_creator_draft_update_validates_premise_and_relationship_frame(tmp_path) -> None:
+def test_creator_draft_rejects_invalid_personality_and_communication_values() -> None:
+    for kwargs in (
+        {"core_traits": ["warm", "teen coded"]},
+        {"values_or_ideals": ["protect underage romance framing"]},
+        {"flaws": ["acts like a schoolgirl"]},
+        {"fears": ["being treated as a childlike doll"]},
+        {"vulnerabilities": ["loli presentation"]},
+        {"communication_style": "uses a teenage flirt style"},
+        {"avoid_style": ["adult woman voice", "schoolgirl innocence"]},
+    ):
+        try:
+            CharacterCreatorDraft(display_name="Aria", **kwargs)
+        except ValidationError as exc:
+            assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
+        else:
+            raise AssertionError(f"Expected invalid creator values to fail: {kwargs}")
+
+    for kwargs in (
+        {"independence": -0.01},
+        {"devotion": 1.01},
+        {"dominance_or_initiative": 2.0},
+        {"initiative_in_conversation": -1.0},
+    ):
+        try:
+            CharacterCreatorDraft(display_name="Aria", **kwargs)
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"Expected out-of-range scalar to fail: {kwargs}")
+
+
+def test_creator_draft_update_validates_premise_and_relationship_frame(
+    tmp_path,
+) -> None:
     repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
     service = CharacterCreatorService(draft_repository=repository)
     service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
@@ -219,7 +317,9 @@ def test_creator_draft_update_validates_premise_and_relationship_frame(tmp_path)
     )
 
 
-def test_drafts_persist_separately_from_finalized_character_blueprints(tmp_path) -> None:
+def test_drafts_persist_separately_from_finalized_character_blueprints(
+    tmp_path,
+) -> None:
     db_path = tmp_path / "characters.sqlite3"
     draft_repo = CreatorDraftRepository(db_path)
     character_repo = CharacterRepository(db_path)
@@ -276,7 +376,9 @@ def test_draft_capture_can_queue_chat_and_vn_first_portrait_captures(tmp_path) -
             == "first portrait from creator draft"
         )
         assert "evidence-only" in chat_response.record.metadata["draft_rollback_note"]
-        assert chat_response.record.metadata["draft_canonical_mutation_allowed"] is False
+        assert (
+            chat_response.record.metadata["draft_canonical_mutation_allowed"] is False
+        )
         assert (
             chat_response.record.metadata["draft_provenance"]
             == "character_creator_draft_first_portrait"
@@ -382,6 +484,9 @@ def test_creator_first_portrait_feedback_uses_existing_review_and_rollback_patte
         assert feedback.visual_change_event.metadata["draft_capture"] is True
         assert feedback.visual_change_event.metadata["draft_id"] == "draft-aria"
         assert feedback.visual_change_event.metadata["draft_source_context"] == "chat"
-        assert "evidence-only" in feedback.visual_change_event.metadata["draft_rollback_note"]
+        assert (
+            "evidence-only"
+            in feedback.visual_change_event.metadata["draft_rollback_note"]
+        )
 
     asyncio.run(run_test())
