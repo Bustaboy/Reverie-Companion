@@ -1,12 +1,12 @@
 """Minimal runtime wiring for future M6 character creator flows.
 
-This module intentionally does not persist drafts or save new characters. It maps
-an in-flight creator draft into a valid ``CharacterBlueprint`` and can submit a
-first-portrait Moment Capture through the existing non-blocking capture service.
+This module persists creator drafts separately from finalized
+``CharacterBlueprint`` records, maps a draft into a valid runtime blueprint for
+validation/preview, and can submit a first-portrait Moment Capture through the
+existing non-blocking capture service.
 
-Persistence/migration note: ``CharacterCreatorDraft`` is API-only for P00A. If
-later milestones persist drafts, store the draft schema version alongside the
-mapped blueprint ID and preserve ``metadata`` losslessly for forward migration.
+Persistence/migration note: ``CharacterCreatorDraftRecord`` stores a durable
+draft schema version and preserves ``metadata`` losslessly for forward migration.
 Draft first-portrait captures add lightweight provenance fields to request,
 record, image-job context, and follow-up visual-change events. Capture-specific
 fields use the ``draft_`` prefix consistently: ``draft_capture``, ``draft_id``,
@@ -33,6 +33,7 @@ from app.schemas.character_blueprint import (
     CharacterIdentity,
     CommunicationProfile,
     PersonalityProfile,
+    utc_now_iso,
 )
 from app.schemas.moment_capture import (
     MomentCaptureRequest,
@@ -61,7 +62,7 @@ class DraftMomentSource(StrEnum):
 
 
 class CharacterCreatorDraft(BaseModel):
-    """API-only creator draft shape for basic M6 runtime validation."""
+    """Creator draft shape for basic M6 runtime validation and persistence."""
 
     draft_id: str | None = Field(default=None, max_length=120)
     character_id: str | None = Field(default=None, max_length=80)
@@ -104,6 +105,58 @@ class DraftValidationResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class CharacterCreatorDraftCreate(BaseModel):
+    draft: CharacterCreatorDraft
+
+
+class CharacterCreatorDraftUpdate(BaseModel):
+    """Partial draft patch. Omitted fields are left unchanged."""
+
+    character_id: str | None = Field(default=None, max_length=80)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    pronouns: str | None = Field(default=None, min_length=1, max_length=40)
+    adult_age_range: AdultAgeRange | None = None
+    adult_only_confirmed: bool | None = None
+    species_or_type: str | None = Field(default=None, min_length=1, max_length=80)
+    relationship_dynamic: str | None = Field(default=None, min_length=1, max_length=240)
+    starting_relationship_phase: RelationshipPhase | None = None
+    default_intimacy_level: DefaultIntimacyLevel | None = None
+    user_desired_experience: str | None = Field(default=None, max_length=240)
+    core_traits: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    communication_style: str | None = Field(default=None, max_length=240)
+    visual_identity: VisualIdentityProfile | None = None
+    tags: list[str] | None = Field(default=None, max_length=12)
+    creator_notes: str | None = Field(default=None, max_length=1200)
+    metadata: dict[str, Any] | None = None
+
+
+class CharacterCreatorDraftRecord(BaseModel):
+    """Durable draft envelope kept distinct from canonical characters."""
+
+    schema_version: int = Field(default=1, ge=1)
+    draft_id: str = Field(..., min_length=1, max_length=120)
+    lifecycle_state: str = Field(default="draft", pattern="^draft$")
+    draft: CharacterCreatorDraft
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class CharacterCreatorDraftResponse(BaseModel):
+    record: CharacterCreatorDraftRecord
+    validation: DraftValidationResponse
+
+
+class CharacterCreatorDraftListResponse(BaseModel):
+    drafts: list[CharacterCreatorDraftRecord]
+
+
+class CreatorDraftNotFoundError(LookupError):
+    def __init__(self, draft_id: str) -> None:
+        self.draft_id = draft_id
+        super().__init__(f"Creator draft '{draft_id}' was not found.")
+
+
 class DraftMomentCaptureRequest(BaseModel):
     draft: CharacterCreatorDraft
     source: DraftMomentSource
@@ -114,6 +167,19 @@ class DraftMomentCaptureRequest(BaseModel):
     scene_state: SceneState | None = None
     capture_intent: str = Field(
         default="first portrait from creator draft", max_length=240
+    )
+    quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
+
+
+class PersistedDraftMomentCaptureRequest(BaseModel):
+    source: DraftMomentSource
+    conversation_id: str = Field(default="creator-draft", min_length=1, max_length=120)
+    session_id: str | None = Field(default=None, max_length=120)
+    source_message_id: str | None = Field(default=None, max_length=120)
+    source_turn_index: int = Field(default=0, ge=0)
+    scene_state: SceneState | None = None
+    capture_intent: str = Field(
+        default="first portrait from persisted creator draft", max_length=240
     )
     quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
 
@@ -141,9 +207,89 @@ class CharacterCreatorService:
     """Service boundary used by future creator UI/backend flows."""
 
     def __init__(
-        self, moment_capture_service: MomentCaptureService | None = None
+        self,
+        moment_capture_service: MomentCaptureService | None = None,
+        draft_repository: Any | None = None,
     ) -> None:
         self._moment_capture_service = moment_capture_service
+        self._draft_repository = draft_repository
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> "CharacterCreatorService":
+        from app.repositories.creator_draft_repo import CreatorDraftRepository
+
+        return cls(draft_repository=CreatorDraftRepository(settings.character_db_path))
+
+    def create_draft(
+        self, request: CharacterCreatorDraftCreate | CharacterCreatorDraft
+    ) -> CharacterCreatorDraftResponse:
+        self._require_repository()
+        draft = request if isinstance(request, CharacterCreatorDraft) else request.draft
+        draft_id = draft.draft_id or f"draft_{uuid4().hex[:12]}"
+        stored_draft = draft.model_copy(update={"draft_id": draft_id})
+        now = utc_now_iso()
+        record = CharacterCreatorDraftRecord(
+            draft_id=draft_id,
+            draft=stored_draft,
+            created_at=now,
+            updated_at=now,
+            provenance={
+                "source": "m6_p01_creator_draft_persistence",
+                "state": "draft_not_finalized",
+                "separation": "stored_in_character_creator_drafts_table",
+            },
+        )
+        saved = self._draft_repository.upsert(record)
+        return CharacterCreatorDraftResponse(
+            record=saved, validation=self.validate_draft(saved.draft)
+        )
+
+    def load_draft(self, draft_id: str) -> CharacterCreatorDraftResponse:
+        record = self._get_record_or_raise(draft_id)
+        return CharacterCreatorDraftResponse(
+            record=record, validation=self.validate_draft(record.draft)
+        )
+
+    def list_drafts(self) -> CharacterCreatorDraftListResponse:
+        self._require_repository()
+        return CharacterCreatorDraftListResponse(drafts=self._draft_repository.list())
+
+    def update_draft(
+        self, draft_id: str, patch: CharacterCreatorDraftUpdate
+    ) -> CharacterCreatorDraftResponse:
+        record = self._get_record_or_raise(draft_id)
+        updates = patch.model_dump(exclude_unset=True)
+        if "metadata" in updates and updates["metadata"] is not None:
+            updates["metadata"] = {**record.draft.metadata, **updates["metadata"]}
+        updated_draft = record.draft.model_copy(update=updates)
+        # Re-validate copied updates because model_copy is intentionally permissive.
+        updated_draft = CharacterCreatorDraft.model_validate(
+            updated_draft.model_dump(mode="json")
+        )
+        saved = self._draft_repository.upsert(
+            record.model_copy(update={"draft": updated_draft, "updated_at": utc_now_iso()})
+        )
+        return CharacterCreatorDraftResponse(
+            record=saved, validation=self.validate_draft(saved.draft)
+        )
+
+    def delete_draft(self, draft_id: str) -> bool:
+        self._require_repository()
+        return self._draft_repository.delete(draft_id)
+
+    def validate_persisted_draft(self, draft_id: str) -> DraftValidationResponse:
+        return self.validate_draft(self._get_record_or_raise(draft_id).draft)
+
+    def _require_repository(self) -> None:
+        if self._draft_repository is None:
+            raise RuntimeError("Creator draft persistence repository is not configured.")
+
+    def _get_record_or_raise(self, draft_id: str) -> CharacterCreatorDraftRecord:
+        self._require_repository()
+        record = self._draft_repository.get(draft_id)
+        if record is None:
+            raise CreatorDraftNotFoundError(draft_id)
+        return record
 
     def draft_to_blueprint(self, draft: CharacterCreatorDraft) -> CharacterBlueprint:
         character_id = (
@@ -255,6 +401,24 @@ class CharacterCreatorService:
             # and rollback paths before the draft is saved. No blueprint is persisted.
             service._character_service = draft_character_service  # type: ignore[attr-defined]
         return await service.capture(capture_request)
+
+    async def capture_persisted_first_portrait(
+        self, draft_id: str, request: PersistedDraftMomentCaptureRequest
+    ) -> MomentCaptureResponse:
+        record = self._get_record_or_raise(draft_id)
+        return await self.capture_first_portrait(
+            DraftMomentCaptureRequest(
+                draft=record.draft,
+                source=request.source,
+                conversation_id=request.conversation_id,
+                session_id=request.session_id,
+                source_message_id=request.source_message_id,
+                source_turn_index=request.source_turn_index,
+                scene_state=request.scene_state,
+                capture_intent=request.capture_intent,
+                quality_preset=request.quality_preset,
+            )
+        )
 
     def _default_scene_state(
         self, blueprint: CharacterBlueprint, *, source: DraftMomentSource
