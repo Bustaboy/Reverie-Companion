@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.repositories.character_repo import CharacterRepositoryError
@@ -92,6 +93,27 @@ def _draft_not_found_exception(exc: CreatorDraftNotFoundError) -> HTTPException:
             "error": str(exc),
             "code": "creator_draft_not_found",
             "draft_id": exc.draft_id,
+            "next_steps": [
+                "Pick an existing creator draft from the draft list.",
+                "Create a new draft if this one was already deleted.",
+            ],
+        },
+    )
+
+
+def _creator_invalid_exception(
+    exc: ValueError | TypeError | ValidationError, *, code: str = "creator_draft_invalid"
+) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "error": str(exc),
+            "code": code,
+            "retryable": False,
+            "next_steps": [
+                "Review the highlighted creator fields and keep the companion clearly adult.",
+                "Save the draft again after correcting the validation message.",
+            ],
         },
     )
 
@@ -265,11 +287,8 @@ def import_creator_or_character(
         if isinstance(imported, CharacterCreatorDraftResponse):
             return imported
         return CharacterResponse(character=imported)
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": str(exc), "code": "character_import_invalid"},
-        ) from exc
+    except (ValueError, TypeError, ValidationError) as exc:
+        raise _creator_invalid_exception(exc, code="character_import_invalid") from exc
     except (CreatorDraftRepositoryError, CharacterRepositoryError) as exc:
         if isinstance(exc, CreatorDraftRepositoryError):
             raise _draft_repository_exception(exc) from exc
@@ -313,10 +332,7 @@ def finalize_creator_draft(
     except CharacterRepositoryError as exc:
         raise _repository_exception(exc) from exc
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": str(exc), "code": "creator_draft_invalid"},
-        ) from exc
+        raise _creator_invalid_exception(exc) from exc
 
 
 @router.post(
@@ -370,16 +386,7 @@ async def create_persisted_creator_first_portrait(
     except CreatorDraftRepositoryError as exc:
         raise _draft_repository_exception(exc) from exc
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": {
-                    "code": "creator_draft_invalid",
-                    "message": str(exc),
-                    "retryable": False,
-                }
-            },
-        ) from exc
+        raise _creator_invalid_exception(exc) from exc
 
 
 @router.post(
@@ -395,16 +402,7 @@ async def create_creator_first_portrait(
     try:
         return await CharacterCreatorService().capture_first_portrait(request)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": {
-                    "code": "creator_draft_invalid",
-                    "message": str(exc),
-                    "retryable": False,
-                }
-            },
-        ) from exc
+        raise _creator_invalid_exception(exc) from exc
 
 
 @router.post("", response_model=CharacterResponse, status_code=status.HTTP_201_CREATED)

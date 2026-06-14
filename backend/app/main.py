@@ -55,16 +55,29 @@ async def validation_exception_handler(
     """
 
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
-    errors = [
-        {
-            "field": ".".join(
-                str(part) for part in error.get("loc", []) if part != "body"
-            ),
-            "message": error.get("msg", "Invalid value."),
-            "type": error.get("type", "value_error"),
-        }
-        for error in exc.errors()
-    ]
+    errors = []
+    for error in exc.errors():
+        field = ".".join(str(part) for part in error.get("loc", []) if part != "body")
+        message = error.get("msg", "Invalid value.")
+        friendly_message = message
+        lowered_field = field.lower()
+        lowered_message = message.lower()
+        if (
+            "adult" in lowered_field
+            or "underage" in lowered_message
+            or "childlike" in lowered_message
+        ):
+            friendly_message = (
+                f"{message} Please describe a clearly adult fictional companion before continuing."
+            )
+        errors.append(
+            {
+                "field": field,
+                "message": message,
+                "friendly_message": friendly_message,
+                "type": error.get("type", "value_error"),
+            }
+        )
     logger.warning(
         "Request validation failed",
         extra={"request_id": request_id, "path": request.url.path, "errors": errors},
@@ -73,7 +86,11 @@ async def validation_exception_handler(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": "Invalid request payload.",
+            "message": "Some fields need attention before Reverie can continue.",
             "details": errors,
+            "next_steps": [
+                "Review the listed fields, update the values, and try again."
+            ],
             "request_id": request_id,
         },
     )
