@@ -1,8 +1,8 @@
-# Skill: Companion Genesis UX
+# Skill — Companion Genesis UX
 
-**Version:** 1.0  
-**Date:** June 13, 2026  
-**Use for:** Immersive character creation, creator wizard UX, black-starfield/celestial creation flow, choice cards, examples/anti-examples, live previews, first portrait validation, first greeting reveal, creator draft saving, and human-first creator language.
+**Version:** 1.1  
+**Date:** June 14, 2026  
+**Use for:** M7 immersive Companion Genesis UX, black-starfield/celestial creation flow, choice constellations, cinematic stage shell, multi-draft comparison, live companion preview, first portrait ceremony, world reveal, final “Begin” moment, and human-first creator wording. For M6 practical creator architecture, load `basic-character-creator.md` first.
 
 ---
 
@@ -11,6 +11,8 @@
 Companion creation is not a form. It is the first emotional bond moment.
 
 The user should feel like they are shaping a person, a world, and the rules of memory that bind them. The backend can be structured like a machine room. The UX must feel like a dream becoming real.
+
+This skill is for the immersive M7 elevation. It may inform M6 wording and previews, but it must not drag M7 ceremony into M6. If Codex starts summoning stars while the task asked for draft persistence, gently remove the telescope.
 
 ---
 
@@ -24,6 +26,7 @@ Load these before implementation or review:
 - `ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md`
 - `prompts/GLOBAL_CODING_PROMPT.md`
 - `prompts/skills/character-runtime-creator.md`
+- `prompts/skills/basic-character-creator.md` for M6 practical creator boundaries
 - `prompts/skills/roleplay-character-integrity.md`
 - `prompts/skills/moment-capture-visual-continuity.md` when portrait/image validation is involved
 - `prompts/skills/tauri-svelte-ui-patterns.md`
@@ -32,9 +35,35 @@ Load these before implementation or review:
 
 ---
 
-## 3. UX Principles
+## 3. M6 Boundary
 
-### 3.1 Preview before canon
+For M6, this skill may inform:
+
+- human-first wording
+- examples and anti-examples
+- preview-before-canon behavior
+- final review copy
+- emotional clarity
+- accessibility expectations
+
+For M6, this skill must not cause:
+
+- starfield/celestial stage implementation
+- cinematic transitions
+- constellation choice UI
+- adaptive creator music
+- multi-draft ritual flow
+- world reveal ceremony
+- full Genesis save/resume ceremony
+- live animated companion silhouette reveal
+
+M6 is the practical creator. M7 is the ritual. Confusing these two is how projects wake up in a velvet-lined scope coffin.
+
+---
+
+## 4. UX Principles
+
+### 4.1 Preview before canon
 
 Never ask the user to commit to a trait without showing what it means.
 
@@ -48,7 +77,7 @@ Every meaningful creator choice should have at least one of:
 - first portrait validation
 - scenario test
 
-### 3.2 Ask human questions, not schema questions
+### 4.2 Ask human questions, not schema questions
 
 Prefer:
 
@@ -69,17 +98,17 @@ Avoid exposing internal labels in the main flow:
 
 Advanced editors can expose structured fields later.
 
-### 3.3 Capability honesty
+### 4.3 Capability honesty
 
 The creator must not ask questions Reverie cannot use. A creator field must be storable, consumed by runtime, previewable, correctable, and durable across sessions before it ships in the main wizard.
 
-### 3.4 Adult fantasy freedom
+### 4.4 Adult fantasy freedom
 
 The creator is for fictional adult companions and should not moralize user preferences. Cute adult, petite adult, youthful adult, anime-stylized adult, early-20s adult, and soft-featured adult designs are valid. The boundary is underage or deliberately childlike sexual presentation, not normal adult style.
 
 ---
 
-## 4. Genesis Flow Model
+## 5. Genesis Flow Model
 
 The ideal immersive flow can be built in stages:
 
@@ -111,9 +140,9 @@ Build this progressively. Do not implement the full cinematic ritual before runt
 
 ---
 
-## 5. Creator Components
+## 6. Creator Components
 
-Useful frontend units:
+Useful M7 frontend units:
 
 ```text
 GenesisWizard
@@ -130,6 +159,8 @@ FirstGreetingStep
 FirstPortraitStep
 BlueprintReview
 CreatorDraftControls
+WorldRevealStage
+BeginButton
 ```
 
 Stores/types:
@@ -140,13 +171,15 @@ characterStore
 CharacterBlueprintDraft
 CreatorStepState
 CreatorPreviewState
+GenesisMotionState
+GenesisAudioState
 ```
 
 Persist drafts. Losing a 30-minute companion draft is a villain-origin-story bug.
 
 ---
 
-## 6. Examples and Anti-Examples
+## 7. Examples and Anti-Examples
 
 Every ambiguous trait should show what it means and what it does not mean.
 
@@ -163,7 +196,7 @@ Visual example cards should clarify styles, hair, body baseline, scene mood, fas
 
 ---
 
-## 7. Preview/Eval Requirements
+## 8. Preview/Eval Requirements
 
 Creator preview should support:
 
@@ -174,6 +207,8 @@ Creator preview should support:
 - response to user asking her to remember something
 - quiet romantic moment
 - optional adult-intensity preview when configured
+- first portrait validation through Moment Capture
+- final blueprint review
 
 Feedback buttons should be human:
 
@@ -184,12 +219,14 @@ Feedback buttons should be human:
 - Less intense
 - Less assistant-like
 - More like this
+- Keep this detail
+- Never use this trait
 
 Those map to structured blueprint changes internally.
 
 ---
 
-## 8. Accessibility and Performance
+## 9. Accessibility and Performance
 
 The immersive flow must remain usable:
 
@@ -201,10 +238,14 @@ The immersive flow must remain usable:
 - no mandatory long animations
 - image/audio previews optional and cancellable
 - no chat/backend blocking from creator media previews
+- canvas/animation cleanup when leaving the creator
+- mobile/laptop layout sanity
+
+8GB constraints still apply. A creator that makes the companion feel magical but the laptop feel like a toaster oven has failed the assignment.
 
 ---
 
-## 9. Tests and Validation
+## 10. Tests and Validation
 
 Add tests for:
 
@@ -214,6 +255,8 @@ Add tests for:
 - preview request generation
 - validation/correction actions
 - accessibility-critical controls
+- reduced-motion behavior
+- cancellation of image/audio preview jobs
 
 Manual validation:
 
@@ -222,10 +265,12 @@ Manual validation:
 - verify examples clarify choices
 - verify final blueprint matches user-facing choices
 - verify resume draft after reload
+- verify first portrait validation can be skipped or cancelled
+- verify reduced motion and mute controls remain visible
 
 ---
 
-## 10. Review Rubric
+## 11. Review Rubric
 
 Grok should compare Codex outputs on:
 
@@ -237,3 +282,9 @@ Grok should compare Codex outputs on:
 - accessibility and reduced-motion support
 - performance and cancellation
 - no hidden adult-fantasy censorship
+- no M6 practical-creator regression
+- no M8/M9 runtime creep
+
+---
+
+**End of skill**
