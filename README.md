@@ -1,94 +1,173 @@
-# Reverie
+<img src="docs/assets/reverie-banner.png" alt="Reverie Companion banner" width="100%" />
 
-**The offline adult AI companion that feels truly alive.**
+# Reverie Companion
 
-> "Your characters should remember what matters, stay visually and emotionally recognizable, grow from evidence, and feel present across long conversations, images, voice, and shared history — all while running locally on a reasonably modern gaming PC or laptop."
+**Your AI companion. Your fantasy. Your story.**
 
-**Reverie** is a fully local, uncensored desktop AI companion focused on deep long-term memory, believable character continuity, transparent self-learning, local image/voice immersion, and warm premium adult roleplay.
+Reverie is a local-first desktop AI companion for immersive adult roleplay, persistent character continuity, memory-linked visual presence, emotional voice, and transparent self-learning. It is built as a custom FastAPI + Tauri/Svelte application rather than a SillyTavern skin, with local storage and 8GB-VRAM-aware media orchestration as core design constraints.
 
----
-
-## What is Reverie?
-
-Reverie is built around one product promise:
-
-> **A private local companion who feels like a persistent person, not a prompt wrapper.**
-
-The app prioritizes:
-
-- **True long-term memory** with local LanceDB persistence, Ollama embeddings, bounded prompt context, and user-editable recall.
-- **Character continuity** through a versioned `CharacterBlueprint`, relationship state, visual identity, roleplay policy, prompt compiler, selected-character chat, and character-scoped memory/reflection.
-- **Moment Capture**: image generation as companion presence, using character identity, scene state, memory, and gallery feedback instead of generic prompt gambling.
-- **Genuine self-learning and growth** through reflection, first-person journaling, growth notices, reviewable visual changes, and future user-approved training artifacts.
-- **Roleplay-first adult freedom**: fictional adult fantasy stays in-character by default, without moralizing interruptions or hidden adult-content filters.
-- **User trust and control**: local-first storage, inspectable journals, editable memories, opt-in training collection, approved-only training jobs, deletion-aware pipelines, and rollback-friendly design.
-- **Strict optimization for RTX 4070 8GB mobile** with resource coordination, queued media jobs, conservative context budgets, and graceful degradation.
-- **Modern, warm, immersive UX** across Chat, Visual Novel, TTS, Images, Growth, Journal, Memory, Training, Encyclopedia, Settings, and the planned Companion Genesis creator.
+> A private local companion who remembers what matters, stays visually and emotionally recognizable, grows from shared history, and keeps the user in control.
 
 ---
 
-## Current Capabilities
+## Current State
 
-Milestones 1–5 are complete. Reverie currently includes:
+**Status:** Milestones 1-6 are complete. The current engineering handoff is **Milestone 7 - Companion Genesis Immersive Creator**.
 
-- FastAPI backend with Ollama chat, streaming SSE responses, and health diagnostics.
-- Local memory foundation using Ollama embeddings plus embedded LanceDB, with optional mem0 write-through.
-- Growth orchestration that prepares memory context, reflection journal context, rare growth notifications, and Personal LoRA collection hooks without blocking active chat.
-- Self-reflection journal API and frontend Journal panel for private, inspectable growth entries.
-- Unified Settings & Control Hub for memory, reflection, TTS, image generation, performance presets, extensions, backup/import/reset, and Milestone 3 release notes.
-- Training UI for Personal LoRA review: collection opt-in, training opt-in, pending candidate approval/rejection/deletion, and safe starter training jobs.
-- Visual Novel mode, emotional TTS playback, local image generation gallery, Growth Dashboard, Memory Browser, and Character Encyclopedia foundations.
-- Moment Capture & Visual Continuity: selected-character capture requests from chat/VN context, `VisualPromptCompiler` prompt bundles, character-linked gallery metadata, quick/detailed visual feedback, reviewable `VisualChangeEvent` canon proposals, approve/reject/rollback controls, character-scoped visual memory writeback, and deterministic visual consistency evals.
-- 8GB-aware capture scheduling: Moment Capture jobs remain queued/cancellable, preserve capture metadata across retry/cancel/failure, pause for TTS priority, downgrade safely under low/unknown VRAM, and keep chat non-blocking.
-- Tauri + Svelte desktop shell with warm dark styling, local backend integration, and first-run Milestone 3 onboarding.
+M6 closed the basic character creator foundation: Reverie can now persist creator drafts separately from finalized characters, validate drafts through runtime `CharacterBlueprint` structures, preview greetings and example dialogue, queue draft first-portrait Moment Capture, review/finalize drafts, duplicate drafts or characters, and import/export/delete character-level data through versioned management envelopes.
+
+M7 is the presentation and experience layer on top of that foundation. It should turn the practical draft system into the immersive Companion Genesis creator without inventing unsupported fields or implying runtime powers that do not exist yet.
 
 ---
 
-## Current Development Focus
+## What Reverie Can Do Today
 
-Reverie has closed **Milestone 5 — Moment Capture & Visual Continuity**. The app now has character-aware, memory-linked visual presence with reviewable canon updates, gallery feedback, visual memory writeback, and 8GB-safe capture scheduling.
+- **Local chat runtime:** FastAPI backend with Ollama chat, streaming SSE responses, health diagnostics, bounded prompt context, and selected-character grounding.
+- **Character runtime:** versioned `CharacterBlueprint` persistence, selected-character chat, relationship state, visual identity, roleplay-first policies, prompt compilation, and character-scoped memory/reflection hooks.
+- **Basic creator foundation:** `CharacterCreatorDraft` persistence, draft validation, draft-to-blueprint previews, deterministic greeting/example dialogue previews, `PreviewQualityReport`, draft first-portrait Moment Capture, review/finalize, duplicate, import/export, and confirmation-gated finalized-character delete flows.
+- **Long-term memory:** local LanceDB-backed memory with Ollama embeddings, character/global/shared scoping, bounded retrieval, optional mem0 write-through, and local-first deletion/control posture.
+- **Reflection and growth:** private self-reflection journal entries, growth orchestration, rare growth notifications, Personal LoRA candidate collection/review hooks, and conservative local training-job foundations.
+- **Moment Capture and visual continuity:** character-aware image/capture requests, `VisualPromptCompiler`, character-linked gallery metadata, quick/detailed visual feedback, reviewable `VisualChangeEvent` canon proposals, approve/reject/rollback controls, visual memory writeback, and deterministic visual consistency evals.
+- **8GB-aware media scheduling:** queued/cancellable image capture jobs, TTS priority, safe downgrade behavior under low/unknown VRAM, preserved retry/cancel/failure metadata, and non-blocking chat.
+- **Frontend shell:** Tauri 2 + SvelteKit desktop UI with Chat, Characters, Visual Novel, TTS, Images/Moment Capture, Growth, Journal, Memory, Training, Encyclopedia, Settings, and warm local-first styling.
+- **Extensibility foundation:** typed extension manifests, declarative settings sections, bounded event history, and backend/frontend contracts for future integrations.
 
-The full immersive character creator is still intentionally **not** being built before the runtime can honor its choices. The guiding strategy remains:
+---
+
+## Current Focus
+
+The next milestone is **M7 - Companion Genesis Immersive Creator**.
+
+M7 should provide:
+
+- immersive creator architecture and stage shell;
+- starfield/celestial visual system with reduced-motion support;
+- choice-card/constellation style creator controls;
+- live companion preview surfaces based on the M6 draft preview contracts;
+- multi-draft compare/mix workflows;
+- first-portrait validation ceremony using the existing Moment Capture stack;
+- world reveal and final begin/save experience;
+- creator accessibility and performance polish.
+
+The implementation rule remains:
 
 ```text
-Build the powers first.
-Then build the ritual that lets users command those powers.
+Expose only what Reverie can store, consume, preview, validate or correct, and preserve.
 ```
 
-The current focus moves to **Milestone 6 — Basic Character Creator Foundation**, which exposes only fields the runtime can already store, consume, preview, validate, and preserve.
+---
 
-Milestone 7 builds the immersive **Companion Genesis** creator experience.
+## Architecture
+
+```text
+Reverie-Companion/
++-- backend/      FastAPI services, local persistence, memory, growth, characters, capture
++-- frontend/     Tauri 2 + SvelteKit desktop application
++-- docs/         implementation notes, creator draft system docs, smoke checklists
++-- prompts/      Grok/Codex workflow prompts and project skill prompts
++-- tests/        project-level tests
+```
+
+### Backend
+
+- Python 3.11+ FastAPI app.
+- Ollama for local chat and embeddings.
+- SQLite repositories for characters and creator drafts.
+- Embedded LanceDB for local memory.
+- Modular services for chat, character runtime, creator drafts, Moment Capture, image jobs, reflection, growth, and Personal LoRA review.
+
+### Frontend
+
+- Tauri 2 desktop shell.
+- SvelteKit + Svelte 5 UI.
+- Component/stores split for chat, characters, images/capture, journal, growth, memory, settings, TTS, and Visual Novel mode.
+- Vite dev server on Tauri's fixed port.
+
+---
+
+## Setup
+
+### Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload
+```
+
+Pull the default local models if needed:
+
+```bash
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+```
+
+The API runs at `http://localhost:8000` by default.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+For the full desktop app:
+
+```bash
+cd frontend
+npm run tauri dev
+```
+
+---
+
+## Useful Commands
+
+Backend tests:
+
+```bash
+cd backend
+python -m pytest
+```
+
+Visual consistency eval harness:
+
+```bash
+cd backend
+python -m pytest tests/test_visual_consistency_evals.py -q
+```
+
+Frontend checks and tests:
+
+```bash
+cd frontend
+npm run check
+npm run test
+```
+
+Frontend build:
+
+```bash
+cd frontend
+npm run build
+```
 
 ---
 
 ## Roleplay Philosophy
 
-Reverie is a roleplay companion first.
+Reverie is a roleplay companion first. Fictional adult fantasy should stay in-character by default, including dark romance, power exchange, fantasy violence, villain arcs, and other user-chosen fictional scenarios.
 
-Fictional adult fantasy is not treated as real-world intent. The app should preserve in-character immersion for adult fantasy, dark romance, power exchange, villain arcs, fantasy violence, and other user-chosen fictional scenarios.
-
-The hard product boundary is simple:
+The hard product boundary is:
 
 ```text
 18+ only. No underage sexual content. No deliberately childlike sexual presentation.
 ```
 
-Do not over-police normal adult character design. Cute adult, petite adult, youthful adult, early-20s adult, anime-stylized adult, soft-featured adult, short adult, tall adult, thin adult, curvy adult, muscular adult, and plus-size adult characters are valid.
-
----
-
-## Grok + Codex Workflow
-
-Reverie is developed with a two-run implementation workflow:
-
-1. **Grok** acts as Coding Director and writes one detailed implementation prompt.
-2. The same prompt is run twice in **Codex** as Run A and Run B.
-3. Each run produces a separate branch, PR, or patch.
-4. Grok reviews both outputs for architecture, UX, 8GB safety, tests, maintainability, roleplay integrity, and vision alignment.
-5. The better version is accepted or a small synthesis patch is requested.
-6. Accepted work updates tests and docs when behavior changes.
-
-This workflow is documented in [`prompts/GROK_CODING_DIRECTOR_WORKFLOW.md`](prompts/GROK_CODING_DIRECTOR_WORKFLOW.md).
+The goal is believable character integrity, not moralizing interruption: characters can disagree, tease, resist, negotiate, set boundaries, and honor OOC/safeword controls while preserving immersion.
 
 ---
 
@@ -98,15 +177,16 @@ Core docs:
 
 - [Source of Truth](Reverie_Source_of_Truth.md)
 - [Development Plan](DEVELOPMENT_PLAN.md)
+- [Creator Draft System](docs/creator-draft-system.md)
 - [Character Creator Capability Matrix](CHARACTER_CREATOR_CAPABILITY_MATRIX.md)
 - [Roleplay-First Character Integrity Policy](ROLEPLAY_FIRST_CHARACTER_INTEGRITY_POLICY.md)
-- [Global Coding Prompt](prompts/GLOBAL_CODING_PROMPT.md)
-- [Grok Coding Director Workflow](prompts/GROK_CODING_DIRECTOR_WORKFLOW.md)
 - [Backend README](backend/README.md)
 - [Frontend README](frontend/README.md)
 
-Key skill prompts for Grok/Codex:
+Workflow and implementation prompts:
 
+- [Global Coding Prompt](prompts/GLOBAL_CODING_PROMPT.md)
+- [Grok Coding Director Workflow](prompts/GROK_CODING_DIRECTOR_WORKFLOW.md)
 - [Character Runtime & Creator](prompts/skills/character-runtime-creator.md)
 - [Roleplay-First Character Integrity](prompts/skills/roleplay-character-integrity.md)
 - [Moment Capture & Visual Continuity](prompts/skills/moment-capture-visual-continuity.md)
@@ -123,24 +203,32 @@ Key skill prompts for Grok/Codex:
 
 ---
 
-## Current Status
+## Milestone Status
 
-- ✅ **Milestone 1 — Foundation**: repository structure, backend shell, frontend shell, core documentation, initial chat path.
-- ✅ **Milestone 2 — Memory & Self-Learning**: memory context, reflection journal, growth orchestration, Journal/Settings/Training UI, growth notifications, and Personal LoRA foundation.
-- ✅ **Milestone 3 — Immersion & Production Foundations**: Visual Novel foundation, emotional TTS, local image generation, growth visibility, extensibility, 8GB resource guardrails, Settings Hub, onboarding, and release documentation.
-- ✅ **Milestone 4 — Character Runtime & Capability Alignment**: CharacterBlueprint runtime, selected-character chat, character-scoped memory/reflection, relationship/growth/visual identity schemas, roleplay-first policy, and minimal frontend shell.
-- ✅ **Milestone 5 — Moment Capture & Visual Continuity**: VisualPromptCompiler, Moment Capture API/service, character-linked gallery metadata, visual feedback, reviewable VisualChangeEvent canon updates, visual memory writeback, 8GB capture scheduling, capture asset metadata, and eval harness.
-- 🚧 **Milestone 6 — Basic Character Creator Foundation**: current focus.
-
----
-
-## Philosophy
-
-We are building companions users can form real, long-term emotional connections with: characters that remember what matters, stay recognizable, grow from evidence, feel present through media, and keep the user in control.
-
-Reverie should feel intimate and magical on the surface, while staying boringly reliable underneath. The human sees a companion coming alive. The backend sees schemas, provenance, tests, and resource budgets.
+- Complete: **Milestone 1 - Foundation**
+- Complete: **Milestone 2 - Memory & Self-Learning**
+- Complete: **Milestone 3 - Immersion & Production Foundations**
+- Complete: **Milestone 4 - Character Runtime & Capability Alignment**
+- Complete: **Milestone 5 - Moment Capture & Visual Continuity**
+- Complete: **Milestone 6 - Basic Character Creator Foundation**
+- Current handoff: **Milestone 7 - Companion Genesis Immersive Creator**
 
 ---
 
-**Reverie**  
+## Development Workflow
+
+Reverie uses a two-run implementation workflow:
+
+1. Grok acts as Coding Director and writes one detailed implementation prompt.
+2. The same prompt is run twice in Codex as Run A and Run B.
+3. Each run produces a separate branch, PR, or patch.
+4. Grok reviews both for architecture, UX, 8GB safety, tests, maintainability, roleplay integrity, and vision alignment.
+5. The better version is accepted, or a small synthesis patch is requested.
+6. Accepted work updates tests and docs when behavior changes.
+
+See [Grok Coding Director Workflow](prompts/GROK_CODING_DIRECTOR_WORKFLOW.md).
+
+---
+
+**Reverie Companion**  
 June 2026
