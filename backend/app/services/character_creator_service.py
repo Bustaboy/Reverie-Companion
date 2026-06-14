@@ -7,10 +7,14 @@ first-portrait Moment Capture through the existing non-blocking capture service.
 Persistence/migration note: ``CharacterCreatorDraft`` is API-only for P00A. If
 later milestones persist drafts, store the draft schema version alongside the
 mapped blueprint ID and preserve ``metadata`` losslessly for forward migration.
+Draft first-portrait captures add lightweight provenance fields to request,
+record, image-job context, and follow-up visual-change events: ``creator_draft``,
+``draft_id``, ``source_context``, ``capture_intent``, and ``rollback_note``.
 """
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
@@ -41,6 +45,9 @@ from app.services.moment_capture_service import (
     MomentCaptureResponse,
     MomentCaptureService,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DraftMomentSource(StrEnum):
@@ -101,7 +108,7 @@ class DraftMomentCaptureRequest(BaseModel):
     source_turn_index: int = Field(default=0, ge=0)
     scene_state: SceneState | None = None
     capture_intent: str = Field(
-        default="first portrait for this new character draft", max_length=240
+        default="first portrait from creator draft", max_length=240
     )
     quality_preset: ImageQualityPreset = ImageQualityPreset.preview_8gb
 
@@ -192,8 +199,10 @@ class CharacterCreatorService:
         self, request: DraftMomentCaptureRequest
     ) -> MomentCaptureResponse:
         blueprint = self.draft_to_blueprint(request.draft)
-        scene_state = request.scene_state or self._default_scene_state(
-            blueprint, source=request.source
+        scene_state = self._with_draft_scene_metadata(
+            request.scene_state
+            or self._default_scene_state(blueprint, source=request.source),
+            source=request.source,
         )
         capture_request = MomentCaptureRequest.from_chat_turn(
             character_id=blueprint.character_id,
@@ -216,12 +225,17 @@ class CharacterCreatorService:
                 blueprint.visual_identity.updated_at,
             ),
             quality_preset=request.quality_preset,
-            metadata={
-                "capture_intent": request.capture_intent,
-                "creator_draft_id": request.draft.draft_id,
-                "creator_runtime_source": request.source.value,
-                "provenance": "character_creator_draft_first_portrait",
-                "queue_policy": "non_blocking_preview_8gb",
+            metadata=self._draft_capture_metadata(
+                request=request, character_id=blueprint.character_id
+            ),
+        )
+        LOGGER.info(
+            "Queued creator draft first-portrait Moment Capture",
+            extra={
+                "creator_draft": True,
+                "draft_id": request.draft.draft_id,
+                "character_id": blueprint.character_id,
+                "source_context": request.source.value,
             },
         )
         service = self._moment_capture_service
@@ -257,8 +271,70 @@ class CharacterCreatorService:
             pose="front-facing first portrait",
             continuity_notes=[
                 "first portrait validation",
+                "creator draft capture",
+                "evidence-only; does not mutate canonical character data",
                 "draft image is not canon until reviewed",
             ],
             wrong_appearance=list(blueprint.visual_identity.rejected_traits),
-            metadata={"source": source.value, "creator_first_portrait": True},
+            metadata={
+                "source": source.value,
+                "creator_draft": True,
+                "source_context": source.value,
+                "creator_first_portrait": True,
+                "rollback_note": self._draft_rollback_note(),
+            },
+        )
+
+    def _with_draft_scene_metadata(
+        self, scene_state: SceneState, *, source: DraftMomentSource
+    ) -> SceneState:
+        metadata = {
+            **scene_state.metadata,
+            "creator_draft": True,
+            "source_context": source.value,
+            "creator_first_portrait": True,
+            "rollback_note": self._draft_rollback_note(),
+        }
+        continuity_notes = list(scene_state.continuity_notes)
+        for note in (
+            "creator draft capture",
+            "evidence-only; does not mutate canonical character data",
+        ):
+            if note not in continuity_notes:
+                continuity_notes.append(note)
+        return scene_state.model_copy(
+            update={"metadata": metadata, "continuity_notes": continuity_notes}
+        )
+
+    def _draft_capture_metadata(
+        self, *, request: DraftMomentCaptureRequest, character_id: str
+    ) -> dict[str, Any]:
+        """Return filterable provenance for evidence-only draft captures.
+
+        These fields are intentionally duplicated at the top level of capture
+        records and image-job context so future gallery/review migration tasks
+        can filter draft captures without parsing nested draft structures.
+        """
+
+        return {
+            "creator_draft": True,
+            "draft_id": request.draft.draft_id,
+            "draft_character_id": character_id,
+            "source_context": request.source.value,
+            "capture_intent": request.capture_intent,
+            "rollback_note": self._draft_rollback_note(),
+            "creator_draft_id": request.draft.draft_id,
+            "creator_runtime_source": request.source.value,
+            "provenance": "character_creator_draft_first_portrait",
+            "queue_policy": "non_blocking_preview_8gb",
+            "evidence_only": True,
+            "canonical_mutation_allowed": False,
+        }
+
+    @staticmethod
+    def _draft_rollback_note() -> str:
+        return (
+            "Creator draft capture is evidence-only for first-portrait review; "
+            "it does not mutate canonical character data unless a later explicit "
+            "review/canon approval flow applies changes."
         )
