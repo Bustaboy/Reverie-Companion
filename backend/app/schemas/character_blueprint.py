@@ -131,6 +131,7 @@ class CommunicationProfile(BaseModel):
 
 
 class CharacterMemoryPolicy(BaseModel):
+    enabled: bool = True
     scope: MemoryScope = MemoryScope.character_private
     include_shared_memories: bool = False
     memory_summary: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)

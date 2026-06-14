@@ -36,10 +36,13 @@ from app.schemas.character_blueprint import (
     CommunicationProfile,
     MAX_LIST_ITEMS,
     MAX_SHORT_TEXT,
+    CharacterMemoryPolicy,
+    MemoryScope,
     PersonalityProfile,
     RoleplayPolicy,
     utc_now_iso,
 )
+from app.schemas.growth_policy import GrowthPace, GrowthPolicy, ReflectionFrequency
 from app.schemas.moment_capture import (
     MomentCaptureRequest,
     SceneState,
@@ -59,7 +62,11 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 6
+DRAFT_SCHEMA_VERSION = 7
+REQUIRED_BLOCKED_GROWTH_DOMAINS = {
+    "stable_identity_without_user_edit",
+    "underage_or_childlike_sexualization",
+}
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -285,6 +292,82 @@ class CreatorDraftWorldScene(BaseModel):
         return hints
 
 
+class CreatorDraftMemoryPreferences(BaseModel):
+    """Draft-scoped memory preferences currently consumable by runtime policy.
+
+    This intentionally avoids promising a typed memory taxonomy. M6 stores the
+    policy switches the runtime already understands: whether long-term memory
+    should be used for this character and whether recall stays character-private
+    or may include shared on-device memories.
+    """
+
+    memory_enabled: bool = True
+    memory_scope: MemoryScope = MemoryScope.character_private
+
+
+class CreatorDraftGrowthPreferences(BaseModel):
+    """Draft-scoped growth controls mapped directly into ``GrowthPolicy``."""
+
+    reflection_frequency: ReflectionFrequency = ReflectionFrequency.balanced
+    growth_pace: GrowthPace = GrowthPace.balanced
+    allowed_growth_domains: list[str] = Field(
+        default_factory=lambda: [
+            "preferences",
+            "relationship",
+            "rituals",
+            "communication_style",
+        ],
+        max_length=16,
+    )
+    blocked_growth_domains: list[str] = Field(
+        default_factory=lambda: [
+            "stable_identity_without_user_edit",
+            "underage_or_childlike_sexualization",
+        ],
+        max_length=16,
+    )
+    major_change_requires_approval: bool = True
+
+    @field_validator("allowed_growth_domains", "blocked_growth_domains", mode="after")
+    @classmethod
+    def normalize_growth_domains(cls, values: list[str]) -> list[str]:
+        return _normalize_growth_domain_list(values)
+
+    @model_validator(mode="after")
+    def validate_growth_domain_boundaries(self) -> "CreatorDraftGrowthPreferences":
+        allowed = set(self.allowed_growth_domains)
+        blocked = set(self.blocked_growth_domains)
+        overlap = allowed & blocked
+        if overlap:
+            raise ValueError(
+                "Growth domains cannot be both allowed and blocked: "
+                + ", ".join(sorted(overlap))
+            )
+        missing_required_blocks = REQUIRED_BLOCKED_GROWTH_DOMAINS - blocked
+        if missing_required_blocks:
+            raise ValueError(
+                "Blocked growth domains must preserve adult-only and stable-identity safeguards: "
+                + ", ".join(sorted(missing_required_blocks))
+            )
+        if "stable_identity_without_user_edit" in allowed:
+            raise ValueError(
+                "Stable identity changes must require explicit user edits, not automatic growth."
+            )
+        return self
+
+
+def _normalize_growth_domain_list(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = str(value).strip().lower().replace(" ", "_")[:80]
+        if item:
+            if item not in REQUIRED_BLOCKED_GROWTH_DOMAINS:
+                _reject_underage_or_childlike_presentation(item, "Growth domain")
+            if item not in normalized:
+                normalized.append(item)
+    return normalized[:16]
+
+
 class CreatorDraftVisualIdentity(BaseModel):
     """Creator-facing visual fields with stable anchors separated from scene state.
 
@@ -465,6 +548,12 @@ class CharacterCreatorDraft(BaseModel):
         default_factory=CreatorDraftContentBoundaries
     )
     world_scene: CreatorDraftWorldScene = Field(default_factory=CreatorDraftWorldScene)
+    memory: CreatorDraftMemoryPreferences = Field(
+        default_factory=CreatorDraftMemoryPreferences
+    )
+    growth: CreatorDraftGrowthPreferences = Field(
+        default_factory=CreatorDraftGrowthPreferences
+    )
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity = Field(
@@ -571,6 +660,8 @@ class CharacterCreatorDraftUpdate(BaseModel):
         default_factory=CreatorDraftContentBoundaries
     )
     world_scene: CreatorDraftWorldScene | None = None
+    memory: CreatorDraftMemoryPreferences | None = None
+    growth: CreatorDraftGrowthPreferences | None = None
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity | None = None
@@ -786,6 +877,28 @@ class CharacterCreatorService:
                 avoid_style_rules=draft.avoid_style,
                 initiative_in_conversation=draft.initiative_in_conversation,
             ),
+            memory_policy=CharacterMemoryPolicy(
+                enabled=draft.memory.memory_enabled,
+                scope=draft.memory.memory_scope,
+                include_shared_memories=(
+                    draft.memory.memory_enabled
+                    and draft.memory.memory_scope == MemoryScope.character_plus_shared
+                ),
+                memory_summary=(
+                    "Long-term memory is enabled for this draft."
+                    if draft.memory.memory_enabled
+                    else "Long-term memory is disabled for this draft."
+                ),
+            ),
+            growth_policy=GrowthPolicy(
+                character_id=character_id,
+                character_scoped_growth=draft.memory.memory_enabled,
+                growth_pace=draft.growth.growth_pace,
+                reflection_frequency=draft.growth.reflection_frequency,
+                major_change_requires_approval=draft.growth.major_change_requires_approval,
+                allowed_growth_domains=draft.growth.allowed_growth_domains,
+                blocked_growth_domains=draft.growth.blocked_growth_domains,
+            ),
             roleplay_policy=RoleplayPolicy(
                 fiction_first_mode=draft.roleplay.fiction_first_mode,
                 lecture_avoidance=True,
@@ -818,6 +931,8 @@ class CharacterCreatorService:
                 },
                 "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
                 "world_scene": draft.world_scene.model_dump(mode="json"),
+                "memory_preferences": draft.memory.model_dump(mode="json"),
+                "growth_preferences": draft.growth.model_dump(mode="json"),
                 "scene_hints": draft.world_scene.to_scene_hints(),
                 **draft.metadata,
             },

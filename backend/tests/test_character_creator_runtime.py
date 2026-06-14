@@ -21,13 +21,17 @@ from app.schemas.relationship_state import (
     RelationshipPacing,
     RelationshipPhase,
 )
+from app.schemas.character_blueprint import MemoryScope
+from app.schemas.growth_policy import GrowthPace, ReflectionFrequency
 from app.schemas.visual_identity import VisualIdentityProfile
 from app.services.character_creator_service import (
     CharacterCreatorDraft,
     CharacterCreatorDraftCreate,
     CharacterCreatorDraftUpdate,
     CreatorDraftContentBoundaries,
+    CreatorDraftGrowthPreferences,
     CreatorDraftIntegrityPolicy,
+    CreatorDraftMemoryPreferences,
     CreatorDraftMetaPolicy,
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
@@ -96,6 +100,21 @@ def _draft() -> CharacterCreatorDraft:
             key_objects=["silver grimoire", "rain-streaked window"],
             background_details=["moonlit bookshelves", "soft amber candles"],
         ),
+        memory=CreatorDraftMemoryPreferences(
+            memory_enabled=True,
+            memory_scope=MemoryScope.character_plus_shared,
+        ),
+        growth=CreatorDraftGrowthPreferences(
+            reflection_frequency=ReflectionFrequency.high,
+            growth_pace=GrowthPace.responsive,
+            allowed_growth_domains=["preferences", "relationship", "communication style"],
+            blocked_growth_domains=[
+                "stable_identity_without_user_edit",
+                "underage_or_childlike_sexualization",
+                "training_without_review",
+            ],
+            major_change_requires_approval=True,
+        ),
         avoid_style=["clinical assistant tone", "moralizing fictional adult romance"],
         initiative_in_conversation=0.63,
         visual=CreatorDraftVisualIdentity(
@@ -138,6 +157,18 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
     assert response.blueprint is not None
     blueprint = response.blueprint
     assert blueprint.character_id == "draft_aria"
+    assert blueprint.memory_policy.enabled is True
+    assert blueprint.memory_policy.scope == MemoryScope.character_plus_shared
+    assert blueprint.memory_policy.include_shared_memories is True
+    assert blueprint.growth_policy.reflection_frequency == ReflectionFrequency.high
+    assert blueprint.growth_policy.growth_pace == GrowthPace.responsive
+    assert blueprint.growth_policy.allowed_growth_domains == [
+        "preferences",
+        "relationship",
+        "communication_style",
+    ]
+    assert "training_without_review" in blueprint.growth_policy.blocked_growth_domains
+    assert blueprint.growth_policy.major_change_requires_approval is True
     assert blueprint.identity.display_name == "Aria"
     assert blueprint.identity.tags == ["slow_burn", "fantasy_romance"]
     assert blueprint.relationship.character_id == "draft_aria"
@@ -552,6 +583,49 @@ def test_drafts_can_be_created_loaded_updated_validated_and_deleted(tmp_path) ->
         == 0.75
     )
 
+    memory_growth_update = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            memory=CreatorDraftMemoryPreferences(
+                memory_enabled=False,
+                memory_scope=MemoryScope.character_private,
+            ),
+            growth=CreatorDraftGrowthPreferences(
+                reflection_frequency=ReflectionFrequency.low,
+                growth_pace=GrowthPace.slow,
+                allowed_growth_domains=["preferences"],
+                blocked_growth_domains=[
+                    "stable_identity_without_user_edit",
+                    "underage_or_childlike_sexualization",
+                    "visual_canon_without_review",
+                ],
+                major_change_requires_approval=False,
+            ),
+        ),
+    )
+
+    assert memory_growth_update.record.draft.memory.memory_enabled is False
+    assert memory_growth_update.record.draft.growth.reflection_frequency == "low"
+    assert memory_growth_update.validation.blueprint is not None
+    assert memory_growth_update.validation.blueprint.memory_policy.enabled is False
+    assert (
+        memory_growth_update.validation.blueprint.memory_policy.include_shared_memories
+        is False
+    )
+    assert memory_growth_update.validation.blueprint.growth_policy.growth_pace == "slow"
+    assert (
+        memory_growth_update.validation.blueprint.growth_policy.allowed_growth_domains
+        == ["preferences"]
+    )
+    assert (
+        "visual_canon_without_review"
+        in memory_growth_update.validation.blueprint.growth_policy.blocked_growth_domains
+    )
+    assert (
+        memory_growth_update.validation.blueprint.growth_policy.major_change_requires_approval
+        is False
+    )
+
     validation = service.validate_persisted_draft("draft-aria")
     assert validation.valid is True
     assert validation.blueprint is not None
@@ -612,6 +686,45 @@ def test_creator_draft_rejects_invalid_personality_and_communication_values() ->
             pass
         else:
             raise AssertionError(f"Expected out-of-range scalar to fail: {kwargs}")
+
+
+def test_creator_draft_rejects_invalid_memory_and_growth_preferences() -> None:
+    try:
+        CreatorDraftGrowthPreferences(
+            allowed_growth_domains=["relationship", "stable identity without user edit"],
+            blocked_growth_domains=["underage_or_childlike_sexualization"],
+        )
+    except ValidationError as exc:
+        assert "stable-identity safeguards" in str(exc)
+    else:
+        raise AssertionError("Expected missing stable-identity block to fail.")
+
+    try:
+        CreatorDraftGrowthPreferences(
+            allowed_growth_domains=["relationship"],
+            blocked_growth_domains=[
+                "relationship",
+                "stable_identity_without_user_edit",
+                "underage_or_childlike_sexualization",
+            ],
+        )
+    except ValidationError as exc:
+        assert "both allowed and blocked" in str(exc)
+    else:
+        raise AssertionError("Expected overlapping growth domains to fail.")
+
+    try:
+        CreatorDraftGrowthPreferences(
+            allowed_growth_domains=["teen romance"],
+            blocked_growth_domains=[
+                "stable_identity_without_user_edit",
+                "underage_or_childlike_sexualization",
+            ],
+        )
+    except ValidationError as exc:
+        assert "clearly adult" in str(exc)
+    else:
+        raise AssertionError("Expected underage growth domain to fail.")
 
 
 def test_creator_draft_update_validates_premise_and_relationship_frame(
