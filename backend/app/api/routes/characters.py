@@ -21,6 +21,9 @@ from app.services.character_creator_service import (
     CharacterCreatorDraftResponse,
     CharacterCreatorDraftUpdate,
     CharacterCreatorService,
+    CreatorDraftPreviewResponse,
+    DraftPreviewRequest,
+    PersistedDraftPreviewRequest,
     CreatorDraftNotFoundError,
     DraftMomentCaptureRequest,
     DraftValidationResponse,
@@ -95,6 +98,68 @@ def validate_creator_draft(request: CharacterCreatorDraft) -> DraftValidationRes
 
 
 @router.post(
+    "/creator/preview/greeting",
+    response_model=CreatorDraftPreviewResponse,
+)
+def preview_creator_greeting(
+    request: DraftPreviewRequest,
+) -> CreatorDraftPreviewResponse:
+    """Generate a non-persisted first-message preview from an unsaved draft."""
+
+    return CharacterCreatorService().generate_greeting_preview(request)
+
+
+@router.post(
+    "/creator/preview/dialogues",
+    response_model=CreatorDraftPreviewResponse,
+)
+def preview_creator_dialogues(
+    request: DraftPreviewRequest,
+) -> CreatorDraftPreviewResponse:
+    """Generate non-persisted example dialogue previews from an unsaved draft."""
+
+    return CharacterCreatorService().generate_dialogue_preview(request)
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/preview/greeting",
+    response_model=CreatorDraftPreviewResponse,
+)
+def preview_persisted_creator_greeting(
+    draft_id: str,
+    request: PersistedDraftPreviewRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CreatorDraftPreviewResponse:
+    """Generate a non-persisted first-message preview from a saved draft."""
+
+    try:
+        return service.generate_persisted_greeting_preview(draft_id, request)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
+    "/creator/drafts/{draft_id}/preview/dialogues",
+    response_model=CreatorDraftPreviewResponse,
+)
+def preview_persisted_creator_dialogues(
+    draft_id: str,
+    request: PersistedDraftPreviewRequest,
+    service: Annotated[CharacterCreatorService, Depends(get_creator_service)],
+) -> CreatorDraftPreviewResponse:
+    """Generate non-persisted example dialogue previews from a saved draft."""
+
+    try:
+        return service.generate_persisted_dialogue_preview(draft_id, request)
+    except CreatorDraftNotFoundError as exc:
+        raise _draft_not_found_exception(exc) from exc
+    except CreatorDraftRepositoryError as exc:
+        raise _draft_repository_exception(exc) from exc
+
+
+@router.post(
     "/creator/drafts",
     response_model=CharacterCreatorDraftResponse,
     status_code=status.HTTP_201_CREATED,
@@ -134,7 +199,9 @@ def get_creator_draft(
         raise _draft_repository_exception(exc) from exc
 
 
-@router.patch("/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse)
+@router.patch(
+    "/creator/drafts/{draft_id}", response_model=CharacterCreatorDraftResponse
+)
 def update_creator_draft(
     draft_id: str,
     request: CharacterCreatorDraftUpdate,

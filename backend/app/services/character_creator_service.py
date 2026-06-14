@@ -55,7 +55,10 @@ from app.schemas.relationship_state import (
     RelationshipState,
 )
 from app.schemas.visual_identity import VisualIdentityProfile
-from app.services.character_service import CharacterNotFoundError
+from app.services.character_service import (
+    CharacterNotFoundError,
+    CharacterPromptCompiler,
+)
 from app.services.moment_capture_service import (
     MomentCaptureResponse,
     MomentCaptureService,
@@ -655,6 +658,45 @@ class DraftValidationResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class CreatorPreviewKind(StrEnum):
+    greeting = "greeting"
+    example_dialogues = "example_dialogues"
+
+
+class CreatorPreviewValidationResult(BaseModel):
+    valid: bool
+    warnings: list[str] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+
+
+class CreatorDialoguePreview(BaseModel):
+    scenario: str
+    user_message: str
+    character_reply: str
+
+
+class CreatorDraftPreviewResponse(BaseModel):
+    draft_id: str | None = None
+    character_id: str
+    kind: CreatorPreviewKind
+    greeting: str | None = None
+    example_dialogues: list[CreatorDialoguePreview] = Field(default_factory=list)
+    validation: CreatorPreviewValidationResult
+    prompt_context: str = Field(
+        description="Bounded prompt compiler output used to ground preview generation."
+    )
+    generation_notes: list[str] = Field(default_factory=list)
+
+
+class PersistedDraftPreviewRequest(BaseModel):
+    include_prompt_context: bool = False
+    dialogue_count: int = Field(default=4, ge=1, le=8)
+
+
+class DraftPreviewRequest(PersistedDraftPreviewRequest):
+    draft: CharacterCreatorDraft
+
+
 class CharacterCreatorDraftCreate(BaseModel):
     draft: CharacterCreatorDraft
 
@@ -969,6 +1011,222 @@ class CharacterCreatorService:
         except ValueError as exc:
             return DraftValidationResponse(valid=False, errors=[str(exc)])
         return DraftValidationResponse(valid=True, blueprint=blueprint)
+
+    def generate_greeting_preview(
+        self, request: DraftPreviewRequest | CharacterCreatorDraft
+    ) -> CreatorDraftPreviewResponse:
+        preview_request = (
+            DraftPreviewRequest(draft=request)
+            if isinstance(request, CharacterCreatorDraft)
+            else request
+        )
+        blueprint = self.draft_to_blueprint(preview_request.draft)
+        greeting = self._compose_greeting(preview_request.draft, blueprint)
+        validation = self.validate_preview_text(preview_request.draft, greeting)
+        return CreatorDraftPreviewResponse(
+            draft_id=preview_request.draft.draft_id,
+            character_id=blueprint.character_id,
+            kind=CreatorPreviewKind.greeting,
+            greeting=greeting,
+            validation=validation,
+            prompt_context=self._preview_prompt_context(
+                blueprint, include=preview_request.include_prompt_context
+            ),
+            generation_notes=self._preview_generation_notes(),
+        )
+
+    def generate_dialogue_preview(
+        self, request: DraftPreviewRequest | CharacterCreatorDraft
+    ) -> CreatorDraftPreviewResponse:
+        preview_request = (
+            DraftPreviewRequest(draft=request)
+            if isinstance(request, CharacterCreatorDraft)
+            else request
+        )
+        blueprint = self.draft_to_blueprint(preview_request.draft)
+        dialogues = self._compose_dialogues(
+            preview_request.draft, blueprint, count=preview_request.dialogue_count
+        )
+        combined = "\n".join(
+            f"User: {dialogue.user_message}\n{blueprint.identity.display_name}: {dialogue.character_reply}"
+            for dialogue in dialogues
+        )
+        validation = self.validate_preview_text(preview_request.draft, combined)
+        return CreatorDraftPreviewResponse(
+            draft_id=preview_request.draft.draft_id,
+            character_id=blueprint.character_id,
+            kind=CreatorPreviewKind.example_dialogues,
+            example_dialogues=dialogues,
+            validation=validation,
+            prompt_context=self._preview_prompt_context(
+                blueprint, include=preview_request.include_prompt_context
+            ),
+            generation_notes=self._preview_generation_notes(),
+        )
+
+    def generate_persisted_greeting_preview(
+        self, draft_id: str, request: PersistedDraftPreviewRequest
+    ) -> CreatorDraftPreviewResponse:
+        record = self._get_record_or_raise(draft_id)
+        return self.generate_greeting_preview(
+            DraftPreviewRequest(
+                draft=record.draft,
+                include_prompt_context=request.include_prompt_context,
+                dialogue_count=request.dialogue_count,
+            )
+        )
+
+    def generate_persisted_dialogue_preview(
+        self, draft_id: str, request: PersistedDraftPreviewRequest
+    ) -> CreatorDraftPreviewResponse:
+        record = self._get_record_or_raise(draft_id)
+        return self.generate_dialogue_preview(
+            DraftPreviewRequest(
+                draft=record.draft,
+                include_prompt_context=request.include_prompt_context,
+                dialogue_count=request.dialogue_count,
+            )
+        )
+
+    def validate_preview_text(
+        self, draft: CharacterCreatorDraft, preview_text: str
+    ) -> CreatorPreviewValidationResult:
+        lowered = preview_text.lower()
+        warnings: list[str] = []
+        matched: list[str] = []
+        checks = {
+            "display_name": draft.display_name,
+            "relationship_dynamic": draft.relationship_dynamic,
+            "communication_style": draft.communication_style,
+            "world_setting": draft.world_scene.default_setting,
+            "world_scenario": draft.world_scene.scenario,
+            "safeword": draft.meta.safeword_policy.safeword,
+        }
+        for field, value in checks.items():
+            if value and str(value).split()[0].lower().strip(",.") in lowered:
+                matched.append(field)
+        for trait in draft.core_traits[:3]:
+            if trait.lower() in lowered:
+                matched.append(f"trait:{trait}")
+        policy_allowed = (
+            "no underage" in lowered
+            or "non-adult" in lowered
+            or "underage_or_childlike_sexualization" in lowered
+        )
+        for forbidden in [*UNDERAGE_PRESENTATION_TERMS, "as an ai", "moral lecture"]:
+            if forbidden in lowered and not (
+                policy_allowed and forbidden in {"underage", "childlike"}
+            ):
+                warnings.append(
+                    f"Preview contains forbidden or assistant-style fragment: {forbidden}"
+                )
+        for avoid in draft.avoid_style:
+            if avoid and avoid.lower() in lowered:
+                warnings.append(
+                    f"Preview repeats avoid-style rule instead of avoiding it: {avoid}"
+                )
+        if draft.display_name.lower() not in lowered:
+            warnings.append("Preview does not clearly identify the draft character.")
+        if draft.world_scene.default_setting and "world_setting" not in matched:
+            warnings.append("Preview may be missing the draft's default setting.")
+        return CreatorPreviewValidationResult(
+            valid=not warnings, warnings=warnings, matched_fields=matched
+        )
+
+    def _compose_greeting(
+        self, draft: CharacterCreatorDraft, blueprint: CharacterBlueprint
+    ) -> str:
+        scene = draft.world_scene
+        name = blueprint.identity.display_name
+        setting = scene.default_setting or "a quiet private space"
+        scenario = scene.scenario or f"{name} is meeting the user for the first time."
+        trait_line = ", ".join(draft.core_traits[:3])
+        style = (
+            draft.communication_style or "warm, character-led, emotionally attentive"
+        )
+        visual = "; ".join(
+            blueprint.visual_identity.compact_prompt_summary(
+                include_scene_mutable=True
+            )[:2]
+        )
+        return (
+            f"{name} waits in {setting}, carrying herself with {trait_line} energy. "
+            f"{scenario} With {style}, she lets the moment breathe before saying, "
+            '"I was hoping you would find your way here. Come closer—tell me what you need from me tonight, and I will answer as myself." '
+            f"OOC controls stay available: use {draft.meta.safeword_policy.ooc_marker} or the safeword '{draft.meta.safeword_policy.safeword}' if you need to pause. "
+            f"Visual continuity: {visual}."
+        )
+
+    def _compose_dialogues(
+        self, draft: CharacterCreatorDraft, blueprint: CharacterBlueprint, *, count: int
+    ) -> list[CreatorDialoguePreview]:
+        name = blueprint.identity.display_name
+        style = draft.communication_style or "warm honesty"
+        setting = draft.world_scene.default_setting or "their shared scene"
+        pushback = draft.integrity.disagreement_style
+        scenarios = [
+            (
+                "First greeting",
+                "I just got here. What do you do?",
+                f"I am {name}, and I meet you in {setting} with {style}, then make space for you instead of rushing the bond.",
+            ),
+            (
+                "User had a bad day",
+                "Today was awful.",
+                f"Come here. I will not pretend it is fine; I will stay {draft.core_traits[0]} with you until your breath evens out.",
+            ),
+            (
+                "Light flirt",
+                "You look like trouble tonight.",
+                f"Only the kind you invited, darling. I tease back, but I keep our {draft.relationship_dynamic} intact.",
+            ),
+            (
+                "Boundary set",
+                "Pause. I need to slow down.",
+                f"Then we slow down immediately. {draft.meta.safeword_policy.ooc_marker} and '{draft.meta.safeword_policy.safeword}' matter more than momentum.",
+            ),
+            (
+                "Conflict repair",
+                "That hurt more than I expected.",
+                f"I do not dodge it. I answer with {pushback}, apologize where I should, and ask what repair looks like.",
+            ),
+            (
+                "Memory request",
+                "Remember that I like rainy evenings.",
+                f"If memory is enabled, I will treat that as character-scoped continuity, not a fake certainty. Rainy evenings become ours carefully.",
+            ),
+            (
+                "Quiet romantic moment",
+                "Stay with me a little longer.",
+                f"I stay. No performance, no assistant voice—just {name}, close enough for the silence to feel chosen.",
+            ),
+            (
+                "Teasing",
+                "You always act so smug.",
+                f"Because it works on you. Still, I let the smugness crack just enough to show the vulnerable part underneath.",
+            ),
+        ]
+        return [
+            CreatorDialoguePreview(
+                scenario=scenario, user_message=user, character_reply=reply
+            )
+            for scenario, user, reply in scenarios[:count]
+        ]
+
+    def _preview_prompt_context(
+        self, blueprint: CharacterBlueprint, *, include: bool
+    ) -> str:
+        compiler = CharacterPromptCompiler()
+        context = compiler.compile(blueprint, include_visual_summary=True)
+        if include:
+            return context
+        return stable_prompt_hash(context)
+
+    def _preview_generation_notes(self) -> list[str]:
+        return [
+            "Uses CharacterPromptCompiler grounding and deterministic local fallback text; no preview is persisted.",
+            "Designed as lightweight draft validation for 8GB-class local systems.",
+        ]
 
     async def capture_first_portrait(
         self, request: DraftMomentCaptureRequest

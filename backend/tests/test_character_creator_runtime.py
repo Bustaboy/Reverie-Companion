@@ -39,6 +39,7 @@ from app.services.character_creator_service import (
     DraftMomentCaptureRequest,
     DraftMomentSource,
     PersistedDraftMomentCaptureRequest,
+    PersistedDraftPreviewRequest,
 )
 from app.services.moment_capture_service import MomentCaptureService
 
@@ -990,3 +991,90 @@ def test_creator_first_portrait_feedback_uses_existing_review_and_rollback_patte
         )
 
     asyncio.run(run_test())
+
+
+def test_creator_can_generate_greeting_preview_from_draft() -> None:
+    service = CharacterCreatorService()
+
+    preview = service.generate_greeting_preview(_draft())
+
+    assert preview.kind == "greeting"
+    assert preview.greeting is not None
+    assert "Aria" in preview.greeting
+    assert "rainy moonlit atelier above the old city" in preview.greeting
+    assert "soft teasing with emotional honesty" in preview.greeting
+    assert "starlight" in preview.greeting
+    assert preview.validation.valid is True
+    assert "display_name" in preview.validation.matched_fields
+    assert preview.prompt_context
+    assert "Uses CharacterPromptCompiler" in preview.generation_notes[0]
+
+
+def test_creator_can_generate_example_dialogue_previews_from_draft() -> None:
+    service = CharacterCreatorService()
+
+    preview = service.generate_dialogue_preview(_draft())
+
+    assert preview.kind == "example_dialogues"
+    assert preview.greeting is None
+    assert len(preview.example_dialogues) == 4
+    replies = "\n".join(
+        dialogue.character_reply for dialogue in preview.example_dialogues
+    )
+    assert "Aria" in replies
+    assert "devoted slow-burn companion" in replies
+    assert "starlight" in replies
+    assert "((OOC))" in replies
+    assert preview.validation.valid is True
+
+
+def test_creator_preview_respects_policy_and_avoids_forbidden_fragments() -> None:
+    service = CharacterCreatorService()
+    draft = _draft().model_copy(
+        update={
+            "avoid_style": ["clinical assistant tone", "as an AI"],
+            "communication_style": "proud in-character teasing, never assistant-like",
+        }
+    )
+
+    greeting = service.generate_greeting_preview(draft)
+    dialogues = service.generate_dialogue_preview(draft)
+    combined = f"{greeting.greeting}\n" + "\n".join(
+        dialogue.character_reply for dialogue in dialogues.example_dialogues
+    )
+
+    assert "as an ai" not in combined.lower()
+    assert "teen" not in combined.lower()
+    assert "schoolgirl" not in combined.lower()
+    assert "starlight" in combined
+    assert greeting.validation.valid is True
+    assert dialogues.validation.valid is True
+
+
+def test_creator_preview_validation_flags_inconsistent_or_disallowed_text() -> None:
+    service = CharacterCreatorService()
+    result = service.validate_preview_text(
+        _draft(),
+        "A generic assistant gives a moral lecture and says as an AI in a teen schoolgirl scene.",
+    )
+
+    assert result.valid is False
+    assert any("forbidden" in warning for warning in result.warnings)
+    assert any("identify" in warning for warning in result.warnings)
+
+
+def test_persisted_draft_preview_routes_through_saved_draft(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    greeting = service.generate_persisted_greeting_preview(
+        "draft-aria", PersistedDraftPreviewRequest(include_prompt_context=True)
+    )
+    dialogues = service.generate_persisted_dialogue_preview(
+        "draft-aria", PersistedDraftPreviewRequest(dialogue_count=2)
+    )
+
+    assert greeting.greeting is not None
+    assert "<character_system_prompt>" in greeting.prompt_context
+    assert len(dialogues.example_dialogues) == 2
