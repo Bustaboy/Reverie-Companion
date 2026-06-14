@@ -1,8 +1,8 @@
 # Reverie - CHARACTER_CREATOR_CAPABILITY_MATRIX
 
 **Date:** 2026-06-14
-**Version:** 2.7
-**Context:** M6-P00 documentation-only reconciliation after Milestone 5. Milestones 4 and 5 delivered the core character runtime, relationship state, visual identity, Moment Capture backend, visual feedback, visual memory, asset metadata, and reviewable visual canon workflows. This matrix is the authoritative field gate for the Basic Character Creator Foundation; no creator UI or runtime code was changed by this pass.
+**Version:** 2.8
+**Context:** M6-P00/P00A/P01 foundation status after Milestone 5. Milestones 4 and 5 delivered the core character runtime and visual-continuity stack; M6-P00 reconciled the field gate; M6-P00A/P01 added draft-capable Moment Capture, creator draft persistence, draft validation, and deterministic draft-to-`CharacterBlueprint` preview mapping. This matrix remains the authoritative field gate for the Basic Character Creator Foundation.
 **Goal:** Identify every high-value character-creator field that could make a Reverie companion feel alive, then classify whether Reverie can process it now, must close a runtime gap in M6, should store it without exposing it, or should defer it to later milestones.
 
 ---
@@ -30,7 +30,7 @@ M6 must not become a stealth M7/M8/M9 bundle. Yes, the machine room has many pip
 
 ---
 
-## 0.1 Current Runtime Reality After M5
+## 0.1 Current Runtime Reality After M6-P01
 
 The current repo already has these runtime foundations:
 
@@ -43,9 +43,19 @@ The current repo already has these runtime foundations:
 - Gallery feedback and minimal review/approve/reject/rollback UI for visual changes.
 - Character-scoped visual memory writeback with explicit `character_id` / `memory_scope` enforcement.
 
-Important current gap:
+M6-P00A/P01 added these creator-draft foundations:
 
-- Chat/VN frontend actions still need to be wired as true primary Moment Capture requests through `POST /api/moment-capture`. Backend Moment Capture exists; this M6-P00 reconciliation identifies that as a required gap-closure task before creator portrait validation depends on it.
+- `CharacterCreatorDraft` service models for M6-approved identity, relationship, communication, personality, visual identity, tags, notes, and metadata.
+- Dedicated SQLite draft persistence in `character_creator_drafts`, separate from finalized `CharacterBlueprint` records.
+- Draft create, load/list, update, validate, and delete API operations under `/api/characters/creator/drafts`.
+- Unsaved and persisted draft validation by mapping into a `CharacterBlueprint` preview.
+- Draft first-portrait Moment Capture from chat or Visual Novel source context, using the M5 capture service with draft-prefixed provenance and evidence-only metadata.
+
+Important current gaps:
+
+- Full practical creator UI is still pending.
+- Draft finalization through review/save into durable character management is still M6-P09 scope.
+- Greeting/dialogue previews, memory/growth preference enforcement, lore-lite/default scene fields, import/export, and field-impact evals remain later M6 tasks.
 
 ---
 
@@ -521,12 +531,17 @@ These are not personality fields, but they are required to make the creator trus
 
 | Field | User value | Runtime consumers | Current support | M6 readiness | Needed capability / note | Wizard exposure | Preview / validation |
 |---|---:|---|---|---|---|---|---|
-| `creator_draft_id` | High | Creator UX | NEEDS_RUNTIME | M6-blocking runtime | M6-P01 draft persistence | M6 Basic Creator | Save/resume |
+| `creator_draft_id` | High | Creator UX | NOW | M6-ready | M6-P01 draft persistence complete; drafts have IDs, schema version, timestamps, provenance, and separate storage | M6 Basic Creator | Save/resume |
+| `draft_storage` | Critical | Creator UX, local persistence | NOW | M6-ready | Drafts persist in a dedicated local table separate from finalized character blueprints | Runtime hidden | Save/resume/load |
+| `draft_validation` | Critical | Creator UX, QA | NOW | M6-ready | Unsaved and persisted drafts validate by mapping into `CharacterBlueprint` previews and returning errors | M6 Basic Creator | Required before save |
+| `draft_to_blueprint_mapping` | Critical | Character runtime | NOW/PARTIAL | M6-ready foundation | Current mapper covers foundation fields; later creator steps must extend mapping and tests for newly exposed fields | Runtime hidden | Blueprint preview |
+| `draft_delete_discard` | High | Creator UX, trust | NOW | M6-ready | Persisted drafts can be deleted without touching finalized characters | M6 Basic Creator | Discard confirmation |
+| `draft_triggered_moment_capture` | Critical | Moment Capture, visual identity | NOW/PARTIAL | M6-ready foundation | Unsaved and persisted drafts can queue first-portrait Moment Capture with draft provenance and evidence-only metadata; full UI remains M6-P05 | M6 Basic Creator | First portrait validation |
 | `draft_variants` | High | Creator UX | NEEDS_RUNTIME | M7 Genesis | Multi-draft generator later | M7 Genesis | Compare 2-3 drafts |
 | `trait_examples` | Critical | Creator UX | NEEDS_RUNTIME | M6-blocking runtime | M6-P03 example library | M6 Basic Creator | Required |
 | `trait_anti_examples` | Critical | Creator UX | NEEDS_RUNTIME | M6-blocking runtime | M6-P03 anti-example library | M6 Basic Creator | Required |
 | `live_dialogue_preview` | Critical | Creator UX, eval | NEEDS_RUNTIME | M6-blocking runtime | M6-P08 dialogue preview generator | M6 Basic Creator | Required |
-| `first_portrait_validation` | Critical | Image/visual identity | PARTIAL | M6-blocking runtime | M5 engine exists; M6-P05 must make creator validation flow | M6 Basic Creator | Required for image users |
+| `first_portrait_validation` | Critical | Image/visual identity | PARTIAL | M6-ready foundation / M6-P05 UI pending | Drafts can queue first-portrait Moment Capture with evidence-only provenance; full creator validation UI and reference selection remain M6-P05 | M6 Basic Creator | Required for image users |
 | `voice_preview_validation` | Medium | TTS | NEEDS_RUNTIME | M8 Alpha | TTS preview polish later | M8+ Alpha | Voice check |
 | `world_reveal_preview` | Medium-high | Genesis UX | NEEDS_RUNTIME | M7 Genesis | Scene preview/transition later | M7 Genesis | Visual transition |
 | `contradiction_warning` | High | Creator UX | NEEDS_RUNTIME | M7 Genesis | Trait conflict detector later | M7 Genesis | Warning + interpretation choices |
@@ -534,7 +549,7 @@ These are not personality fields, but they are required to make the creator trus
 | `image_identity_eval` | Critical | Image consistency | NOW/PARTIAL | M6-ready | M5 eval harness exists; first portrait flow still M6 | M6/M7 | First portrait checks |
 | `memory_policy_eval` | High | Memory/trust | NEEDS_RUNTIME | M8 Alpha | Memory test suite later | M8+ Alpha | QA only |
 | `relationship_behavior_eval` | High | Relationship state | NEEDS_RUNTIME | M8 Alpha | Scenario tests later | M8+ Alpha | QA + preview |
-| `rollback_checkpoint` | Critical | Trust, creator | PARTIAL | M6-blocking runtime | Visual rollback exists; creator draft/edit undo needs M6 | M6 Basic Creator | Undo/edit |
+| `rollback_checkpoint` | Critical | Trust, creator | PARTIAL | M6-preview-only | Visual rollback exists and draft captures carry rollback-safe evidence metadata; draft edit undo/checkpoints remain later UI work | M6 Basic Creator | Undo/edit |
 
 ---
 
@@ -544,14 +559,14 @@ These replace the old “fields Reverie cannot fully process yet” list. M4/M5 
 
 | Rank | Field group | Why it matters | Missing capability | Target |
 |---:|---|---|---|---|
-| 1 | Real Chat/VN Moment Capture action | Backend Moment Capture exists, but primary frontend actions still need to call it | `createMomentCapture` frontend path + selected character + SceneState builder | M6-P00 |
-| 2 | Creator draft persistence | Users need save/resume and safe editing before final save | Draft model/store, local persistence, validation boundary | M6-P01 |
-| 3 | Creator draft to `CharacterBlueprint` mapper | Creator answers must become real runtime fields | Deterministic mapper + tests for every exposed field | M6-P01/M6-P10 |
+| 1 | Real Chat/VN Moment Capture action | Complete foundation for creator/draft first portraits; broader primary UI copy may still be polished in later creator UI | Draft-capable capture request path with selected source context, visual identity, relationship state, and provenance | M6-P00A complete |
+| 2 | Creator draft persistence | Complete foundation: users need save/resume and safe editing before final save | Dedicated draft model/repository/API, local persistence, validation boundary | M6-P01 complete |
+| 3 | Creator draft to `CharacterBlueprint` mapper | Complete foundation; later fields still need per-step expansion | Deterministic mapper for current draft fields; M6-P10 still needs field-impact tests for every exposed UI field | M6-P01 complete / M6-P10 pending |
 | 4 | First message / alternative greetings / example dialogues | Creator preview requires more than abstract traits | Schema expansion + prompt preview usage | M6-P03/M6-P08 |
 | 5 | Dialogue preview generator | Users need evidence the character sounds right | Scenario preview service using `CharacterPromptCompiler` and fixtures | M6-P08 |
 | 6 | Memory preference baseline | Trust-critical creator controls must do something real | `remember_categories`, `never_remember_categories`, review defaults or clear preview-only limits | M6-P07 |
 | 7 | Basic boundary/user preference mapping | M6 roleplay/boundary choices need storage and prompt consumption | Boundary text fields or mapped policy fields | M6-P04 |
-| 8 | First portrait validation | M5 gives engine; M6 needs creator validation flow | Moment Capture from draft/character + approve/retry/save reference | M6-P05 |
+| 8 | First portrait validation | Foundation complete; M6 still needs creator validation UI | Moment Capture from unsaved or persisted draft now works with draft provenance; approve/retry/save-reference UX remains M6-P05 | M6-P00A/P01 complete / M6-P05 pending |
 | 9 | Basic character import/export | M4 API lacks full import/export; M6 owns character-level portability | Export/import blueprint + assets metadata, not full app backup | M6-P09 |
 | 10 | Lore-lite/default scene | M6 creator needs a world/default scene without full lorebook | Small default scene/scenario fields + prompt/image preview | M6-P06 |
 | 11 | Creator field-impact eval harness | Prevents wizard from lying | Tests proving field changes prompt/preview/capture metadata | M6-P10 |
@@ -788,22 +803,25 @@ Delivered:
 
 Target-hardware packaged validation remains M8.
 
-## M6: Basic Character Creator Foundation - Next
+## M6: Basic Character Creator Foundation - In Progress
 
-Build first:
+Completed foundation:
 
-1. **M6-P00:** Matrix reconciliation and real Chat/VN Moment Capture wiring.
-2. Creator draft persistence.
-3. Creator draft to `CharacterBlueprint` mapper.
-4. Identity and premise steps.
-5. Personality/communication steps with examples and anti-examples.
-6. Roleplay/boundary/safeword controls in human-first wording.
-7. Visual identity step and first portrait validation.
-8. World/default scene lore-lite step.
-9. Memory/growth preference baseline.
-10. Greeting/dialogue preview engine.
-11. Character review/save/edit/duplicate/import/export/delete.
-12. Creator eval harness and docs/accessibility pass.
+1. **M6-P00:** Matrix reconciliation.
+2. **M6-P00A:** Draft-capable Moment Capture wiring for first-portrait foundations.
+3. **M6-P01:** Creator draft persistence and draft-to-`CharacterBlueprint` mapper foundation.
+
+Build next:
+
+1. Identity and premise steps.
+2. Personality/communication steps with examples and anti-examples.
+3. Roleplay/boundary/safeword controls in human-first wording.
+4. Visual identity step and first portrait validation UI.
+5. World/default scene lore-lite step.
+6. Memory/growth preference baseline.
+7. Greeting/dialogue preview engine.
+8. Character review/save/edit/duplicate/import/export/delete.
+9. Creator eval harness and docs/accessibility pass.
 
 Do not build full Genesis here. Do not sneak in M8 or M9 runtime just to make the wizard feel larger. Bigger is not better; sometimes bigger is just an error message with ambition.
 
@@ -873,11 +891,11 @@ This matrix is based on these design signals:
 The next engineering target is:
 
 ```text
-M6-P00 - Capability matrix reconciliation
+M6-P02 - Identity, adult baseline, and companion premise steps
 ```
 
-Then close the identified M6-blocking runtime gaps and build the M6 practical creator.
+P00/P00A/P01 are complete. Continue with the practical creator steps on top of the persisted draft foundation, without treating drafts as canonical characters before save.
 
 The creator should expose only the fields in the M6 baseline after runtime gaps are closed. Everything else stays internal, preview-only, or deferred. This keeps Reverie honest: no decorative onboarding, no fake agency, no parallel visual canon, no memory soup, no magical promises that collapse the first time the user presses a button.
 
-**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.7**
+**End of CHARACTER_CREATOR_CAPABILITY_MATRIX v2.8**

@@ -1,9 +1,9 @@
 # Reverie — Source of Truth
 
-**Version:** 1.2
-**Date:** June 13, 2026
+**Version:** 1.3
+**Date:** June 14, 2026
 **Owner:** Vision Entertainment / Grok (Vision)
-**Status:** Milestone 5 complete — Moment Capture & Visual Continuity closed.
+**Status:** Milestone 6 foundation in progress — P00/P00A/P01 creator draft foundations complete after Milestone 5.
 
 ---
 
@@ -377,7 +377,7 @@ Real target-hardware smoke on RTX 4070 8GB mobile or equivalent remains Pending 
 
 ### Milestone 6 — Basic Character Creator Foundation
 
-Build a practical creator that exposes only fields Reverie can already store, consume, preview, validate, and preserve.
+Build a practical creator that exposes only fields Reverie can already store, consume, preview, validate, and preserve. M6-P00/P00A/P01 are complete: the capability matrix is reconciled, creator drafts persist separately from finalized `CharacterBlueprint` records, drafts validate through deterministic blueprint preview mapping, and draft first portraits can use Moment Capture with evidence-only provenance before character finalization.
 
 ### Milestone 7 — Companion Genesis Immersive Creator
 
