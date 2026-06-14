@@ -31,6 +31,7 @@ from app.services.character_creator_service import (
     CreatorDraftMetaPolicy,
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
+    CreatorDraftVisualIdentity,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftMomentSource,
@@ -86,6 +87,21 @@ def _draft() -> CharacterCreatorDraft:
         ),
         avoid_style=["clinical assistant tone", "moralizing fictional adult romance"],
         initiative_in_conversation=0.63,
+        visual=CreatorDraftVisualIdentity(
+            eye_color="amber",
+            skin_tone="warm brown",
+            face_structure="heart-shaped adult face with sharp cheekbones",
+            body_baseline="tall athletic adult silhouette",
+            species_features=["subtle moonlit elf ears"],
+            permanent_marks=["crescent birthmark under left collarbone"],
+            hair="long black-violet hair",
+            accessories=["moon pendant"],
+            fashion_identity="elegant witchy romance",
+            outfit="dark velvet dress",
+            pose="relaxed three-quarter portrait",
+            expression="soft teasing smile",
+            rejected_visual_traits=["blue eyes"],
+        ),
         visual_identity=VisualIdentityProfile(
             identity_anchors=["amber eyes", "warm brown skin", "same adult face"],
             evolving_traits=[
@@ -165,18 +181,123 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         "moralizing fictional adult romance",
     ]
     assert blueprint.communication.initiative_in_conversation == 0.63
-    assert blueprint.visual_identity.identity_anchors == [
-        "amber eyes",
-        "warm brown skin",
-        "same adult face",
-    ]
+    assert "amber eyes" in blueprint.visual_identity.identity_anchors
+    assert "warm brown skin" in blueprint.visual_identity.identity_anchors
+    assert "same adult face" in blueprint.visual_identity.identity_anchors
+    assert "eye color: amber" in blueprint.visual_identity.identity_anchors
+    assert "outfit: dark velvet dress" in blueprint.visual_identity.scene_mutable_traits
+    assert "blue eyes" in blueprint.visual_identity.rejected_traits
     assert (
         blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
     assert (
-        blueprint.metadata["creator_draft"]["source"] == "m6_p04_roleplay_policy_draft"
+        blueprint.metadata["creator_draft"]["source"] == "m6_p05_visual_identity_draft"
     )
 
+
+def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> None:
+    service = CharacterCreatorService()
+    draft = CharacterCreatorDraft(
+        display_name="Mira",
+        adult_age_range="adult_30s",
+        visual=CreatorDraftVisualIdentity(
+            eye_color="green-gold",
+            skin_tone="deep umber",
+            face_structure="angular adult face with a strong nose",
+            body_baseline="broad-shouldered adult build",
+            species_features=["small horns", "scaled forearms"],
+            permanent_marks=["silver scar over right brow"],
+            hair="short white curls",
+            fashion_identity="battle-mage leathers",
+            outfit="rain-soaked travel cloak",
+            pose="leaning against a stone arch",
+            expression="wry half-smile",
+            rejected_visual_traits=["blue eyes", "pale skin"],
+        ),
+    )
+
+    response = service.validate_draft(draft)
+
+    assert response.valid is True
+    assert response.blueprint is not None
+    visual = response.blueprint.visual_identity
+    assert "eye color: green-gold" in visual.identity_anchors
+    assert "skin tone: deep umber" in visual.identity_anchors
+    assert (
+        "face structure: angular adult face with a strong nose"
+        in visual.identity_anchors
+    )
+    assert "body baseline: broad-shouldered adult build" in visual.identity_anchors
+    assert "species features: small horns" in visual.identity_anchors
+    assert "permanent marks: silver scar over right brow" in visual.identity_anchors
+    assert "outfit: rain-soaked travel cloak" in visual.scene_mutable_traits
+    assert "pose: leaning against a stone arch" in visual.scene_mutable_traits
+    assert "expression: wry half-smile" in visual.scene_mutable_traits
+    assert "blue eyes" in visual.rejected_traits
+    assert "pale skin" in visual.rejected_traits
+    assert any(
+        trait.name == "hair" and trait.value == "short white curls"
+        for trait in visual.evolving_traits
+    )
+    assert any(
+        trait.name == "fashion_identity" and trait.value == "battle-mage leathers"
+        for trait in visual.evolving_traits
+    )
+
+
+def test_creator_visual_identity_fields_persist_and_update(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            visual=CreatorDraftVisualIdentity(
+                eye_color="violet",
+                skin_tone="golden brown",
+                face_structure="same heart-shaped adult face",
+                body_baseline="lithe adult dancer baseline",
+                species_features=["fae ears"],
+                permanent_marks=["star-shaped beauty mark"],
+                outfit="silver lounge robe",
+                pose="seated by the window",
+                expression="sleepy affectionate smile",
+                rejected_visual_traits=["red eyes"],
+            )
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria")
+    assert loaded.record.draft.visual.eye_color == "violet"
+    assert updated.validation.blueprint is not None
+    mapped = updated.validation.blueprint.visual_identity
+    assert "eye color: violet" in mapped.identity_anchors
+    assert "outfit: silver lounge robe" in mapped.scene_mutable_traits
+    assert "red eyes" in mapped.rejected_traits
+
+
+def test_creator_visual_identity_rejects_disallowed_or_misplaced_values() -> None:
+    invalid_kwargs = (
+        {"eye_color": "teen-coded blue"},
+        {"skin_tone": "childlike porcelain"},
+        {"face_structure": "outfit: red dress"},
+        {"body_baseline": "pose with crossed arms"},
+        {"rejected_visual_traits": ["schoolgirl uniform"]},
+    )
+    for kwargs in invalid_kwargs:
+        try:
+            CharacterCreatorDraft(
+                display_name="Aria", visual=CreatorDraftVisualIdentity(**kwargs)
+            )
+        except ValidationError as exc:
+            assert (
+                "adult" in str(exc).lower()
+                or "stable identity" in str(exc).lower()
+                or "underage" in str(exc).lower()
+            )
+        else:
+            raise AssertionError(f"Expected invalid visual values to fail: {kwargs}")
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     with_exception = None
