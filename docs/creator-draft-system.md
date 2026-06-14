@@ -198,6 +198,49 @@ When draft first-portrait capture needs a scene and the request does not provide
 
 Practical UI should ask this step in human language: “Where does your story usually begin?”, “What kind of world is this?”, “Who are you to her in the story?”, “What mood should the first scene carry?”, and “What objects or background details should the moment remember?” Keep copy clear that these are defaults. Current chat/VN scene state can override them for a specific capture.
 
+
+## Supported memory and growth preference fields
+
+M6-P07 treats memory and growth preferences as draft-supported baseline policy fields. They let the creator describe whether this companion should use long-term memory and how quickly the companion may reflect or grow, without promising the deeper M8/M9 trust dashboard, relationship timeline, autonomous personality rewrites, or training flows.
+
+### Memory preferences
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `memory.memory_enabled` | `CharacterMemoryPolicy.memory_enabled` | Boolean. When `false`, the draft maps to a policy summary that says long-term memory is disabled for this draft. |
+| `memory.memory_scope` | `CharacterMemoryPolicy.scope`; also sets `include_shared_memories` when the value is `character_plus_shared` and memory is enabled | Enum limited to `character_private` or `character_plus_shared`. Drafts cannot select unbounded `global` memory scope. |
+
+`character_private` means draft previews and later saved character behavior should stay scoped to this companion. `character_plus_shared` allows shared memories to be included while still keeping the character's own memory policy explicit. If memory is disabled, shared-memory inclusion is disabled too, even if the scope field says `character_plus_shared`.
+
+These fields are intentionally narrow. Current drafts do not expose remember-category, never-remember-category, memory-review-queue, memory-ranking, or receipt-dashboard controls as completed capabilities. Those remain future work unless a later task adds enforceable storage, preview, and validation.
+
+### Growth preferences
+
+| Draft field | Runtime mapping | Validation behavior |
+|---|---|---|
+| `growth.reflection_frequency` | `GrowthPolicy.reflection_frequency` | Enum using the current growth policy choices: `low`, `balanced`, or `high`. Invalid values are rejected during draft parsing/validation. |
+| `growth.growth_pace` | `GrowthPolicy.growth_pace` | Enum using `slow`, `balanced`, or `responsive`. Invalid values are rejected during draft parsing/validation. |
+| `growth.allowed_growth_domains` | `GrowthPolicy.allowed_growth_domains` | Optional list with at least one effective value. Entries are trimmed, lowercased, spaces/hyphens become underscores, duplicates are removed, each entry is capped at 80 characters, and the list is capped at 16 entries. Entries may contain only letters, numbers, spaces, hyphens, or underscores before normalization. |
+| `growth.blocked_growth_domains` | `GrowthPolicy.blocked_growth_domains` | Same list normalization as allowed domains. The list must include `stable_identity_without_user_edit` and `underage_or_childlike_sexualization`. |
+| `growth.major_change_requires_approval` | `GrowthPolicy.major_change_requires_approval` | Boolean. Defaults to `true`; when enabled, major visual/personality growth should continue to use available review gates instead of silently mutating stable canon. |
+
+The default allowed domains are `preferences`, `relationship`, `rituals`, and `communication_style`. The default blocked domains are `stable_identity_without_user_edit` and `underage_or_childlike_sexualization`. UI may add practical labels around those domains, but should preserve the safety meaning: normal preferences and relationship habits may evolve; stable identity and adult-safety boundaries do not drift automatically.
+
+Safety validation rejects any domain that appears in both the allowed and blocked lists. It also rejects growth policies that omit either required blocked domain. This matters because draft growth preferences are not just descriptive text; they map into `GrowthPolicy` and can be consumed by reflection/growth orchestration and prompt summaries.
+
+### Memory/growth mapping summary
+
+During draft validation, the creator service converts memory and growth preferences into runtime policy objects before building the `CharacterBlueprint` preview:
+
+- `memory.memory_enabled` and `memory.memory_scope` become `CharacterMemoryPolicy`;
+- `memory.memory_scope == character_plus_shared` sets `include_shared_memories` only when memory is enabled;
+- disabled memory adds a compact `memory_summary` stating that long-term memory is disabled for the draft;
+- `growth.reflection_frequency`, `growth.growth_pace`, `growth.allowed_growth_domains`, `growth.blocked_growth_domains`, and `growth.major_change_requires_approval` become `GrowthPolicy`;
+- `GrowthPolicy.character_id` uses the draft preview character ID, so validation remains character-scoped;
+- list normalization and safety blocks happen before the blueprint preview is accepted.
+
+Practical creator copy should frame this as “how much should she remember?” and “how cautiously should she grow?” rather than exposing every internal policy name by default. Advanced editors can show the exact fields because they now have concrete draft storage and blueprint mappings.
+
 ## Draft validation and mapping
 
 Draft validation is intentionally blueprint-based. The service converts draft fields into runtime structures, then lets the normal schema validation reject invalid runtime output. Current mappings include:
@@ -214,6 +257,8 @@ Draft validation is intentionally blueprint-based. The service converts draft fi
 - creator-facing `visual` fields and any existing draft `visual_identity` profile into `VisualIdentityProfile`
 - `world_scene.user_role_in_story` into `RelationshipState.user_role_in_story`
 - `world_scene` into blueprint metadata, with compact `scene_hints` for prompt and Moment Capture defaults
+- `memory` into `CharacterMemoryPolicy`
+- `growth` into `GrowthPolicy`
 - creator provenance into blueprint metadata
 
 For identity and premise, the mapper copies `display_name`, `pronouns`, `adult_age_range`, `species_or_type`, `tags`, `creator_notes`, `adult_only_confirmed`, `starting_relationship_phase`, `relationship_dynamic`, `relationship_pacing`, `romantic_pacing`, `nsfw_pacing`, `default_intimacy_level`, and `user_desired_experience` into their runtime structures.
@@ -225,6 +270,8 @@ For roleplay policy and boundaries, the mapper copies `integrity.in_character_pu
 For visual identity, the mapper copies stable anchors, evolving traits, scene-mutable traits, and rejected visual traits into `VisualIdentityProfile` as described in the M6-P05 visual section above. That means first-portrait capture and visual prompt summaries can use the draft visual profile without turning the draft into canonical saved character data.
 
 For world/default scene, the mapper copies `default_setting`, `scenario`, `world_genre`, `user_role_in_story`, `time_of_day`, `mood`, `key_objects`, and `background_details` into either `RelationshipState` or blueprint metadata as described in the M6-P06 section above. That means compiled prompts can include compact scene hints and draft Moment Capture can fall back to default scene state without creating a full lorebook.
+
+For memory and growth preferences, the mapper copies `memory_enabled`, `memory_scope`, `reflection_frequency`, `growth_pace`, `allowed_growth_domains`, `blocked_growth_domains`, and `major_change_requires_approval` into the runtime policy objects described in the M6-P07 section above. That means draft summaries and blueprint previews can show baseline memory/growth behavior while staying honest that advanced receipts, long-session evals, and autonomous growth remain future work.
 
 This keeps future UI steps honest: if a creator field cannot map into runtime data, it should remain preview-only, store-only, or deferred in the capability matrix.
 
@@ -255,6 +302,6 @@ This means first portraits can use the same M5 capture, gallery, feedback, revie
 - There is no full practical creator UI yet; the foundation is backend/runtime-facing.
 - Drafts are not backend-synced beyond local app persistence.
 - Draft finalization into a durable saved character remains a later M6 review/save flow.
-- Dialogue/greeting previews, import/export, memory/growth preference wiring, and richer field-impact evals remain later M6 work.
-- Full lorebooks/canon retrieval, memory/growth preferences, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P06 behavior.
+- Dialogue/greeting previews, import/export, and richer field-impact evals remain later M6 work.
+- Full lorebooks/canon retrieval, remember/never-remember category controls, import/export, asset/reference attachment UI, and portrait approval UI should not be documented here as completed M6-P07 behavior.
 - Future creator tasks should extend the draft shape only when the capability matrix says the field is M6-ready, M6-preview-only, or M6-store-only with honest user-facing copy.
