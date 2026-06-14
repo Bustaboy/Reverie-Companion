@@ -32,6 +32,7 @@ from app.services.character_creator_service import (
     CreatorDraftRoleplayPolicy,
     CreatorDraftSafewordPolicy,
     CreatorDraftVisualIdentity,
+    CreatorDraftWorldScene,
     CharacterCreatorService,
     DraftMomentCaptureRequest,
     DraftMomentSource,
@@ -84,6 +85,16 @@ def _draft() -> CharacterCreatorDraft:
             soft_limits=["slow down humiliation if asked"],
             preferred_intensity="dark romance with explicit OOC controls",
             aftercare_style="warm debrief in character after intense scenes",
+        ),
+        world_scene=CreatorDraftWorldScene(
+            default_setting="rainy moonlit atelier above the old city",
+            scenario="Aria and the user are preparing for their first private spellwork lesson after weeks of flirtatious trust-building.",
+            world_genre="modern fantasy romance",
+            user_role_in_story="trusted apprentice and slow-burn romantic interest",
+            time_of_day="late evening",
+            mood="intimate candlelit anticipation",
+            key_objects=["silver grimoire", "rain-streaked window"],
+            background_details=["moonlit bookshelves", "soft amber candles"],
         ),
         avoid_style=["clinical assistant tone", "moralizing fictional adult romance"],
         initiative_in_conversation=0.63,
@@ -191,8 +202,11 @@ def test_draft_to_blueprint_mapping_produces_valid_runtime_blueprint() -> None:
         blueprint.visual_identity.adult_only_policy.adult_age_range == "late_20s_adult"
     )
     assert (
-        blueprint.metadata["creator_draft"]["source"] == "m6_p05_visual_identity_draft"
+        blueprint.metadata["creator_draft"]["source"] == "m6_p06_world_scene_draft"
     )
+    assert blueprint.relationship.user_role_in_story == "trusted apprentice and slow-burn romantic interest"
+    assert blueprint.metadata["scene_hints"]["setting"] == "rainy moonlit atelier above the old city"
+    assert blueprint.metadata["scene_hints"]["world_genre"] == "modern fantasy romance"
 
 
 def test_creator_visual_identity_fields_map_anchors_scene_traits_and_rejections() -> None:
@@ -298,6 +312,67 @@ def test_creator_visual_identity_rejects_disallowed_or_misplaced_values() -> Non
             )
         else:
             raise AssertionError(f"Expected invalid visual values to fail: {kwargs}")
+
+
+def test_creator_world_scene_fields_persist_update_and_map_to_blueprint(tmp_path) -> None:
+    repository = CreatorDraftRepository(tmp_path / "characters.sqlite3")
+    service = CharacterCreatorService(draft_repository=repository)
+    service.create_draft(CharacterCreatorDraftCreate(draft=_draft()))
+
+    updated = service.update_draft(
+        "draft-aria",
+        CharacterCreatorDraftUpdate(
+            world_scene=CreatorDraftWorldScene(
+                default_setting="cozy starship lounge orbiting a blue nebula",
+                scenario="The user has just returned from a difficult mission and Aria is waiting with playful relief.",
+                world_genre="soft sci-fi romance",
+                user_role_in_story="beloved captain she trusts",
+                time_of_day="shipboard night cycle",
+                mood="relieved, flirtatious warmth",
+                key_objects=["tea service", "holographic star map"],
+                background_details=["wide nebula window", "dim gold console lights"],
+            )
+        ),
+    )
+
+    loaded = service.load_draft("draft-aria")
+    assert loaded.record.draft.world_scene.default_setting == "cozy starship lounge orbiting a blue nebula"
+    assert updated.validation.blueprint is not None
+    blueprint = updated.validation.blueprint
+    assert blueprint.relationship.user_role_in_story == "beloved captain she trusts"
+    assert blueprint.metadata["world_scene"]["world_genre"] == "soft sci-fi romance"
+    assert blueprint.metadata["scene_hints"]["setting"] == "cozy starship lounge orbiting a blue nebula"
+    assert blueprint.metadata["scene_hints"]["scenario"].startswith("The user has just returned")
+    assert blueprint.metadata["scene_hints"]["props"] == ["tea service", "holographic star map"]
+
+
+def test_creator_world_scene_defaults_seed_draft_moment_scene_state() -> None:
+    service = CharacterCreatorService()
+    blueprint = service.draft_to_blueprint(_draft())
+
+    scene = service._default_scene_state(blueprint, source=DraftMomentSource.chat)
+
+    assert scene.location == "rainy moonlit atelier above the old city"
+    assert scene.time_of_day == "late evening"
+    assert scene.mood == "intimate candlelit anticipation"
+    assert scene.emotional_tone.startswith("Aria and the user")
+    assert "silver grimoire" in scene.key_objects
+    assert "moonlit bookshelves" in scene.background_details
+
+
+def test_creator_world_scene_rejects_invalid_values() -> None:
+    for kwargs in (
+        {"default_setting": "teen school dorm"},
+        {"scenario": "underage romance framing"},
+        {"world_genre": "childlike fantasy"},
+        {"key_objects": ["schoolgirl costume"]},
+    ):
+        try:
+            CharacterCreatorDraft(display_name="Aria", world_scene=CreatorDraftWorldScene(**kwargs))
+        except ValidationError as exc:
+            assert "adult" in str(exc).lower() or "underage" in str(exc).lower()
+        else:
+            raise AssertionError(f"Expected invalid world/scene values to fail: {kwargs}")
 
 def test_draft_validation_reports_blueprint_errors_without_saving() -> None:
     with_exception = None

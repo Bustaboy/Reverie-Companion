@@ -59,7 +59,7 @@ from app.services.moment_capture_service import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DRAFT_SCHEMA_VERSION = 5
+DRAFT_SCHEMA_VERSION = 6
 
 UNDERAGE_PRESENTATION_TERMS = (
     "underage",
@@ -229,6 +229,60 @@ class CreatorDraftContentBoundaries(BaseModel):
     @classmethod
     def normalize_boundary_text(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, "Content boundaries")
+
+
+class CreatorDraftWorldScene(BaseModel):
+    """Draft-scoped lore-lite world and starting scene fields.
+
+    This intentionally stays compact: M6 can consume default setting/scenario
+    through relationship prompt context, scene hints metadata, and default Moment
+    Capture scene state without adding a lorebook/world-info system.
+    """
+
+    default_setting: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    scenario: str | None = Field(default=None, max_length=500)
+    world_genre: str | None = Field(default=None, max_length=120)
+    user_role_in_story: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    time_of_day: str | None = Field(default=None, max_length=80)
+    mood: str | None = Field(default=None, max_length=MAX_SHORT_TEXT)
+    key_objects: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    background_details: list[str] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+
+    @field_validator(
+        "default_setting",
+        "scenario",
+        "world_genre",
+        "user_role_in_story",
+        "time_of_day",
+        "mood",
+        mode="after",
+    )
+    @classmethod
+    def normalize_world_scene_text(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, "World/scene draft")
+
+    @field_validator("key_objects", "background_details", mode="after")
+    @classmethod
+    def normalize_world_scene_lists(cls, values: list[str]) -> list[str]:
+        return _normalize_creator_list(values, field_name="World/scene draft")
+
+    def to_scene_hints(self) -> dict[str, Any]:
+        hints: dict[str, Any] = {}
+        if self.default_setting:
+            hints["setting"] = self.default_setting
+        if self.scenario:
+            hints["scenario"] = self.scenario
+        if self.world_genre:
+            hints["world_genre"] = self.world_genre
+        if self.time_of_day:
+            hints["time_of_day"] = self.time_of_day
+        if self.mood:
+            hints["mood"] = self.mood
+        if self.key_objects:
+            hints["props"] = self.key_objects
+        if self.background_details:
+            hints["background_details"] = self.background_details
+        return hints
 
 
 class CreatorDraftVisualIdentity(BaseModel):
@@ -410,6 +464,7 @@ class CharacterCreatorDraft(BaseModel):
     content_boundaries: CreatorDraftContentBoundaries = Field(
         default_factory=CreatorDraftContentBoundaries
     )
+    world_scene: CreatorDraftWorldScene = Field(default_factory=CreatorDraftWorldScene)
     avoid_style: list[str] = Field(default_factory=list, max_length=8)
     initiative_in_conversation: float = Field(default=0.5, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity = Field(
@@ -515,6 +570,7 @@ class CharacterCreatorDraftUpdate(BaseModel):
     content_boundaries: CreatorDraftContentBoundaries = Field(
         default_factory=CreatorDraftContentBoundaries
     )
+    world_scene: CreatorDraftWorldScene | None = None
     avoid_style: list[str] | None = Field(default=None, max_length=8)
     initiative_in_conversation: float | None = Field(default=None, ge=0.0, le=1.0)
     visual: CreatorDraftVisualIdentity | None = None
@@ -713,6 +769,7 @@ class CharacterCreatorService:
                 nsfw_pacing=draft.nsfw_pacing,
                 default_intimacy_level=draft.default_intimacy_level,
                 user_desired_experience=draft.user_desired_experience,
+                user_role_in_story=draft.world_scene.user_role_in_story,
             ),
             personality=PersonalityProfile(
                 core_traits=draft.core_traits,
@@ -752,14 +809,16 @@ class CharacterCreatorService:
             metadata={
                 "creator_draft": {
                     "draft_id": draft.draft_id,
-                    "source": "m6_p05_visual_identity_draft",
+                    "source": "m6_p06_world_scene_draft",
                     "migration_note": (
-                        "API-only draft roleplay policy and visual identity fields "
+                        "API-only draft roleplay policy, visual identity, and world/scene fields "
                         "are mapped into runtime CharacterBlueprint structures "
                         "before final save."
                     ),
                 },
                 "content_boundaries": draft.content_boundaries.model_dump(mode="json"),
+                "world_scene": draft.world_scene.model_dump(mode="json"),
+                "scene_hints": draft.world_scene.to_scene_hints(),
                 **draft.metadata,
             },
         )
@@ -856,21 +915,31 @@ class CharacterCreatorService:
     def _default_scene_state(
         self, blueprint: CharacterBlueprint, *, source: DraftMomentSource
     ) -> SceneState:
+        scene_hints = blueprint.metadata.get("scene_hints") or {}
+        if not isinstance(scene_hints, dict):
+            scene_hints = {}
         return SceneState(
             location=(
-                "soft neutral portrait setting"
-                if source == DraftMomentSource.chat
-                else "visual novel character introduction scene"
+                scene_hints.get("setting")
+                or (
+                    "soft neutral portrait setting"
+                    if source == DraftMomentSource.chat
+                    else "visual novel character introduction scene"
+                )
             ),
-            mood=blueprint.relationship.relationship_dynamic,
+            time_of_day=scene_hints.get("time_of_day"),
+            mood=scene_hints.get("mood") or blueprint.relationship.relationship_dynamic,
             emotional_tone=(
-                blueprint.relationship.user_desired_experience
+                scene_hints.get("scenario")
+                or blueprint.relationship.user_desired_experience
                 or "warm first impression"
             ),
             character_appearance=blueprint.visual_identity.compact_prompt_summary(
                 include_scene_mutable=True
             ),
             pose="front-facing first portrait",
+            key_objects=list(scene_hints.get("props") or []),
+            background_details=list(scene_hints.get("background_details") or []),
             continuity_notes=[
                 "first portrait validation",
                 "creator draft capture",
